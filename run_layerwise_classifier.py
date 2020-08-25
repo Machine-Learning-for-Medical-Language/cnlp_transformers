@@ -34,12 +34,13 @@ from torch.utils.data.dataset import Dataset
 from transformers import AutoConfig, AutoModelForSequenceClassification, AutoTokenizer, EvalPrediction
 from transformers.data.processors.utils import InputFeatures
 from transformers.tokenization_utils import PreTrainedTokenizer
-from transformers.data.metrics import acc_and_f1
+
 from transformers.data.processors.utils import DataProcessor, InputExample, InputFeatures
 from transformers.data.processors.glue import glue_convert_examples_to_features
 from EarlyLayerRobertaForSequenceClassification import EarlyLayerRobertaForSequenceClassification
 
-from cnlp_processors import cnlp_processors
+from cnlp_processors import cnlp_processors, cnlp_num_labels, acc_and_f1, ClinicalNlpDataset, DataTrainingArguments
+
 # from transformers import GlueDataTrainingArguments as DataTrainingArguments
 from transformers import (
     HfArgumentParser,
@@ -50,161 +51,6 @@ from transformers import (
 
 
 logger = logging.getLogger(__name__)
-
-class Split(Enum):
-    train = "train"
-    dev = "dev"
-    test = "test"
-
-@dataclass
-class DataTrainingArguments:
-    """
-    Arguments pertaining to what data we are going to input our model for training and eval.
-
-    Using `HfArgumentParser` we can turn this class
-    into argparse arguments to be able to specify them on
-    the command line.
-    """
-
-    # Only allowed task is Negation, don't need this field from Glue
-    task_name: str = field(metadata={"help": "The name of the task to train on: " + ", ".join(cnlp_processors.keys())})
-        
-    data_dir: str = field(
-        metadata={"help": "The input data dir. Should contain the .tsv files (or other data files) for the task."}
-    )
-    max_seq_length: int = field(
-        default=128,
-        metadata={
-            "help": "The maximum total input sequence length after tokenization. Sequences longer "
-            "than this will be truncated, sequences shorter will be padded."
-        },
-    )
-    overwrite_cache: bool = field(
-        default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
-    )
-
-# class NegationProcessor(DataProcessor):
-#     """ Processor for the sdfa shared task negation datasets """
-#     def get_example_from_tensor_dict(self, tensor_dict):
-#         """See base class."""
-#         return InputExample(
-#             tensor_dict["idx"].numpy(),
-#             tensor_dict["sentence"].numpy().decode("utf-8"),
-#             None,
-#             str(tensor_dict["label"].numpy()),
-#         )
-
-#     def get_train_examples(self, data_dir):
-#         """See base class."""
-#         return self._create_examples(self._read_tsv(os.path.join(data_dir, "train.tsv")), "train")
-
-#     def get_dev_examples(self, data_dir):
-#         """See base class."""
-#         return self._create_examples(self._read_tsv(os.path.join(data_dir, "dev.tsv")), "dev")
-
-#     def get_test_examples(self, data_dir):
-#         """See base class."""
-#         return self._create_examples(self._read_tsv(os.path.join(data_dir, "test.tsv")), "test")
-
-#     def get_labels(self):
-#         """See base class."""
-#         return ["-1", "1"]
-
-#     def _create_examples(self, lines, set_type):
-#         """Creates examples for the training, dev and test sets."""
-#         test_mode = set_type == "test"
-#         examples = []
-#         for (i, line) in enumerate(lines):
-#             guid = "%s-%s" % (set_type, i)
-#             if test_mode:
-#                 text_a = line[0]
-#                 label = None
-#             else:
-#                 # flip the signs so that 1 is negated, that way the f1 calculation is automatically
-#                 # the f1 score for the negated label.
-#                 label = str( -1 * int(line[0]) )
-#                 text_a = '\t'.join(line[1:])
-#             examples.append(InputExample(guid=guid, text_a=text_a, text_b=None, label=label))
-#         return examples
-    
-class CnlpDataset(Dataset):
-    """ Copy-pasted from GlueDataset with glue task-specific code changed
-        moved into here to be self-contained
-    """
-    args: DataTrainingArguments
-    output_mode: str
-    features: List[InputFeatures]
-
-    def __init__(
-        self,
-        args: DataTrainingArguments,
-        tokenizer: PreTrainedTokenizer,
-        limit_length: Optional[int] = None,
-        mode: Union[str, Split] = Split.train,
-        cache_dir: Optional[str] = None,
-    ):
-        self.args = args
-        self.processor = cnlp_processors[args.task_name]()
-        self.output_mode = 'classification'
-        if isinstance(mode, str):
-            try:
-                mode = Split[mode]
-            except KeyError:
-                raise KeyError("mode is not a valid split name")
-        # Load data features from cache or dataset file
-        cached_features_file = os.path.join(
-            cache_dir if cache_dir is not None else args.data_dir,
-            "cached_{}_{}_{}".format(
-                mode.value, tokenizer.__class__.__name__, str(args.max_seq_length),
-            ),
-        )
-        label_list = self.processor.get_labels()
-        self.label_list = label_list
-
-        # Make sure only the first process in distributed training processes the dataset,
-        # and the others will use the cache.
-        lock_path = cached_features_file + ".lock"
-        with FileLock(lock_path):
-
-            if os.path.exists(cached_features_file) and not args.overwrite_cache:
-                start = time.time()
-                self.features = torch.load(cached_features_file)
-                logger.info(
-                    f"Loading features from cached file {cached_features_file} [took %.3f s]", time.time() - start
-                )
-            else:
-                logger.info(f"Creating features from dataset file at {args.data_dir}")
-
-                if mode == Split.dev:
-                    examples = self.processor.get_dev_examples(args.data_dir)
-                elif mode == Split.test:
-                    examples = self.processor.get_test_examples(args.data_dir)
-                else:
-                    examples = self.processor.get_train_examples(args.data_dir)
-                if limit_length is not None:
-                    examples = examples[:limit_length]
-                self.features = glue_convert_examples_to_features(
-                    examples,
-                    tokenizer,
-                    max_length=args.max_seq_length,
-                    label_list=label_list,
-                    output_mode=self.output_mode,
-                )
-                start = time.time()
-                torch.save(self.features, cached_features_file)
-                # ^ This seems to take a lot of time so I want to investigate why and how we can improve.
-                logger.info(
-                    "Saving features into cached file %s [took %.3f s]", cached_features_file, time.time() - start
-                )
-
-    def __len__(self):
-        return len(self.features)
-
-    def __getitem__(self, i) -> InputFeatures:
-        return self.features[i]
-
-    def get_labels(self):
-        return self.label_list
 
     
 @dataclass
@@ -274,7 +120,7 @@ def main():
     set_seed(training_args.seed)
 
     try:
-        num_labels = 2
+        num_labels = cnlp_num_labels[data_args.task_name]
         output_mode = 'classification'
     except KeyError:
         raise ValueError("Task not found: %s" % (data_args.task_name))
@@ -288,13 +134,13 @@ def main():
     config = AutoConfig.from_pretrained(
         model_args.config_name if model_args.config_name else model_args.model_name_or_path,
         num_labels=num_labels,
-        finetuning_task='negation',
+        finetuning_task=data_args.task_name,
         cache_dir=model_args.cache_dir,
     )
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
         cache_dir=model_args.cache_dir,
-        additional_special_tokens=('<e>', '</e>')
+        additional_special_tokens=('<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>')
     )
     model = EarlyLayerRobertaForSequenceClassification.from_pretrained(
                 model_args.model_name_or_path,
@@ -306,15 +152,15 @@ def main():
     
     # Get datasets
     train_dataset = (
-        CnlpDataset(data_args, tokenizer=tokenizer, cache_dir=model_args.cache_dir) if training_args.do_train else None
+        ClinicalNlpDataset(data_args, tokenizer=tokenizer, cache_dir=model_args.cache_dir) if training_args.do_train else None
     )
     eval_dataset = (
-        CnlpDataset(data_args, tokenizer=tokenizer, mode="dev", cache_dir=model_args.cache_dir)
+        ClinicalNlpDataset(data_args, tokenizer=tokenizer, mode="dev", cache_dir=model_args.cache_dir)
         if training_args.do_eval
         else None
     )
     test_dataset = (
-        CnlpDataset(data_args, tokenizer=tokenizer, mode="test", cache_dir=model_args.cache_dir)
+        ClinicalNlpDataset(data_args, tokenizer=tokenizer, mode="test", cache_dir=model_args.cache_dir)
         if training_args.do_predict
         else None
     )
