@@ -37,11 +37,12 @@ from transformers.data.processors.utils import InputFeatures
 from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.data.metrics import acc_and_f1
 from transformers.data.processors.utils import DataProcessor, InputExample, InputFeatures
-from transformers.data.processors.glue import glue_convert_examples_to_features
 
-from cnlp_processors import ClinicalNlpDataset, DataTrainingArguments, cnlp_processors, cnlp_num_labels, cnlp_output_modes, cnlp_compute_metrics
+from cnlp_processors import cnlp_processors, cnlp_num_labels, cnlp_output_modes, cnlp_compute_metrics
+from cnlp_data import ClinicalNlpDataset, DataTrainingArguments
 
-# from transformers import GlueDataTrainingArguments as DataTrainingArguments
+from CnlpRobertaForClassification import CnlpRobertaForClassification
+
 from transformers import (
     HfArgumentParser,
     Trainer,
@@ -71,7 +72,15 @@ class ModelArguments:
     cache_dir: Optional[str] = field(
         default=None, metadata={"help": "Where do you want to store the pretrained models downloaded from s3"}
     )
-
+    layer: Optional[int] = field(
+        default=-1, metadata={"help": "Which layer's CLS ('<s>') token to use"}
+    )
+    token: bool = field(
+        default=False, metadata={"help": "Classify over an actual token rather than the [CLS] ('<s>') token -- requires that the tokens to be classified are surrounded by <e>/</e> tokens"}
+    )
+    freeze: bool = field(
+        default=False, metadata={"help": "Freeze the encoder layers and only train the layer between the encoder and classification architecture. Probably works best with --token flag since [CLS] may not be well-trained for anything in particular."}
+    )
 
 def main():
     # See all possible arguments in src/transformers/training_args.py
@@ -138,14 +147,16 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
         cache_dir=model_args.cache_dir,
-        additional_special_tokens=['<e>', '</e>']
+        additional_special_tokens=['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>']
     )
-    model = AutoModelForSequenceClassification.from_pretrained(
-        model_args.model_name_or_path,
-        from_tf=bool(".ckpt" in model_args.model_name_or_path),
-        config=config,
-        cache_dir=model_args.cache_dir,
-    )
+    model = CnlpRobertaForClassification.from_pretrained(
+            model_args.model_name_or_path,
+            config=config,
+            cache_dir=model_args.cache_dir,
+            layer=model_args.layer,
+            tokens=model_args.token,
+            freeze=model_args.freeze)
+        
     model.resize_token_embeddings(len(tokenizer))
     
     # Get datasets

@@ -24,16 +24,29 @@ ROBERTA_PRETRAINED_MODEL_ARCHIVE_LIST = [
 class EarlyLayerRobertaClassificationHead(nn.Module):
     """Head for sentence-level classification tasks."""
 
-    def __init__(self, config, layer=-1):
+    def __init__(self, config, layer=-1, tokens=False):
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.out_proj = nn.Linear(config.hidden_size, config.num_labels)
         self.layer_to_use = layer
+        self.tokens = tokens
+        self.hidden_size = config.hidden_size
 
-    def forward(self, features, **kwargs):
-        #x = features[:, 0, :]  # take <s> token (equiv. to [CLS])
-        x = features[self.layer_to_use][:, 0, :]
+    def forward(self, features, event_tokens, **kwargs):
+        seq_length = features[0].shape[1]
+        if self.tokens:
+            # figure out how to grab the average over the tokens of the thing we want to classify
+            # probably involved passing in some sub-sequence of interest so we know what tokens to grab,
+            # then we average across those tokens.
+            token_lens = event_tokens.sum(1)
+            expanded_tokens = event_tokens.unsqueeze(2).expand(features[0].shape[0], seq_length, self.hidden_size)
+            filtered_features = features[self.layer_to_use] * expanded_tokens
+            x = filtered_features.sum(1) / token_lens.unsqueeze(1).expand(features[0].shape[0], self.hidden_size)
+            #raise NotImplementedError()
+        else:
+            # take <s> token (equiv. to [CLS])
+            x = features[self.layer_to_use][:, 0, :]
         x = self.dropout(x)
         x = self.dense(x)
         x = torch.tanh(x)
@@ -41,16 +54,21 @@ class EarlyLayerRobertaClassificationHead(nn.Module):
         x = self.out_proj(x)
         return x
 
-class EarlyLayerRobertaForSequenceClassification(RobertaForSequenceClassification):
+class CnlpRobertaForClassification(RobertaForSequenceClassification):
     config_class = RobertaConfig
     base_model_prefix = "roberta"
 
-    def __init__(self, config, layer=-1):
+    def __init__(self, config, layer=-1, freeze=False, tokens=False):
         super().__init__(config)
         self.num_labels = config.num_labels
 
         self.roberta = RobertaModel(config)
-        self.classifier = EarlyLayerRobertaClassificationHead(config, layer)
+        
+        if freeze:
+            for param in self.roberta.parameters():
+                param.requires_grad = False
+            
+        self.classifier = EarlyLayerRobertaClassificationHead(config, layer=layer, tokens=tokens)
         
         self.init_weights()
 
@@ -65,6 +83,7 @@ class EarlyLayerRobertaForSequenceClassification(RobertaForSequenceClassificatio
         labels=None,
         output_attentions=None,
         output_hidden_states=None,
+        event_tokens=None,
     ):
         r"""
         labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size,)`, `optional`, defaults to :obj:`None`):
@@ -86,7 +105,7 @@ class EarlyLayerRobertaForSequenceClassification(RobertaForSequenceClassificatio
             return_dict=True
         )
         
-        logits = self.classifier(outputs.hidden_states)
+        logits = self.classifier(outputs.hidden_states, event_tokens)
 
         loss = None
         if labels is not None:
