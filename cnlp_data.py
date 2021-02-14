@@ -6,6 +6,7 @@ import logging
 from filelock import FileLock
 from typing import Callable, Dict, Optional, List, Union
 
+import numpy as np
 import torch
 from torch.utils.data.dataset import Dataset
 from transformers.data.processors.utils import DataProcessor, InputExample
@@ -16,6 +17,9 @@ from enum import Enum
 from cnlp_processors import cnlp_processors, cnlp_output_modes
 
 logger = logging.getLogger(__name__)
+
+def list_field(default=None, metadata=None):
+    return field(default_factory=lambda: default, metadata=metadata)
 
 class Split(Enum):
     train = "train"
@@ -43,7 +47,7 @@ class InputFeatures:
     attention_mask: Optional[List[int]] = None
     token_type_ids: Optional[List[int]] = None
     event_tokens: Optional[List[int]] = None
-    label: Optional[Union[int, float]] = None
+    label: List[Optional[Union[int, float, List[int]]]] = None
 
     def to_json_string(self):
         """Serializes this instance to a JSON string."""
@@ -79,19 +83,55 @@ def cnlp_convert_examples_to_features(
         if example.label is None:
             return None
         if output_mode == "classification":
-            return label_map[example.label]
+            try:
+                return label_map[example.label]
+            except:
+                logger.error('Error with example %s' % (example.guid))
+                raise Exception()
+
         elif output_mode == "regression":
             return float(example.label)
+        elif output_mode == 'tagging':
+            return [ label_map[label] for label in example.label]
+
         raise KeyError(output_mode)
 
     labels = [label_from_example(example) for example in examples]
 
+    if examples[0].text_b is None:
+        sentences = [example.text_a for example in examples]
+    else:
+        sentences = [(example.text_a, example.text_b) for example in examples]
+
     batch_encoding = tokenizer(
-        [(example.text_a, example.text_b) for example in examples],
+        sentences,
         max_length=max_length,
         padding="max_length",
         truncation=True,
     )
+
+    # This code has to solve the problem of properly setting labels for word pieces that do not actually need to be tagged.
+    encoded_labels = []
+    if type(labels[0]) is list:
+        for sent_ind,sent in enumerate(sentences):
+            sent_labels = []
+
+            ## FIXME -- this is stupid and won't work outside the roberta encoding
+            label_ind = 0
+            for wp_ind,wp in enumerate(batch_encoding[sent_ind].tokens):
+                if wp.startswith('Ġ'):
+                    sent_labels.append(labels[sent_ind].pop(0))
+                else:
+                    sent_labels.append(-100)
+                # if wp_ind in word_inds:
+                #     sent_labels.append(labels[sent_ind][label_ind])
+                #     label_ind += 1
+                # else:
+                #     sent_labels.append(-100)
+            
+            encoded_labels.append(sent_labels)        
+   
+        labels = encoded_labels
 
     features = []
     for i in range(len(examples)):
@@ -112,7 +152,7 @@ def cnlp_convert_examples_to_features(
         else:
             inputs['event_tokens'] = [1] * len(inputs['input_ids'])
            
-        feature = InputFeatures(**inputs, label=labels[i])
+        feature = InputFeatures(**inputs, label=[labels[i]])
         features.append(feature)
 
     for i, example in enumerate(examples[:5]):
@@ -133,10 +173,15 @@ class DataTrainingArguments:
     the command line.
     """
 
-    task_name: str = field(metadata={"help": "The name of the task to train on: " + ", ".join(cnlp_processors.keys())})
-    data_dir: str = field(
-        metadata={"help": "The input data dir. Should contain the .tsv files (or other data files) for the task."}
+    data_dir: List[str] = field(
+        metadata={"help": "The input data dirs. A space-separated list of directories that should contain the .tsv files (or other data files) for the task. Should be presented in the same order as the task names."}
     )
+
+    task_name: List[str] = field(default_factory=lambda: None, metadata={"help": "A space-separated list of tasks to train on: " + ", ".join(cnlp_processors.keys())})
+    # field(
+        
+    #     metadata={"help": "A space-separated list of tasks to train on: " + ", ".join(cnlp_processors.keys())})
+
     max_seq_length: int = field(
         default=128,
         metadata={
@@ -147,14 +192,14 @@ class DataTrainingArguments:
     overwrite_cache: bool = field(
         default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
     )
-    
+
 
 class ClinicalNlpDataset(Dataset):
     """ Copy-pasted from GlueDataset with glue task-specific code changed
         moved into here to be self-contained
     """
     args: DataTrainingArguments
-    output_mode: str
+    output_mode: List[str]
     features: List[InputFeatures]
 
     def __init__(
@@ -166,62 +211,80 @@ class ClinicalNlpDataset(Dataset):
         cache_dir: Optional[str] = None,
     ):
         self.args = args
-        self.processor = cnlp_processors[args.task_name]()
-        self.output_mode = cnlp_output_modes[args.task_name]
+        self.processors = [cnlp_processors[task]() for task in args.task_name]
+        self.output_mode = [cnlp_output_modes[task] for task in args.task_name]
+        self.features = None
 
         if isinstance(mode, str):
             try:
                 mode = Split[mode]
             except KeyError:
                 raise KeyError("mode is not a valid split name")
+
         # Load data features from cache or dataset file
-        dataset = basename(dirname(args.data_dir)) if args.data_dir[-1] == '/' else basename(args.data_dir)
-        cached_features_file = os.path.join(
-            cache_dir if cache_dir is not None else args.data_dir,
-            "cached_{}_{}_{}_{}_{}".format(
-                args.task_name, dataset, mode.value, tokenizer.__class__.__name__, str(args.max_seq_length),
-            ),
-        )
-        label_list = self.processor.get_labels()
-        self.label_list = label_list
+        self.label_lists = [processor.get_labels() for processor in self.processors]
 
-        # Make sure only the first process in distributed training processes the dataset,
-        # and the others will use the cache.
-        lock_path = cached_features_file + ".lock"
-        with FileLock(lock_path):
+        for task_ind,data_dir in enumerate(args.data_dir):
+            datadir = dirname(data_dir) if data_dir[-1] == '/' else data_dir
+            domain = basename(datadir)
+            dataconfig = basename(dirname(datadir))
 
-            if os.path.exists(cached_features_file) and not args.overwrite_cache:
-                start = time.time()
-                self.features = torch.load(cached_features_file)
-                logger.info(
-                    f"Loading features from cached file {cached_features_file} [took %.3f s]", time.time() - start
-                )
-            else:
-                logger.info(f"Creating features from dataset file at {args.data_dir}")
+            cached_features_file = os.path.join(
+                cache_dir if cache_dir is not None else data_dir,
+                "cached_{}-{}_{}_{}_{}".format(
+                    dataconfig, domain, mode.value, tokenizer.__class__.__name__, str(args.max_seq_length),
+                ),
+            )
 
-                if mode == Split.dev:
-                    examples = self.processor.get_dev_examples(args.data_dir)
-                elif mode == Split.test:
-                    examples = self.processor.get_test_examples(args.data_dir)
+            # Make sure only the first process in distributed training processes the dataset,
+            # and the others will use the cache.
+            lock_path = cached_features_file + ".lock"
+            with FileLock(lock_path):
+
+                if os.path.exists(cached_features_file) and not args.overwrite_cache:
+                    start = time.time()
+                    features = torch.load(cached_features_file)
+                    logger.info(
+                        f"Loading features from cached file {cached_features_file} [took %.3f s]", time.time() - start
+                    )
                 else:
-                    examples = self.processor.get_train_examples(args.data_dir)
-                if limit_length is not None:
-                    examples = examples[:limit_length]
-                self.features = cnlp_convert_examples_to_features(
-                    examples,
-                    tokenizer,
-                    max_length=args.max_seq_length,
-                    label_list=label_list,
-                    output_mode=self.output_mode,
-                )
-                start = time.time()
-                torch.save(self.features, cached_features_file)
-                # ^ This seems to take a lot of time so I want to investigate why and how we can improve.
-                logger.info(
-                    "Saving features into cached file %s [took %.3f s]", cached_features_file, time.time() - start
-                )
+                    logger.info(f"Creating features from dataset file at {data_dir}")
 
-    def __len__(self):
+                    if mode == Split.dev:
+                        examples = self.processors[task_ind].get_dev_examples(data_dir)
+                    elif mode == Split.test:
+                        examples = self.processors[task_ind].get_test_examples(data_dir)
+                    else:
+                        examples = self.processors[task_ind].get_train_examples(data_dir)
+                    if limit_length is not None:
+                        examples = examples[:limit_length]
+                    features = cnlp_convert_examples_to_features(
+                        examples,
+                        tokenizer,
+                        max_length=args.max_seq_length,
+                        label_list=self.label_lists[task_ind],
+                        output_mode=self.output_mode[task_ind],
+                    )
+                    start = time.time()
+                    torch.save(features, cached_features_file)
+                    # ^ This seems to take a lot of time so I want to investigate why and how we can improve.
+                    logger.info(
+                        "Saving features into cached file %s [took %.3f s]", cached_features_file, time.time() - start
+                    )
+
+                if self.features is None:
+                    self.features = features
+                else:
+                    # we should have all non-label features be the same, so we can essentially discard subsequent
+                    # datasets input features. So we'll append the labels from that features list and discard the duplicate
+                    # input features.
+                    assert len(features) == len(self.features)
+                    for feature_ind,feature in enumerate(features):
+                        self.features[feature_ind].label.append(feature.label[0])
+
+                    # self.features.label.append(features.labels[0])
+
+    def __len__(self) -> int:
         return len(self.features)
 
     def __getitem__(self, i) -> InputFeatures:

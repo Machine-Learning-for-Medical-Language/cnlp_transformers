@@ -13,7 +13,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-""" Finetuning the library models for sequence classification on GLUE (Bert, XLM, XLNet, RoBERTa, Albert, XLM-RoBERTa)."""
+""" Finetuning the library models for sequence classification on clinical NLP tasks"""
 
 
 import dataclasses
@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from typing import Callable, Dict, Optional, List, Union
 from filelock import FileLock
 import time
+import tempfile
+import math
 
 from enum import Enum
 
@@ -32,16 +34,18 @@ import numpy as np
 
 import torch
 from torch.utils.data.dataset import Dataset
-from transformers import AutoConfig, AutoModelForSequenceClassification, AutoTokenizer, EvalPrediction
+from transformers import AutoConfig, AutoModelForSequenceClassification, AutoTokenizer, EvalPrediction, EvaluationStrategy
 from transformers.data.processors.utils import InputFeatures
 from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.data.metrics import acc_and_f1
 from transformers.data.processors.utils import DataProcessor, InputExample, InputFeatures
+from transformers import ALL_PRETRAINED_CONFIG_ARCHIVE_MAP
 
-from cnlp_processors import cnlp_processors, cnlp_num_labels, cnlp_output_modes, cnlp_compute_metrics
+from cnlp_processors import cnlp_processors, cnlp_output_modes, cnlp_compute_metrics, tagging
 from cnlp_data import ClinicalNlpDataset, DataTrainingArguments
 
 from CnlpRobertaForClassification import CnlpRobertaForClassification
+from BaselineModels import CnnSentenceClassifier
 
 from transformers import (
     HfArgumentParser,
@@ -53,6 +57,14 @@ from transformers import (
 
 logger = logging.getLogger(__name__)
 
+@dataclass
+class CnlpTrainingArguments(TrainingArguments):
+    """
+    Additional arguments specific to this class
+    """
+    evals_per_epoch: Optional[int] = field(
+        default = -1, metadata={"help": "Number of times to evaluate and possibly save model per training epoch (allows for a lazy kind of early stopping)"}
+    )
 
 @dataclass
 class ModelArguments:
@@ -86,8 +98,7 @@ def main():
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
-
-    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
+    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, CnlpTrainingArguments))
 
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
@@ -106,6 +117,10 @@ def main():
             f"Output directory ({training_args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overcome."
         )
 
+    assert len(data_args.task_name) == len(data_args.data_dir), 'Number of tasks and data directories should be the same!'
+
+    baselines = ['cnn', 'lstm']
+    
     # Setup logging
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
@@ -113,22 +128,31 @@ def main():
         level=logging.INFO if training_args.local_rank in [-1, 0] else logging.WARN,
     )
     logger.warning(
-        "Process rank: %s, device: %s, n_gpu: %s, distributed training: %s, 16-bits training: %s",
-        training_args.local_rank,
+        "Process rank: %s, device: %s, n_gpu: %s, distributed training: %s, 16-bits training: %s" %
+        (training_args.local_rank,
         training_args.device,
         training_args.n_gpu,
         bool(training_args.local_rank != -1),
-        training_args.fp16,
+        training_args.fp16)
     )
-    logger.info("Training/evaluation parameters %s", training_args)
-    logger.info("Data parameters %s", data_args)
-
+    logger.info("Training/evaluation parameters %s" % training_args)
+    logger.info("Data parameters %s" % data_args)
+    logger.info("Model paramters %s" % model_args)
     # Set seed
     set_seed(training_args.seed)
 
     try:
-        num_labels = cnlp_num_labels[data_args.task_name]
-        output_mode = cnlp_output_modes[data_args.task_name]
+        num_labels = []
+        output_mode = []
+        tagger = []
+        for task_name in data_args.task_name:
+            num_labels.append(len(cnlp_processors[task_name]().get_labels()))
+            output_mode.append(cnlp_output_modes[task_name])
+            tagger.append(cnlp_output_modes[task_name] == tagging)
+
+        # num_labels = [len(cnlp_processors[task_name]().get_labels() for task_name in data_args.task_name)
+        # output_mode = [cnlp_output_modes[data_args.task_name]for task_name in data_args.task_name)
+        # tagger = cnlp_output_modes[data_args.task_name] == tagging
     except KeyError:
         raise ValueError("Task not found: %s" % (data_args.task_name))
 
@@ -138,26 +162,59 @@ def main():
     # The .from_pretrained methods guarantee that only one local process can concurrently
     # download model & vocab.
 
+    model_name = model_args.model_name_or_path
+    if not model_name in ALL_PRETRAINED_CONFIG_ARCHIVE_MAP and not model_name in baselines:
+        # we are loading one of our own trained models, load it as-is initially,
+        # then delete its classifier head, save as temp file, and make that temp file
+        # the model file to be loaded down below the normal way. since that temp file
+        # doesn't have a stored classifier it will use the randomly-inited classifier head
+        # with the size of the supplied config (for the new task)
+        config = AutoConfig.from_pretrained(
+            model_args.config_name if model_args.config_name else model_args.model_name_or_path,
+            cache_dir=model_args.cache_dir,
+        )
+        model = CnlpRobertaForClassification.from_pretrained(
+                model_args.model_name_or_path,
+                config=config,
+                cache_dir=model_args.cache_dir,
+                layer=model_args.layer,
+                tokens=model_args.token,
+                freeze=model_args.freeze,
+                tagger=tagger)
+        delattr(model, 'classifier')
+        tempmodel = tempfile.NamedTemporaryFile(dir=model_args.cache_dir)
+        torch.save(model.state_dict(), tempmodel)
+        model_name = tempmodel.name
+
     config = AutoConfig.from_pretrained(
         model_args.config_name if model_args.config_name else model_args.model_name_or_path,
-        num_labels=num_labels,
+#        num_labels_list=num_labels,
         finetuning_task=data_args.task_name,
-        cache_dir=model_args.cache_dir,
     )
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
         cache_dir=model_args.cache_dir,
-        additional_special_tokens=['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>']
+        add_prefix_space=True,
+        additional_special_tokens=['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>', '<neg>']
     )
-    model = CnlpRobertaForClassification.from_pretrained(
-            model_args.model_name_or_path,
+
+    if model_name in baselines:
+        if model_name == 'cnn':
+            model = CnnSentenceClassifier(len(tokenizer), num_labels=num_labels)
+        pretrained = False
+    else:
+        pretrained = True
+        model = CnlpRobertaForClassification.from_pretrained(
+            model_name,
             config=config,
+            num_labels_list=num_labels,
             cache_dir=model_args.cache_dir,
             layer=model_args.layer,
             tokens=model_args.token,
-            freeze=model_args.freeze)
+            freeze=model_args.freeze,
+            tagger=tagger)
         
-    model.resize_token_embeddings(len(tokenizer))
+        model.resize_token_embeddings(len(tokenizer))
     
     # Get datasets
     train_dataset = (
@@ -174,10 +231,67 @@ def main():
         else None
     )
 
-    def build_compute_metrics_fn(task_name: str) -> Callable[[EvalPrediction], Dict]:
+    best_eval_results = None
+    output_eval_file = os.path.join(
+        training_args.output_dir, f"eval_results.txt"
+    )
+    batches_per_epoch = math.ceil(len(train_dataset) / training_args.train_batch_size)
+    total_steps = int(training_args.num_train_epochs * batches_per_epoch // training_args.gradient_accumulation_steps)
+
+    if training_args.evals_per_epoch > 0:
+        logger.warning('Overwriting the value of logging steps based on provided evals_per_epoch argument')
+        # steps per epoch factors in gradient accumulation steps (as compared to batches_per_epoch above which doesn't)
+        steps_per_epoch = int(total_steps // training_args.num_train_epochs)
+        training_args.eval_steps = steps_per_epoch // training_args.evals_per_epoch
+        training_args.evaluation_strategy = EvaluationStrategy.STEPS
+    elif training_args.do_eval:
+        logger.info('Evaluation strategy not specified so evaluating every epoch')
+        training_args.evaluation_strategy = EvaluationStrategy.EPOCH
+
+    def build_compute_metrics_fn(task_names: List[str], model) -> Callable[[EvalPrediction], Dict]:
         def compute_metrics_fn(p: EvalPrediction):
-            preds = np.argmax(p.predictions, axis=1)
-            return cnlp_compute_metrics(task_name, preds, p.label_ids)
+
+            metrics = {}
+            task_scores = []
+            # if not p is list:
+            #     p = [p]
+
+            for task_ind,task_name in enumerate(task_names):
+                if tagger[task_ind]:
+                    preds = np.argmax(p.predictions[task_ind], axis=2)
+                    # labels will be -100 where we don't need to tag
+                else:
+                    preds = np.argmax(p.predictions[task_ind], axis=1)
+
+                if len(task_names) == 1:
+                    labels = p.label_ids
+                else:
+                    labels = p.label_ids[:,task_ind,:].squeeze()
+
+                metrics[task_name] = cnlp_compute_metrics(task_name, preds, labels)
+                processor = cnlp_processors[task_name]()
+                task_scores.append(processor.get_one_score(metrics[task_name]))
+
+            one_score = sum(task_scores) / len(task_scores)
+
+            if not model is None:
+                if not hasattr(model, 'best_score') or one_score > model.best_score:
+                    if pretrained:
+                        trainer.save_model()
+                    # For convenience, we also re-save the tokenizer to the same directory,
+                    # so that you can share your model easily on huggingface.co/models =)
+                    if trainer.is_world_process_zero():
+                        tokenizer.save_pretrained(training_args.output_dir)
+                        for task_ind,task_name in enumerate(metrics):
+                            with open(output_eval_file, "w") as writer:
+                                logger.info("***** Eval results for task %s *****" % (task_name))
+                                for key, value in metrics[task_name].items():
+                                    logger.info("  %s = %s", key, value)
+                                    writer.write("%s = %s\n" % (key, value))
+                    model.best_score = one_score
+                    model.best_eval_results = metrics
+
+            return metrics
 
         return compute_metrics_fn
 
@@ -187,7 +301,7 @@ def main():
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        compute_metrics=build_compute_metrics_fn(data_args.task_name),
+        compute_metrics=build_compute_metrics_fn(data_args.task_name, model),
     )
 
     # Training
@@ -195,24 +309,26 @@ def main():
         trainer.train(
             model_path=model_args.model_name_or_path if os.path.isdir(model_args.model_name_or_path) else None
         )
-        trainer.save_model()
-        # For convenience, we also re-save the tokenizer to the same directory,
-        # so that you can share your model easily on huggingface.co/models =)
-        if trainer.is_world_master():
-            tokenizer.save_pretrained(training_args.output_dir)
+
+        if not hasattr(model, 'best_score'):
+            if pretrained:
+                trainer.save_model()
+                # For convenience, we also re-save the tokenizer to the same directory,
+                # so that you can share your model easily on huggingface.co/models =)
+                if trainer.is_world_process_zero():
+                    tokenizer.save_pretrained(training_args.output_dir)
 
     # Evaluation
     eval_results = {}
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
 
-        trainer.compute_metrics = build_compute_metrics_fn(data_args.task_name)
-        eval_result = trainer.evaluate(eval_dataset=eval_dataset)
-
-        output_eval_file = os.path.join(
-            training_args.output_dir, f"eval_results.txt"
-        )
-        if trainer.is_world_master():
+        try:
+            eval_result = model.best_eval_results
+        except:
+            eval_result = trainer.evaluate(eval_dataset=eval_dataset)
+        
+        if trainer.is_world_process_zero():
             with open(output_eval_file, "w") as writer:
                 logger.info("***** Eval results *****")
                 for key, value in eval_result.items():
@@ -230,7 +346,7 @@ def main():
         output_test_file = os.path.join(
             training_args.output_dir, f"test_results.txt"
         )
-        if trainer.is_world_master():
+        if trainer.is_world_process_zero():
             with open(output_test_file, "w") as writer:
                 logger.info("***** Test results *****")
                 for index, item in enumerate(predictions):
