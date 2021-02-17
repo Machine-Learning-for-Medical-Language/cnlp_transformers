@@ -135,12 +135,12 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
         logits = []
 
         loss = None
-        if labels is not None:
-            for task_ind,task_num_labels in enumerate(self.num_labels):
-                features = self.feature_extractors[task_ind](outputs.hidden_states, event_tokens)
-                task_logits = self.classifiers[task_ind](features)
-                logits.append(task_logits)
-                
+        for task_ind,task_num_labels in enumerate(self.num_labels):
+            features = self.feature_extractors[task_ind](outputs.hidden_states, event_tokens)
+            task_logits = self.classifiers[task_ind](features)
+            logits.append(task_logits)
+            
+            if labels is not None:
                 if task_num_labels == 1:
                     #  We are doing regression
                     loss_fct = MSELoss()
@@ -153,7 +153,7 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
                         task_labels = labels
                     
                     task_loss = loss_fct(task_logits.view(-1, task_num_labels), task_labels.reshape([batch_size*seq_len,]).type(torch.LongTensor).to(labels.device))
-                
+            
                 if loss is None:
                     loss = task_loss
                 else:
