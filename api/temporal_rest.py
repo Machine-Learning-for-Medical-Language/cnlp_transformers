@@ -174,11 +174,11 @@ async def process(doc: TokenizedSentenceDocument):
                 event_labels.append(event_label_list[event_predictions[sent_ind][token_ind]])
 
         timex_entities = get_entities(timex_labels)
-        logging.warn("Extracted %d timex entities from the sentence" % (len(timex_entities)))
+        logging.info("Extracted %d timex entities from the sentence" % (len(timex_entities)))
         timex_results.append( [Timex(timeClass=label[0], begin=label[1], end=label[2]) for label in timex_entities] )
 
         event_entities = get_entities(event_labels)
-        logging.warn("Extracted %d events from the sentence" % (len(event_entities)))
+        logging.info("Extracted %d events from the sentence" % (len(event_entities)))
         event_results.append( [Event(dtr=label[0], begin=label[1], end=label[2]) for label in event_entities] )
 
     results = TemporalResults(timexes=timex_results, events=event_results)
@@ -189,7 +189,7 @@ async def process(doc: TokenizedSentenceDocument):
     pred_time = pred_end - preproc_end
     postproc_time = postproc_end - pred_end
 
-    logging.warn("Pre-processing time: %f, processing time: %f, post-processing time %f" % (preproc_time, pred_time, postproc_time))
+    logging.info("Pre-processing time: %f, processing time: %f, post-processing time %f" % (preproc_time, pred_time, postproc_time))
 
     return results
 
