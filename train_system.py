@@ -34,7 +34,8 @@ import numpy as np
 
 import torch
 from torch.utils.data.dataset import Dataset
-from transformers import AutoConfig, AutoModelForSequenceClassification, AutoTokenizer, EvalPrediction, EvaluationStrategy
+from transformers import AutoConfig, AutoModelForSequenceClassification, AutoTokenizer, EvalPrediction
+from transformers.training_args import EvaluationStrategy
 from transformers.data.processors.utils import InputFeatures
 from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.data.metrics import acc_and_f1
