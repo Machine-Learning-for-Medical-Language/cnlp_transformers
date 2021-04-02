@@ -4,7 +4,7 @@ import time
 import logging
 
 from filelock import FileLock
-from typing import Callable, Dict, Optional, List, Union
+from typing import Callable, Dict, Optional, List, Union, Tuple
 
 import numpy as np
 import torch
@@ -14,7 +14,9 @@ from transformers.tokenization_utils import PreTrainedTokenizer
 from dataclasses import dataclass, field
 from enum import Enum
 
-from cnlp_processors import cnlp_processors, cnlp_output_modes
+from cnlp_processors import cnlp_processors, cnlp_output_modes, classification, tagging, relex
+
+special_tokens = ['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>', '<neg>']
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +49,7 @@ class InputFeatures:
     attention_mask: Optional[List[int]] = None
     token_type_ids: Optional[List[int]] = None
     event_tokens: Optional[List[int]] = None
-    label: List[Optional[Union[int, float, List[int]]]] = None
+    label: List[Optional[Union[int, float, List[int], List[Tuple[int]]]]] = None
 
     def to_json_string(self):
         """Serializes this instance to a JSON string."""
@@ -82,7 +84,7 @@ def cnlp_convert_examples_to_features(
     def label_from_example(example: InputExample) -> Union[int, float, None]:
         if example.label is None:
             return None
-        if output_mode == "classification":
+        if output_mode == classification:
             try:
                 return label_map[example.label]
             except:
@@ -91,15 +93,17 @@ def cnlp_convert_examples_to_features(
 
         elif output_mode == "regression":
             return float(example.label)
-        elif output_mode == 'tagging':
+        elif output_mode == tagging:
             return [ label_map[label] for label in example.label]
+        elif output_mode == relex:
+            return [ (int(start_token),int(end_token),label_map.get(category, 0)) for (start_token,end_token,category) in example.label]
 
         raise KeyError(output_mode)
 
     labels = [label_from_example(example) for example in examples]
 
     if examples[0].text_b is None:
-        sentences = [example.text_a for example in examples]
+        sentences = [example.text_a.split(' ') for example in examples]
     else:
         sentences = [(example.text_a, example.text_b) for example in examples]
 
@@ -108,18 +112,19 @@ def cnlp_convert_examples_to_features(
         max_length=max_length,
         padding="max_length",
         truncation=True,
+        is_split_into_words=True,
     )
 
     # This code has to solve the problem of properly setting labels for word pieces that do not actually need to be tagged.
     encoded_labels = []
-    if type(labels[0]) is list:
+    if output_mode == tagging:
         for sent_ind,sent in enumerate(sentences):
             sent_labels = []
 
             ## FIXME -- this is stupid and won't work outside the roberta encoding
             label_ind = 0
             for wp_ind,wp in enumerate(batch_encoding[sent_ind].tokens):
-                if wp.startswith('Ġ'):
+                if wp.startswith('Ġ') or wp in special_tokens:
                     sent_labels.append(labels[sent_ind].pop(0))
                 else:
                     sent_labels.append(-100)
@@ -129,9 +134,53 @@ def cnlp_convert_examples_to_features(
                 # else:
                 #     sent_labels.append(-100)
             
-            encoded_labels.append(sent_labels)        
+            encoded_labels.append(np.array(sent_labels))
    
         labels = encoded_labels
+    elif output_mode == relex:
+        # start by building a matrix that's N' x N' (word-piece length) with "None" as the default
+        # for word pairs, and -100 (mask) as the default if one of word pair is a suffix token
+        out_of_bounds = 0
+        num_relations = 0
+        for sent_ind, sent in enumerate(sentences):
+            num_relations += len(labels[sent_ind])
+            wpi_to_tokeni = {}
+            tokeni_to_wpi = {}
+            sent_labels = np.zeros( (max_length, max_length)) - 100
+            wps = batch_encoding[sent_ind].tokens
+            sent_len = len(wps)
+            ## FIXME -- this is stupid and won't work outside the roberta encoding
+            for wp_ind,wp in enumerate(wps):
+                if wp.startswith('Ġ') or wp in special_tokens:
+                    key = wp_ind
+                    val = len(wpi_to_tokeni)
+
+                    wpi_to_tokeni[key] = val
+                    tokeni_to_wpi[val] = key
+            
+            # make every label beween pairs a 0 to start:
+            for wpi in wpi_to_tokeni.keys():
+                for wpi2 in wpi_to_tokeni.keys():
+                    # leave the diagonals at -100 because you can't have a relation with itself and we
+                    # don't want to consider it because it may screw up the learning to have 2 such similar
+                    # tokens not involved in a relation.
+                    if wpi != wpi2:
+                        sent_labels[wpi,wpi2] = 0.0
+                
+            for label in labels[sent_ind]:
+                if not label[0] in tokeni_to_wpi or not label[1] in tokeni_to_wpi:
+                    out_of_bounds +=1 
+                    continue
+
+                wpi1 = tokeni_to_wpi[label[0]]
+                wpi2 = tokeni_to_wpi[label[1]]
+
+                sent_labels[wpi1][wpi2] = label[2]
+
+            encoded_labels.append(sent_labels)
+        labels = encoded_labels
+        if out_of_bounds > 0:
+            logging.warn('During relation processing, there were %d relations (out of %d total relations) where at least one argument was truncated so the relation could not be trained/predicted.' % (out_of_bounds, num_relations) )
 
     features = []
     for i in range(len(examples)):
@@ -193,6 +242,10 @@ class DataTrainingArguments:
         default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
     )
 
+    weight_classes: bool = field(
+        default=False, metadata={"help": "A flag that indicates whether class-specific loss should be used. This can be useful in cases with severe class imbalance. The formula for a weight of a class is the count of that class divided the count of the rarest class."}
+    )
+
 
 class ClinicalNlpDataset(Dataset):
     """ Copy-pasted from GlueDataset with glue task-specific code changed
@@ -214,6 +267,7 @@ class ClinicalNlpDataset(Dataset):
         self.processors = [cnlp_processors[task]() for task in args.task_name]
         self.output_mode = [cnlp_output_modes[task] for task in args.task_name]
         self.features = None
+        self.class_weights = [None] * len(args.task_name)
 
         if isinstance(mode, str):
             try:
@@ -272,17 +326,31 @@ class ClinicalNlpDataset(Dataset):
                         "Saving features into cached file %s [took %.3f s]", cached_features_file, time.time() - start
                     )
 
+                if self.args.weight_classes and mode == Split.train:
+                    class_counts = [0] * len(self.label_lists[task_ind])
+                    for feature in features:
+                        labels = feature.label[0]
+                        vals, counts = np.unique(labels, return_counts=True)
+                        for val_ind,val in enumerate(vals):
+                            if val >= 0:
+                                class_counts[int(val)] += counts[val_ind]
+
+                    self.class_weights[task_ind] = min(class_counts) / class_counts
+
+                   
                 if self.features is None:
                     self.features = features
                 else:
                     # we should have all non-label features be the same, so we can essentially discard subsequent
-                    # datasets input features. So we'll append the labels from that features list and discard the duplicate
-                    # input features.
+                    # datasets input features. So we'll append the labels from that features list and discard the duplicate input features.
                     assert len(features) == len(self.features)
                     for feature_ind,feature in enumerate(features):
-                        self.features[feature_ind].label.append(feature.label[0])
-
-                    # self.features.label.append(features.labels[0])
+                        if len(self.features[feature_ind].label[0].shape) == 1 and len(feature.label[0].shape) == 1:
+                            self.features[feature_ind].label[0] = np.stack([self.features[feature_ind].label[0],
+                                                                        feature.label[0]])
+                        else:
+                            self.features[feature_ind].label[0] = np.concatenate([self.features[feature_ind].label[0],
+                                                                        feature.label[0]])
 
     def __len__(self) -> int:
         return len(self.features)
@@ -291,5 +359,5 @@ class ClinicalNlpDataset(Dataset):
         return self.features[i]
 
     def get_labels(self):
-        return self.label_list
+        return self.label_lists
 

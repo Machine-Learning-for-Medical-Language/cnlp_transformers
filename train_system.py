@@ -35,14 +35,14 @@ import numpy as np
 import torch
 from torch.utils.data.dataset import Dataset
 from transformers import AutoConfig, AutoModelForSequenceClassification, AutoTokenizer, EvalPrediction
-from transformers.training_args import EvaluationStrategy
+from transformers.training_args import IntervalStrategy
 from transformers.data.processors.utils import InputFeatures
 from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.data.metrics import acc_and_f1
 from transformers.data.processors.utils import DataProcessor, InputExample, InputFeatures
 from transformers import ALL_PRETRAINED_CONFIG_ARCHIVE_MAP
 
-from cnlp_processors import cnlp_processors, cnlp_output_modes, cnlp_compute_metrics, tagging
+from cnlp_processors import cnlp_processors, cnlp_output_modes, cnlp_compute_metrics, tagging, relex
 from cnlp_data import ClinicalNlpDataset, DataTrainingArguments
 
 from CnlpRobertaForClassification import CnlpRobertaForClassification
@@ -93,6 +93,9 @@ class ModelArguments:
     )
     freeze: bool = field(
         default=False, metadata={"help": "Freeze the encoder layers and only train the layer between the encoder and classification architecture. Probably works best with --token flag since [CLS] may not be well-trained for anything in particular."}
+    )
+    num_rel_feats: Optional[int] = field(
+        default=12, metadata={"help": "Number of features/attention heads to use in the NxN relation classifier"}
     )
 
 def main():
@@ -146,10 +149,12 @@ def main():
         num_labels = []
         output_mode = []
         tagger = []
+        relations = []
         for task_name in data_args.task_name:
             num_labels.append(len(cnlp_processors[task_name]().get_labels()))
             output_mode.append(cnlp_output_modes[task_name])
             tagger.append(cnlp_output_modes[task_name] == tagging)
+            relations.append(cnlp_output_modes[task_name] == relex)
 
         # num_labels = [len(cnlp_processors[task_name]().get_labels() for task_name in data_args.task_name)
         # output_mode = [cnlp_output_modes[data_args.task_name]for task_name in data_args.task_name)
@@ -181,7 +186,9 @@ def main():
                 layer=model_args.layer,
                 tokens=model_args.token,
                 freeze=model_args.freeze,
-                tagger=tagger)
+                tagger=tagger,
+                relations=relations,
+                num_attention_heads=model_args.num_rel_feats)
         delattr(model, 'classifier')
         tempmodel = tempfile.NamedTemporaryFile(dir=model_args.cache_dir)
         torch.save(model.state_dict(), tempmodel)
@@ -213,7 +220,9 @@ def main():
             layer=model_args.layer,
             tokens=model_args.token,
             freeze=model_args.freeze,
-            tagger=tagger)
+            tagger=tagger,
+            relations=relations,
+            num_attention_heads=model_args.num_rel_feats)
         
         model.resize_token_embeddings(len(tokenizer))
     
@@ -244,16 +253,18 @@ def main():
         # steps per epoch factors in gradient accumulation steps (as compared to batches_per_epoch above which doesn't)
         steps_per_epoch = int(total_steps // training_args.num_train_epochs)
         training_args.eval_steps = steps_per_epoch // training_args.evals_per_epoch
-        training_args.evaluation_strategy = EvaluationStrategy.STEPS
+        training_args.evaluation_strategy = IntervalStrategy.STEPS
     elif training_args.do_eval:
         logger.info('Evaluation strategy not specified so evaluating every epoch')
-        training_args.evaluation_strategy = EvaluationStrategy.EPOCH
+        training_args.evaluation_strategy = IntervalStrategy.EPOCH
 
     def build_compute_metrics_fn(task_names: List[str], model) -> Callable[[EvalPrediction], Dict]:
         def compute_metrics_fn(p: EvalPrediction):
 
             metrics = {}
             task_scores = []
+            task_label_ind = 0
+
             # if not p is list:
             #     p = [p]
 
@@ -261,13 +272,19 @@ def main():
                 if tagger[task_ind]:
                     preds = np.argmax(p.predictions[task_ind], axis=2)
                     # labels will be -100 where we don't need to tag
+                elif relations[task_ind]:
+                    preds = np.argmax(p.predictions[task_ind], axis=3)
                 else:
                     preds = np.argmax(p.predictions[task_ind], axis=1)
 
                 if len(task_names) == 1:
-                    labels = p.label_ids
+                    labels = p.label_ids[:,0]
+                elif relations[task_ind]:
+                    labels = p.label_ids[:,0,task_label_ind:task_label_ind+data_args.max_seq_length,:].squeeze()
+                    task_label_ind += data_args.max_seq_length
                 else:
-                    labels = p.label_ids[:,task_ind,:].squeeze()
+                    labels = p.label_ids[:,0,task_label_ind:task_label_ind+1,:].squeeze()
+                    task_label_ind += 1
 
                 metrics[task_name] = cnlp_compute_metrics(task_name, preds, labels)
                 processor = cnlp_processors[task_name]()

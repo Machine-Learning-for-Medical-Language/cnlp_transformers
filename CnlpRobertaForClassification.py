@@ -4,6 +4,7 @@ from torch import nn
 import logging
 from torch.nn import CrossEntropyLoss
 from transformers.modeling_outputs import SequenceClassifierOutput
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +29,10 @@ class TokenClassificationHead(nn.Module):
         pass
 
 class ClassificationHead(nn.Module):
-    def __init__(self, config, num_labels):
+    def __init__(self, config, num_labels, hidden_size=-1):
         super().__init__()
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.out_proj = nn.Linear(config.hidden_size, num_labels)
+        self.out_proj = nn.Linear(config.hidden_size if hidden_size < 0 else hidden_size, num_labels)
 
     def forward(self, features, *kwargs):
         x = self.dropout(features)
@@ -39,16 +40,38 @@ class ClassificationHead(nn.Module):
         return x
 
 class RepresentationProjectionLayer(nn.Module):
-    def __init__(self, config, layer=-1, tokens=False, tagger=False):
+    def __init__(self, config, layer=-1, tokens=False, tagger=False, relations=False, num_attention_heads=-1):
         super().__init__()
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.dense = nn.Linear(config.hidden_size, config.hidden_size)
+        if relations:
+            self.dense = nn.Identity() #nn.Linear(num_attention_heads, num_attention_heads)
+        else:
+            self.dense = nn.Linear(config.hidden_size, config.hidden_size)
+            
         self.layer_to_use = layer
         self.tokens = tokens
         self.tagger = tagger
+        self.relations = relations
         self.hidden_size = config.hidden_size
-        if tokens and tagger:
-            raise Exception('Inconsistent configuration: tokens and tagger cannot both be true')
+        
+        if num_attention_heads <= 0 and relations:
+            raise Exception("Inconsistent configuration: num_attention_heads must be > 0 for relations")
+
+        if relations:
+            self.num_attention_heads = num_attention_heads
+            self.attention_head_size = 64 #int(config.hidden_size / config.num_attention_heads)
+            self.all_head_size = self.num_attention_heads * self.attention_head_size
+
+            self.query = nn.Linear(config.hidden_size, self.all_head_size)
+            self.key = nn.Linear(config.hidden_size, self.all_head_size)
+
+        if tokens and (tagger or relations):
+            raise Exception('Inconsistent configuration: tokens cannot be true in tagger or relation mode')
+
+    def transpose_for_scores(self, x):
+        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
+        x = x.view(*new_x_shape)
+        return x.permute(0, 2, 1, 3)
 
     def forward(self, features, event_tokens, **kwargs):
         seq_length = features[0].shape[1]
@@ -62,9 +85,21 @@ class RepresentationProjectionLayer(nn.Module):
             x = filtered_features.sum(1) / token_lens.unsqueeze(1).expand(features[0].shape[0], self.hidden_size)
         elif self.tagger:
             x = features[self.layer_to_use]
+        elif self.relations:
+            # something like multi-headed attention but without the weighted sum at the end, so i get (num_heads) features for each of N x N grid, which feads into NxN softmax (with the same parameters)
+            hidden_states = features[self.layer_to_use]
+            key_layer = self.transpose_for_scores(self.key(hidden_states))   # Batch X num_heads X seq len X head_size
+            query_layer = self.transpose_for_scores(self.query(hidden_states))
+            attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2)) # Batch X num_heads X seq_len X seq_len
+            # Now we have num_heads features for each N X N relations.
+            x = attention_scores / math.sqrt(self.attention_head_size)
+            # move the 12 dimension to the end for easier classification
+            x = x.permute(0, 2, 3, 1)
+
         else:
             # take <s> token (equiv. to [CLS])
             x = features[self.layer_to_use][:, 0, :]
+
         x = self.dropout(x)
         x = self.dense(x)
         x = torch.tanh(x)
@@ -75,7 +110,7 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
     config_class = RobertaConfig
     base_model_prefix = "roberta"
 
-    def __init__(self, config, num_labels_list, layer=-1, freeze=False, tokens=False, tagger=False):
+    def __init__(self, config, num_labels_list, layer=-1, freeze=False, tokens=False, tagger=False, relations=False, num_attention_heads=12, class_weights=None):
         super().__init__(config)
         self.num_labels = num_labels_list
 
@@ -89,11 +124,20 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
         self.classifiers = nn.ModuleList()
 
         for task_ind,task_num_labels in enumerate(num_labels_list):
-            self.feature_extractors.append(RepresentationProjectionLayer(config, layer=layer, tokens=tokens, tagger=tagger[task_ind]))
-            self.classifiers.append(ClassificationHead(config, task_num_labels))
+            self.feature_extractors.append(RepresentationProjectionLayer(config, layer=layer, tokens=tokens, tagger=tagger[task_ind], relations=relations[task_ind], num_attention_heads=num_attention_heads))
+            if relations[task_ind]:
+                self.classifiers.append(ClassificationHead(config, task_num_labels, hidden_size=num_attention_heads))
+            else:
+                self.classifiers.append(ClassificationHead(config, task_num_labels))
 
         # Are we operating as a sequence classifier (1 label per input sequence) or a tagger (1 label per input token in the sequence)
         self.tagger = tagger
+        self.relations = relations
+
+        if class_weights is None:
+            self.class_weights = [None] * len(self.classifiers)
+        else:
+            self.class_weights = class_weights
 
         self.init_weights()
 
@@ -135,6 +179,8 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
         logits = []
 
         loss = None
+        task_label_ind = 0
+
         for task_ind,task_num_labels in enumerate(self.num_labels):
             features = self.feature_extractors[task_ind](outputs.hidden_states, event_tokens)
             task_logits = self.classifiers[task_ind](features)
@@ -146,13 +192,20 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
                     loss_fct = MSELoss()
                     task_loss = loss_fct(task_logits.view(-1), labels.view(-1))
                 else:
-                    loss_fct = CrossEntropyLoss()
-                    if len(self.num_labels) > 1:
-                        task_labels = labels[:,task_ind,:].squeeze()
+                    if not self.class_weights[task_ind] is None:
+                        class_weights = torch.FloatTensor(self.class_weights[task_ind]).to(self.device)
                     else:
-                        task_labels = labels
+                        class_weights = None
+                    loss_fct = CrossEntropyLoss(weight=class_weights)
                     
-                    task_loss = loss_fct(task_logits.view(-1, task_num_labels), task_labels.reshape([batch_size*seq_len,]).type(torch.LongTensor).to(labels.device))
+                    if self.relations[task_ind]:
+                        task_labels = labels[:,0,task_label_ind:task_label_ind+seq_len, :]
+                        task_label_ind += seq_len
+                        task_loss = loss_fct(task_logits.permute(0, 3, 1, 2), task_labels.type(torch.LongTensor).to(labels.device))
+                    else:
+                        task_labels = labels[:,0, task_label_ind,:]
+                        task_label_ind += 1
+                        task_loss = loss_fct(task_logits.view(-1, task_num_labels), task_labels.reshape([batch_size*seq_len,]).type(torch.LongTensor).to(labels.device))
             
                 if loss is None:
                     loss = task_loss

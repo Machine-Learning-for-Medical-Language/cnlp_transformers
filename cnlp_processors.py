@@ -37,6 +37,22 @@ def tagging_metrics(task_name, preds, labels):
 
     return {'acc': acc, 'token_f1': f1, 'f1': seq_f1([pred_seq], [label_seq]), 'report':'\n'+seq_cls([pred_seq], [label_seq])}
 
+def relation_metrics(task_name, preds, labels):
+
+    processor = cnlp_processors[task_name]()
+    label_set = processor.get_labels()
+
+    relevant_inds = np.where(labels != -100)
+    relevant_labels = labels[relevant_inds]
+    relevant_preds = preds[relevant_inds]
+
+    num_correct = (relevant_labels == relevant_preds).sum()
+    acc = num_correct / len(relevant_preds)
+
+    f1_report = f1_score(relevant_preds, relevant_labels, average=None)
+
+    return {'f1': f1_report, 'acc': acc }
+
 def acc_and_f1(preds, labels):
     acc = simple_accuracy(preds, labels)
     f1 = f1_score(y_true=labels, y_pred=preds, average=None)
@@ -68,6 +84,8 @@ def cnlp_compute_metrics(task_name, preds, labels):
         return acc_and_f1(preds, labels)
     elif task_name == 'timex' or task_name == 'event':
         return tagging_metrics(task_name, preds, labels)
+    elif task_name == 'tlink-sent':
+        return relation_metrics(task_name, preds, labels)
 
 class CnlpProcessor(DataProcessor):
     def __init__(self, downsampling={}):
@@ -95,7 +113,7 @@ class CnlpProcessor(DataProcessor):
         """See base class."""
         return self._create_examples(self._read_tsv(os.path.join(data_dir, "test.tsv")), "test")
 
-    def _create_examples(self, lines, set_type, sequence=False):
+    def _create_examples(self, lines, set_type, sequence=False, relations=False):
         """Creates examples for the training, dev and test sets."""
         test_mode = set_type == "test"
         examples = []
@@ -112,11 +130,16 @@ class CnlpProcessor(DataProcessor):
             else:
                 if sequence:
                     label = line[0].split(' ')
+                elif relations:
+                    if line[0] == 'None':
+                        label = []
+                    else:
+                        label = [x[1:-1].split(',') for x in line[0].split(' , ')]
                 else:
                     label = line[0]
                 text_a = '\t'.join(line[1:])
 
-            if set_type=='train' and not sequence and label in self.downsampling:
+            if set_type=='train' and not sequence and not relations and label in self.downsampling:
                 dart = random.random()
                 # if downsampling is set to 0.1 then sample 10% of those instances.
                 # so if our randomly generated number is bigger than our downsampling rate
@@ -209,6 +232,19 @@ class ContextualModalityProcessor(LabeledSentenceProcessor):
         # actual is the default and it's very common so we use the macro f1 of non-default categories for model selection.
         return np.mean(results['f1'][1:])
 
+class RelationProcessor(CnlpProcessor):
+    def _create_examples(self, lines, set_type):
+        return super()._create_examples(lines, set_type, relations=True)
+
+class TlinkRelationProcessor(RelationProcessor):
+    def get_one_score(self, results):
+        # the 0th category is None
+        return np.mean(results['f1'][1:])
+    
+    def get_labels(self):
+        return ['None', 'CONTAINS']
+        # return ['None', 'CONTAINS', 'OVERLAP', 'BEFORE', 'BEGINS-ON', 'ENDS-ON']
+
 class SequenceProcessor(CnlpProcessor):
     def _create_examples(self, lines, set_type):
         return super()._create_examples(lines, set_type, sequence=True)
@@ -241,6 +277,7 @@ cnlp_processors = {'polarity': NegationProcessor,
                    'conmod': ContextualModalityProcessor,
                    'timex': TimexProcessor,
                    'event': EventProcessor,
+                   'tlink-sent': TlinkRelationProcessor,
                   }
 
 # cnlp_num_labels = { 'polarity': 2,
@@ -257,6 +294,7 @@ cnlp_processors = {'polarity': NegationProcessor,
 
 classification = 'classification'
 tagging = 'tagging'
+relex = 'relations'
 
 cnlp_output_modes = {'polarity': classification,
                 'dtr': classification,
@@ -268,5 +306,6 @@ cnlp_output_modes = {'polarity': classification,
                 'conmod': classification,
                 'timex': tagging,
                 'event': tagging,
+                'tlink-sent': relex
                 }
 
