@@ -66,6 +66,9 @@ class CnlpTrainingArguments(TrainingArguments):
     evals_per_epoch: Optional[int] = field(
         default = -1, metadata={"help": "Number of times to evaluate and possibly save model per training epoch (allows for a lazy kind of early stopping)"}
     )
+    final_task_weight: Optional[float] = field(
+        default=1.0, metadata={"help": "Amount to up/down-weight final task in task list (other tasks weighted 1.0)"}
+    )
 
 @dataclass
 class ModelArguments:
@@ -141,7 +144,7 @@ def main():
     )
     logger.info("Training/evaluation parameters %s" % training_args)
     logger.info("Data parameters %s" % data_args)
-    logger.info("Model paramters %s" % model_args)
+    logger.info("Model parameters %s" % model_args)
     # Set seed
     set_seed(training_args.seed)
 
@@ -188,8 +191,10 @@ def main():
                 freeze=model_args.freeze,
                 tagger=tagger,
                 relations=relations,
-                num_attention_heads=model_args.num_rel_feats)
-        delattr(model, 'classifier')
+                num_attention_heads=model_args.num_rel_feats,
+                final_task_weight=training_args.final_task_weight)
+        delattr(model, 'classifiers')
+        delattr(model, 'feature_extractors')
         tempmodel = tempfile.NamedTemporaryFile(dir=model_args.cache_dir)
         torch.save(model.state_dict(), tempmodel)
         model_name = tempmodel.name
@@ -222,7 +227,8 @@ def main():
             freeze=model_args.freeze,
             tagger=tagger,
             relations=relations,
-            num_attention_heads=model_args.num_rel_feats)
+            num_attention_heads=model_args.num_rel_feats,
+            final_task_weight=training_args.final_task_weight)
         
         model.resize_token_embeddings(len(tokenizer))
     
@@ -325,7 +331,7 @@ def main():
     # Training
     if training_args.do_train:
         trainer.train(
-            resume_from_checkpoint=model_args.model_name_or_path if os.path.isdir(model_args.model_name_or_path) else None
+            # resume_from_checkpoint=model_args.model_name_or_path if os.path.isdir(model_args.model_name_or_path) else None
         )
 
         if not hasattr(model, 'best_score'):

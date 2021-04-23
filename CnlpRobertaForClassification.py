@@ -110,7 +110,7 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
     config_class = RobertaConfig
     base_model_prefix = "roberta"
 
-    def __init__(self, config, num_labels_list, layer=-1, freeze=False, tokens=False, tagger=False, relations=False, num_attention_heads=12, class_weights=None):
+    def __init__(self, config, num_labels_list=[], layer=-1, freeze=False, tokens=False, tagger=False, relations=False, num_attention_heads=12, class_weights=None, final_task_weight=1.0):
         super().__init__(config)
         self.num_labels = num_labels_list
 
@@ -139,6 +139,7 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
         else:
             self.class_weights = class_weights
 
+        self.final_task_weight = final_task_weight
         self.init_weights()
 
     def forward(
@@ -210,7 +211,8 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
                 if loss is None:
                     loss = task_loss
                 else:
-                    loss += task_loss
+                    task_weight = 1.0 if task_ind+1 < len(self.num_labels) else self.final_task_weight
+                    loss += (task_weight * task_loss)
 
 #         if not return_dict:
 #             output = (logits,) + outputs[2:]
