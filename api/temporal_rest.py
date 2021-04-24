@@ -54,6 +54,9 @@ event_label_list = ["B-AFTER","B-BEFORE","B-BEFORE/OVERLAP","B-OVERLAP","I-AFTER
     ,"I-BEFORE/OVERLAP","I-OVERLAP","O"]
 event_label_dict = { val:ind for ind,val in enumerate(event_label_list)}
 
+relation_label_list = ['None', 'CONTAINS']
+relation_label_dict = { val:ind for ind,val in enumerate(relation_label_list)}
+
 max_length = 128
 
 class TokenizedSentenceDocument(BaseModel):
@@ -70,10 +73,16 @@ class Event(BaseModel):
     end: int
     dtr: str
 
+class Relation(BaseModel):
+    arg1: str
+    arg2: str
+    category: str
+
 class TemporalResults(BaseModel):
     ''' statuses: dictionary from entity id to classification decision about negation; true -> negated, false -> not negated'''
     timexes: List[List[Timex]]
     events: List[List[Event]]
+    rels: List[Relation]
 
 class TemporalDocumentDataset(Dataset):
     def __init__(self, features):
@@ -125,7 +134,7 @@ async def initialize():
     config = AutoConfig.from_pretrained(model_name)
     app.tokenizer = AutoTokenizer.from_pretrained(model_name,
                                                   config=config)
-    model = CnlpRobertaForClassification.from_pretrained(model_name, config=config, tagger=[True,True], num_labels_list=[13,9], )
+    model = CnlpRobertaForClassification.from_pretrained(model_name, config=config, tagger=[True,True, False], relations=[False,False,True], num_labels_list=[13, 9, 2], )
     model.to('cuda')
 
     app.trainer = Trainer(
@@ -155,21 +164,38 @@ async def process(doc: TokenizedSentenceDocument):
 
     timex_predictions = np.argmax(output.predictions[0], axis=2)
     event_predictions = np.argmax(output.predictions[1], axis=2)
+    rel_predictions = np.argmax(output.predictions[2], axis=3)
+    rel_inds = np.where(rel_predictions > 0)
+
+    rels_by_sent = {}
+    for rel_num in range(len(rel_inds[0])):
+        sent_ind = rel_inds[0][rel_num]
+        if not sent_ind in rels_by_sent:
+            rels_by_sent[sent_ind] = []
+
+        arg1_ind = rel_inds[1][rel_num]
+        arg2_ind = rel_inds[2][rel_num]
+        rel_cat = rel_predictions[sent_ind,arg1_ind,arg2_ind]
+
+        rels_by_sent[sent_ind].append( (arg1_ind, arg2_ind, rel_cat) )
 
     pred_end = time()
 
 
     timex_results = []
     event_results = []
+    rel_results = []
 
     for sent_ind in range(len(dataset)):
         tokens = app.tokenizer.convert_ids_to_tokens(dataset.features[sent_ind].input_ids)
+        wpind_to_ind = {}
         timex_labels = []
         event_labels = []
         for token_ind in range(1,len(tokens)):
             if dataset[sent_ind].input_ids[token_ind] <= 2:
                 break
             if tokens[token_ind].startswith('Ġ'):
+                wpind_to_ind[token_ind] = len(wpind_to_ind)
                 timex_labels.append(timex_label_list[timex_predictions[sent_ind][token_ind]])
                 event_labels.append(event_label_list[event_predictions[sent_ind][token_ind]])
 
@@ -181,7 +207,25 @@ async def process(doc: TokenizedSentenceDocument):
         logging.info("Extracted %d events from the sentence" % (len(event_entities)))
         event_results.append( [Event(dtr=label[0], begin=label[1], end=label[2]) for label in event_entities] )
 
-    results = TemporalResults(timexes=timex_results, events=event_results)
+        for rel in rels_by_sent.get(sent_ind, []):
+            arg1_ind = wpind_to_ind[rel[0]]
+            arg2_ind = wpind_to_ind[rel[1]]
+
+            for timex_ind,timex in enumerate(timex_results[-1]):
+                if timex.begin == arg1_ind:
+                    arg1 = 'TIMEX-%d' % timex_ind
+                if timex.begin == arg2_ind:
+                    arg2 = 'TIMEX-%d' % timex_ind
+
+            for event_ind,event in enumerate(event_results[-1]):
+                if event.begin == arg1_ind:
+                    arg1 = 'EVENT-%d' % event_ind
+                if event.begin == arg2_ind:
+                    arg2 = 'EVENT-%d' % event_ind
+
+            rel_results.append( Relation(arg1=arg1, arg2=arg2, category=relation_label_list[rel[2]]))
+
+    results = TemporalResults(timexes=timex_results, events=event_results, rels=rel_results)
 
     postproc_end = time()
 
