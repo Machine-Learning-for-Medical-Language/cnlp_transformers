@@ -2,7 +2,7 @@ import os
 import sys
 
 import anafora
-from anafora import AnaforaData, AnaforaEntity
+from anafora import AnaforaData, AnaforaEntity, AnaforaRelation
 import requests
 from api.temporal_rest import TokenizedSentenceDocument
 
@@ -38,7 +38,7 @@ def main(args):
     for sub_dir, text_name, xml_names in anafora.walk(args[0], xml_name_regex):
         print("Processing filename: %s" % (text_name))
         if len(xml_names) > 1:
-            sys.stderr.write('There were multiple valid xml files for file %s' % (text_name))
+            sys.stderr.write('There were multiple valid xml files for file %s\n' % (text_name))
             sys.exit(-1)
         xml_name = xml_names[0]
 
@@ -60,11 +60,16 @@ def main(args):
         json = r.json()
         anafora_data = AnaforaData()
         cur_id = 0
+        rel_id = 0
 
         for sent_ind,sentence in enumerate(sentences):
             sent_txt = text[sentence.begin:sentence.end]
             sent_events = json['events'][sent_ind]
             sent_timexes = json['timexes'][sent_ind]
+            sent_rels = json['relations'][sent_ind]
+            event_ids = []
+            timex_ids = []
+
             try:
                 token_spans = align_tokens(sent_tokens[sent_ind], sent_txt)
             except Exception as e:
@@ -80,6 +85,7 @@ def main(args):
                 event_text = text[event_start_offset:event_end_offset]
                 annot = AnaforaEntity()
                 annot.id = str(cur_id)+"@e@" + text_name
+                event_ids.append(annot.id)
                 cur_id += 1
                 annot.spans = ( (event_start_offset, event_end_offset), )
                 annot.type = "EVENT"
@@ -99,6 +105,7 @@ def main(args):
                 # create anafora entry
                 annot = AnaforaEntity()
                 annot.id = str(cur_id)+"@e@" + text_name
+                timex_ids.append(annot.id)
                 cur_id += 1
                 annot.spans = ( (timex_start_offset, timex_end_offset), )
                 annot.type = "TIMEX3"
@@ -106,6 +113,30 @@ def main(args):
                 anafora_data.annotations.append(annot)
 
                 #print("Found timex %s" % (timex_text))
+
+            for rel in sent_rels:
+                arg1_type, arg1_ind = rel['arg1'].split('-')
+                arg2_type, arg2_ind = rel['arg2'].split('-')
+                if arg1_type == 'EVENT':
+                    arg1 = event_ids[int(arg1_ind)]
+                elif arg1_type == 'TIMEX':
+                    arg1 = timex_ids[int(arg1_ind)]
+
+                if arg2_type == 'EVENT':
+                    arg2 = event_ids[int(arg2_ind)]
+                elif arg2_type == 'TIMEX':
+                    arg2 = timex_ids[int(arg2_ind)]
+
+                reln = AnaforaRelation()
+                reln.id = str(rel_id)+'@r@'+text_name
+                rel_id += 1
+                reln.type = 'TLINK'
+                reln.properties['Type'] = rel['category']
+                reln.properties['Source'] = arg1
+                reln.properties['Target'] = arg2
+
+                anafora_data.annotations.append(reln)
+
 
         #break
         anafora_data.indent()

@@ -82,7 +82,7 @@ class TemporalResults(BaseModel):
     ''' statuses: dictionary from entity id to classification decision about negation; true -> negated, false -> not negated'''
     timexes: List[List[Timex]]
     events: List[List[Event]]
-    rels: List[Relation]
+    relations: List[List[Relation]]
 
 class TemporalDocumentDataset(Dataset):
     def __init__(self, features):
@@ -152,7 +152,6 @@ async def process(doc: TokenizedSentenceDocument):
     start_time = time()
 
     for sent_ind, token_list in enumerate(sents):
-        # logger.debug('Entity ind: %d has offsets (%d, %d)' % (ent_ind, offsets[0], offsets[1]))
         inst_str = create_instance_string(token_list)
         logger.debug('Instance string is %s' % (inst_str))
         instances.append(inst_str)
@@ -166,6 +165,7 @@ async def process(doc: TokenizedSentenceDocument):
     event_predictions = np.argmax(output.predictions[1], axis=2)
     rel_predictions = np.argmax(output.predictions[2], axis=3)
     rel_inds = np.where(rel_predictions > 0)
+    logging.debug('Found relation indices: %s' % (str(rel_inds)))
 
     rels_by_sent = {}
     for rel_num in range(len(rel_inds[0])):
@@ -207,25 +207,42 @@ async def process(doc: TokenizedSentenceDocument):
         logging.info("Extracted %d events from the sentence" % (len(event_entities)))
         event_results.append( [Event(dtr=label[0], begin=label[1], end=label[2]) for label in event_entities] )
 
+        rel_sent_results = []
         for rel in rels_by_sent.get(sent_ind, []):
+            arg1 = None
+            arg2 = None
+            if rel[0] not in wpind_to_ind or rel[1] not in wpind_to_ind:
+                logging.warn('Found a relation to a non-leading wordpiece token... ignoring')
+                continue
+
             arg1_ind = wpind_to_ind[rel[0]]
             arg2_ind = wpind_to_ind[rel[1]]
 
-            for timex_ind,timex in enumerate(timex_results[-1]):
+            sent_timexes = timex_results[-1]
+            for timex_ind,timex in enumerate(sent_timexes):
                 if timex.begin == arg1_ind:
                     arg1 = 'TIMEX-%d' % timex_ind
                 if timex.begin == arg2_ind:
                     arg2 = 'TIMEX-%d' % timex_ind
 
-            for event_ind,event in enumerate(event_results[-1]):
+            sent_events = event_results[-1]
+            for event_ind,event in enumerate(sent_events):
                 if event.begin == arg1_ind:
                     arg1 = 'EVENT-%d' % event_ind
                 if event.begin == arg2_ind:
                     arg2 = 'EVENT-%d' % event_ind
 
-            rel_results.append( Relation(arg1=arg1, arg2=arg2, category=relation_label_list[rel[2]]))
+            if arg1 is None or arg2 is None:
+                logging.warn('Tried to build a relation but couldn\'t align one of the arguments: %s' % (str(rel)))
+                continue
 
-    results = TemporalResults(timexes=timex_results, events=event_results, rels=rel_results)
+            rel = Relation(arg1=arg1, arg2=arg2, category=relation_label_list[rel[2]])
+            rel_sent_results.append( rel )
+
+
+        rel_results.append(rel_sent_results)
+
+    results = TemporalResults(timexes=timex_results, events=event_results, relations=rel_results)
 
     postproc_end = time()
 
