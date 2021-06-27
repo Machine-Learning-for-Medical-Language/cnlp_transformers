@@ -4,6 +4,7 @@ from torch import nn
 import logging
 from torch.nn import CrossEntropyLoss
 from transformers.modeling_outputs import SequenceClassifierOutput
+from torch.nn.functional import softmax, relu
 import math
 
 logger = logging.getLogger(__name__)
@@ -21,13 +22,6 @@ ROBERTA_PRETRAINED_MODEL_ARCHIVE_LIST = [
     # See all RoBERTa models at https://huggingface.co/models?filter=roberta
 ]
 
-class TokenClassificationHead(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-
-    def forward(self, features, **kwargs):
-        pass
-
 class ClassificationHead(nn.Module):
     def __init__(self, config, num_labels, hidden_size=-1):
         super().__init__()
@@ -44,7 +38,7 @@ class RepresentationProjectionLayer(nn.Module):
         super().__init__()
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         if relations:
-            self.dense = nn.Identity() #nn.Linear(num_attention_heads, num_attention_heads)
+            self.dense = nn.Identity()
         else:
             self.dense = nn.Linear(config.hidden_size, config.hidden_size)
             
@@ -59,7 +53,7 @@ class RepresentationProjectionLayer(nn.Module):
 
         if relations:
             self.num_attention_heads = num_attention_heads
-            self.attention_head_size = 64 #int(config.hidden_size / config.num_attention_heads)
+            self.attention_head_size = 64
             self.all_head_size = self.num_attention_heads * self.attention_head_size
 
             self.query = nn.Linear(config.hidden_size, self.all_head_size)
@@ -106,11 +100,12 @@ class RepresentationProjectionLayer(nn.Module):
         return x
 
 
+
 class CnlpRobertaForClassification(RobertaPreTrainedModel):
     config_class = RobertaConfig
     base_model_prefix = "roberta"
 
-    def __init__(self, config, num_labels_list=[], layer=-1, freeze=False, tokens=False, tagger=False, relations=False, num_attention_heads=12, class_weights=None, final_task_weight=1.0):
+    def __init__(self, config, num_labels_list=[], layer=-1, freeze=False, tokens=False, tagger=False, relations=False, num_attention_heads=12, class_weights=None, final_task_weight=1.0, use_prior_tasks=False, argument_regularization=-1):
         super().__init__(config)
         self.num_labels = num_labels_list
 
@@ -121,14 +116,20 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
                 param.requires_grad = False
         
         self.feature_extractors = nn.ModuleList()
+        self.logit_projectors = nn.ModuleList()
         self.classifiers = nn.ModuleList()
-
+        total_prev_task_labels = 0
         for task_ind,task_num_labels in enumerate(num_labels_list):
             self.feature_extractors.append(RepresentationProjectionLayer(config, layer=layer, tokens=tokens, tagger=tagger[task_ind], relations=relations[task_ind], num_attention_heads=num_attention_heads))
             if relations[task_ind]:
-                self.classifiers.append(ClassificationHead(config, task_num_labels, hidden_size=num_attention_heads))
+                hidden_size = num_attention_heads 
+                if use_prior_tasks:
+                    hidden_size += total_prev_task_labels
+
+                self.classifiers.append(ClassificationHead(config, task_num_labels, hidden_size=hidden_size))
             else:
                 self.classifiers.append(ClassificationHead(config, task_num_labels))
+            total_prev_task_labels += task_num_labels
 
         # Are we operating as a sequence classifier (1 label per input sequence) or a tagger (1 label per input token in the sequence)
         self.tagger = tagger
@@ -140,7 +141,32 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
             self.class_weights = class_weights
 
         self.final_task_weight = final_task_weight
+        self.use_prior_tasks = use_prior_tasks
+        self.argument_regularization = argument_regularization
+        self.reg_temperature = 1.0
+
         self.init_weights()
+
+    def predict_relations_with_previous_logits(self, features, logits):
+        seq_len = features.shape[1]
+        for prior_task_logits in logits:
+            if len(features.shape) == 4:
+                # relations - batch x len x len x dim
+                if len(prior_task_logits.shape) == 3:
+                    # prior task is sequence tagging:
+                    # we have batch x len x num_classes.
+                    # we want to concatenate the num_classes to the variables at each element of the sequence,
+                    # but then need to broadcast it down all the rows of the matrix.
+                    aug = prior_task_logits.unsqueeze(2) # add another dimension to repeat along
+                    aug = aug.repeat(1, 1, seq_len, 1) # repeat along the new empty dimension so we have our seq logits repeated seq_len x seq_len
+                    features = torch.cat( (features, aug), 3) # concatenate the  relation matrix with the sequence matrix
+                else:
+                    logging.warn("It is not implemented to add a task of shape %s to a relation matrix" % ( str(prior_task_logits.shape)))
+            elif len(features.shape) == 3:
+                # sequence
+                logging.warn("It is not implemented to add previous task of any type to a sequence task")
+
+        return features
 
     def forward(
         self,
@@ -184,9 +210,13 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
 
         for task_ind,task_num_labels in enumerate(self.num_labels):
             features = self.feature_extractors[task_ind](outputs.hidden_states, event_tokens)
+            if self.use_prior_tasks:
+                # note: this specific way of incorporating previous logits doesn't help in my experiments with thyme/clinical tempeval
+                if self.relations[task_ind]:
+                    features = self.predict_relations_with_previous_logits(features, logits)
             task_logits = self.classifiers[task_ind](features)
             logits.append(task_logits)
-            
+
             if labels is not None:
                 if task_num_labels == 1:
                     #  We are doing regression
@@ -213,6 +243,29 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
                 else:
                     task_weight = 1.0 if task_ind+1 < len(self.num_labels) else self.final_task_weight
                     loss += (task_weight * task_loss)
+
+        if len(self.num_labels) == 3 and self.relations[-1] and self.argument_regularization > 0:
+            # standard e2e relation task -- two entity extractors and relation extractor.
+            prob_no_rel = softmax(logits[2], dim=3)[:,:,:,0]
+            
+            prob_a1_norel = prob_no_rel.prod(dim=1)
+            prob_a2_norel = prob_no_rel.prod(dim=2)
+            prob_some_rel = relu ( 1 - (prob_a1_norel * prob_a2_norel) - 0.5)
+
+            prob_no_e1_type = relu( softmax(logits[0], dim=2)[:,:,0] - 0.5)
+            prob_no_e2_type = relu( softmax(logits[1], dim=2)[:,:,0] - 0.5)
+
+            prob_no_ent = prob_no_e1_type * prob_no_e2_type
+
+            prob_rel_no_ent = prob_some_rel * prob_no_ent * attention_mask
+
+            # for batch_ind in range(batch_size):
+            #     good_rel_tuples = torch.where(prob_no_rel[batch_ind] < 0.5)
+            #     if len(good_rel_tuples[0]) > 0:
+            #         # there is some relation with probability > 0.5
+                    
+            loss += self.argument_regularization * prob_rel_no_ent.sum()
+            
 
 #         if not return_dict:
 #             output = (logits,) + outputs[2:]

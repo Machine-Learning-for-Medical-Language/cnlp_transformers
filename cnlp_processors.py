@@ -254,17 +254,17 @@ class TimexProcessor(SequenceProcessor):
         return results['f1']
 
     def get_labels(self):
-        return ["B-DATE","B-DURATION","B-PREPOSTEXP","B-QUANTIFIER","B-SET","B-TIME",
-                "I-DATE","I-DURATION","I-PREPOSTEXP","I-QUANTIFIER","I-SET","I-TIME",
-                "O"]
+        return ["O", "B-DATE","B-DURATION","B-PREPOSTEXP","B-QUANTIFIER","B-SET","B-TIME",
+                "I-DATE","I-DURATION","I-PREPOSTEXP","I-QUANTIFIER","I-SET","I-TIME"
+                ]
 
 class EventProcessor(SequenceProcessor):
     def get_one_score(self, results):
         return results['f1']
     
     def get_labels(self):
-        return ["B-AFTER","B-BEFORE","B-BEFORE/OVERLAP","B-OVERLAP","I-AFTER","I-BEFORE"
-                ,"I-BEFORE/OVERLAP","I-OVERLAP","O"]
+        return ["O", "B-AFTER","B-BEFORE","B-BEFORE/OVERLAP","B-OVERLAP","I-AFTER","I-BEFORE"
+                ,"I-BEFORE/OVERLAP","I-OVERLAP"]
         # return ['B-EVENT', 'I-EVENT', 'O']
 
 cnlp_processors = {'polarity': NegationProcessor,

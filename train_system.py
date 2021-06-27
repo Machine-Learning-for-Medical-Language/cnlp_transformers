@@ -100,6 +100,12 @@ class ModelArguments:
     num_rel_feats: Optional[int] = field(
         default=12, metadata={"help": "Number of features/attention heads to use in the NxN relation classifier"}
     )
+    use_prior_tasks: bool = field(
+        default=False, metadata={"help": "In the multi-task setting, incorporate the logits from the previous tasks into subsequent representation layers. This will be done in the task order specified in the command line."}
+    )
+    arg_reg: Optional[float] = field(
+        default=-1, metadata={"help": "Weight to use on argument regularization term (penalizes end-to-end system if a discovered relation has low probability of being any entity type). Value < 0 (default) turns off this penalty."}
+    )
 
 def main():
     # See all possible arguments in src/transformers/training_args.py
@@ -192,7 +198,9 @@ def main():
                 tagger=tagger,
                 relations=relations,
                 num_attention_heads=model_args.num_rel_feats,
-                final_task_weight=training_args.final_task_weight)
+                final_task_weight=training_args.final_task_weight,
+                use_prior_tasks=model_args.use_prior_tasks,
+                argument_regularization=model_args.arg_reg)
         delattr(model, 'classifiers')
         delattr(model, 'feature_extractors')
         tempmodel = tempfile.NamedTemporaryFile(dir=model_args.cache_dir)
@@ -228,7 +236,9 @@ def main():
             tagger=tagger,
             relations=relations,
             num_attention_heads=model_args.num_rel_feats,
-            final_task_weight=training_args.final_task_weight)
+            final_task_weight=training_args.final_task_weight,
+            use_prior_tasks=model_args.use_prior_tasks,
+            argument_regularization=model_args.arg_reg)
         
         model.resize_token_embeddings(len(tokenizer))
     
@@ -376,6 +386,10 @@ def main():
                 for index, item in enumerate(predictions):
                     item = test_dataset.get_labels()[item]
                     writer.write("%s\n" % (item))
+
+    #with open(os.path.join(training_args.output_dir, 'model-summary.txt'), 'w') as model_writer:
+    #    model_writer.write(summary(model))
+
     return eval_results
 
 
