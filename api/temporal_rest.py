@@ -62,6 +62,7 @@ max_length = 128
 class TokenizedSentenceDocument(BaseModel):
     '''sent_tokens: a list of sentences, where each sentence is a list of tokens'''
     sent_tokens: List[List[str]]
+    metadata: str
 
 class Timex(BaseModel):
     begin: int
@@ -146,8 +147,9 @@ async def initialize():
 @app.post("/temporal/process")
 async def process(doc: TokenizedSentenceDocument):
     sents = doc.sent_tokens
+    metadata = doc.metadata
 
-    logger.warn('Received document with %d sentences' % (len(sents)))
+    logger.warn('Received document labeled %s with %d sentences' % (metadata, len(sents)))
     instances = []
     start_time = time()
 
@@ -233,7 +235,7 @@ async def process(doc: TokenizedSentenceDocument):
                     arg2 = 'EVENT-%d' % event_ind
 
             if arg1 is None or arg2 is None:
-                logging.warn('Tried to build a relation but couldn\'t align one of the arguments: %s' % (str(rel)))
+                logging.warn('Tried to build a relation but couldn\'t align one of the arguments: %s to words %s [null=%s], %s [null=%s]' % (str(rel), sents[sent_ind][arg1_ind], str(arg1 is None), sents[sent_ind][arg2_ind], str(arg2 is None)))
                 continue
 
             rel = Relation(arg1=arg1, arg2=arg2, category=relation_label_list[rel[2]])

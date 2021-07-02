@@ -39,7 +39,15 @@ def main(args):
         print("Processing filename: %s" % (text_name))
         if len(xml_names) > 1:
             sys.stderr.write('There were multiple valid xml files for file %s\n' % (text_name))
-            sys.exit(-1)
+            filtered_names = []
+            for xml_name in xml_names:
+                if 'Relation' in xml_name:
+                    filtered_names.append(xml_name)
+            if len(filtered_names) == 1:
+                sys.stderr.write('Picking the file with "Relation" in the title: %s\n' % (filtered_names[0]) )
+                xml_names = filtered_names
+            else:
+                sys.exit(-1)
         xml_name = xml_names[0]
 
         with open(os.path.join(args[0], sub_dir, text_name)) as f:
@@ -52,7 +60,7 @@ def main(args):
             sent_txt = text[sentence.begin:sentence.end]
             sent_tokens.append(tokenize(sent_txt))
         
-        r = requests.post(process_url, json={'sent_tokens': sent_tokens})
+        r = requests.post(process_url, json={'sent_tokens': sent_tokens, 'metadata':text_name})
         if r.status_code != 200:
             sys.stderr.write('Error: rest call was not successful\n')
             sys.exit(-1)
