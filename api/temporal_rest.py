@@ -17,9 +17,7 @@
 
 from fastapi import FastAPI
 from pydantic import BaseModel
-
 from typing import List, Tuple, Dict
-
 from transformers import (
     AutoConfig,
     AutoModel,
@@ -32,11 +30,8 @@ from transformers.data.processors.utils import InputFeatures, InputExample
 from torch.utils.data.dataset import Dataset
 from transformers.data.processors.glue import glue_convert_examples_to_features
 import numpy as np
-
 from CnlpRobertaForClassification import CnlpRobertaForClassification
-
 from seqeval.metrics.sequence_labeling import get_entities
-
 import logging
 from time import time
 
@@ -46,12 +41,11 @@ logger = logging.getLogger('Temporal_REST_Processor')
 logger.setLevel(logging.INFO)
 
 labels = ["-1", "1"]
-timex_label_list = ["B-DATE","B-DURATION","B-PREPOSTEXP","B-QUANTIFIER","B-SET","B-TIME",
-                    "I-DATE","I-DURATION","I-PREPOSTEXP","I-QUANTIFIER","I-SET","I-TIME",
-                    "O"]
+timex_label_list = ["O", "B-DATE","B-DURATION","B-PREPOSTEXP","B-QUANTIFIER","B-SET","B-TIME",
+                    "I-DATE","I-DURATION","I-PREPOSTEXP","I-QUANTIFIER","I-SET","I-TIME"]
 timex_label_dict = { val:ind for ind,val in enumerate(timex_label_list)}
-event_label_list = ["B-AFTER","B-BEFORE","B-BEFORE/OVERLAP","B-OVERLAP","I-AFTER","I-BEFORE"
-    ,"I-BEFORE/OVERLAP","I-OVERLAP","O"]
+event_label_list = ["O", "B-AFTER","B-BEFORE","B-BEFORE/OVERLAP","B-OVERLAP","I-AFTER","I-BEFORE"
+    ,"I-BEFORE/OVERLAP","I-OVERLAP"]
 event_label_dict = { val:ind for ind,val in enumerate(event_label_list)}
 
 relation_label_list = ['None', 'CONTAINS']
@@ -88,11 +82,10 @@ class TemporalResults(BaseModel):
 class TemporalDocumentDataset(Dataset):
     def __init__(self, features):
         self.features = features
-        self.timex_label_list = ["B-DATE","B-DURATION","B-PREPOSTEXP","B-QUANTIFIER","B-SET","B-TIME",
-                                 "I-DATE","I-DURATION","I-PREPOSTEXP","I-QUANTIFIER","I-SET","I-TIME",
-                                 "O"]
-        self.event_label_list = ["B-AFTER","B-BEFORE","B-BEFORE/OVERLAP","B-OVERLAP","I-AFTER","I-BEFORE"
-            ,"I-BEFORE/OVERLAP","I-OVERLAP","O"]
+        self.timex_label_list = ["O", "B-DATE","B-DURATION","B-PREPOSTEXP","B-QUANTIFIER","B-SET","B-TIME",
+                                 "I-DATE","I-DURATION","I-PREPOSTEXP","I-QUANTIFIER","I-SET","I-TIME"]
+        self.event_label_list = ["O", "B-AFTER","B-BEFORE","B-BEFORE/OVERLAP","B-OVERLAP","I-AFTER","I-BEFORE"
+            ,"I-BEFORE/OVERLAP","I-OVERLAP"]
     def __len__(self):
         return len(self.features)
     def __getitem__(self, i) -> InputFeatures:
