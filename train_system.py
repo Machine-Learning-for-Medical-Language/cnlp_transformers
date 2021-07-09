@@ -100,6 +100,9 @@ class ModelArguments:
     num_rel_feats: Optional[int] = field(
         default=12, metadata={"help": "Number of features/attention heads to use in the NxN relation classifier"}
     )
+    head_features: Optional[int] = field(
+        default=64, metadata={"help": "Number of parameters in each attention head in the NxN relation classifier"}
+    )
     use_prior_tasks: bool = field(
         default=False, metadata={"help": "In the multi-task setting, incorporate the logits from the previous tasks into subsequent representation layers. This will be done in the task order specified in the command line."}
     )
@@ -198,6 +201,7 @@ def main():
                 tagger=tagger,
                 relations=relations,
                 num_attention_heads=model_args.num_rel_feats,
+                head_size=model_args.head_features,
                 final_task_weight=training_args.final_task_weight,
                 use_prior_tasks=model_args.use_prior_tasks,
                 argument_regularization=model_args.arg_reg)
@@ -236,6 +240,7 @@ def main():
             tagger=tagger,
             relations=relations,
             num_attention_heads=model_args.num_rel_feats,
+            head_size=model_args.head_features,
             final_task_weight=training_args.final_task_weight,
             use_prior_tasks=model_args.use_prior_tasks,
             argument_regularization=model_args.arg_reg)

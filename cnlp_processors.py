@@ -10,7 +10,7 @@ import torch
 from torch.utils.data.dataset import Dataset
 from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.data.metrics import simple_accuracy
-from sklearn.metrics import matthews_corrcoef, f1_score
+from sklearn.metrics import matthews_corrcoef, f1_score, recall_score, precision_score
 import numpy as np
 from seqeval.metrics import f1_score as seq_f1, classification_report as seq_cls
 
@@ -42,6 +42,9 @@ def relation_metrics(task_name, preds, labels):
     processor = cnlp_processors[task_name]()
     label_set = processor.get_labels()
 
+    # If we are using the attention-based relation extractor, many impossible pairs
+    # are set to -100 so pytorch loss functions ignore them. We need to make sure the
+    # scorer also ignores them.
     relevant_inds = np.where(labels != -100)
     relevant_labels = labels[relevant_inds]
     relevant_preds = preds[relevant_inds]
@@ -49,9 +52,11 @@ def relation_metrics(task_name, preds, labels):
     num_correct = (relevant_labels == relevant_preds).sum()
     acc = num_correct / len(relevant_preds)
 
+    recall = recall_score(relevant_preds, relevant_labels)
+    precision = precision_score(relevant_preds, relevant_labels)
     f1_report = f1_score(relevant_preds, relevant_labels, average=None)
 
-    return {'f1': f1_report, 'acc': acc }
+    return {'f1': f1_report, 'acc': acc, 'recall':recall, 'precision':precision }
 
 def acc_and_f1(preds, labels):
     acc = simple_accuracy(preds, labels)

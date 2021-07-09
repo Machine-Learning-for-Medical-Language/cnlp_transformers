@@ -34,7 +34,7 @@ class ClassificationHead(nn.Module):
         return x
 
 class RepresentationProjectionLayer(nn.Module):
-    def __init__(self, config, layer=-1, tokens=False, tagger=False, relations=False, num_attention_heads=-1):
+    def __init__(self, config, layer=-1, tokens=False, tagger=False, relations=False, num_attention_heads=-1, head_size=64):
         super().__init__()
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         if relations:
@@ -53,7 +53,7 @@ class RepresentationProjectionLayer(nn.Module):
 
         if relations:
             self.num_attention_heads = num_attention_heads
-            self.attention_head_size = 64
+            self.attention_head_size = head_size
             self.all_head_size = self.num_attention_heads * self.attention_head_size
 
             self.query = nn.Linear(config.hidden_size, self.all_head_size)
@@ -105,7 +105,7 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
     config_class = RobertaConfig
     base_model_prefix = "roberta"
 
-    def __init__(self, config, num_labels_list=[], layer=-1, freeze=False, tokens=False, tagger=False, relations=False, num_attention_heads=12, class_weights=None, final_task_weight=1.0, use_prior_tasks=False, argument_regularization=-1):
+    def __init__(self, config, num_labels_list=[], layer=-1, freeze=False, tokens=False, tagger=False, relations=False, num_attention_heads=12, class_weights=None, final_task_weight=1.0, use_prior_tasks=False, argument_regularization=-1, head_size=64):
         super().__init__(config)
         self.num_labels = num_labels_list
 
@@ -120,7 +120,7 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
         self.classifiers = nn.ModuleList()
         total_prev_task_labels = 0
         for task_ind,task_num_labels in enumerate(num_labels_list):
-            self.feature_extractors.append(RepresentationProjectionLayer(config, layer=layer, tokens=tokens, tagger=tagger[task_ind], relations=relations[task_ind], num_attention_heads=num_attention_heads))
+            self.feature_extractors.append(RepresentationProjectionLayer(config, layer=layer, tokens=tokens, tagger=tagger[task_ind], relations=relations[task_ind], num_attention_heads=num_attention_heads, head_size=head_size))
             if relations[task_ind]:
                 hidden_size = num_attention_heads 
                 if use_prior_tasks:
@@ -218,6 +218,10 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
             logits.append(task_logits)
 
             if labels is not None:
+                # in cases where we are only given a single task the HF code will have one fewer dimension in the labels, so just add a dummy dimension to make our indexing work:
+                if labels.ndim == 3:
+                    labels = labels.unsqueeze(1)
+
                 if task_num_labels == 1:
                     #  We are doing regression
                     loss_fct = MSELoss()
@@ -258,18 +262,9 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
             prob_no_ent = prob_no_e1_type * prob_no_e2_type
 
             prob_rel_no_ent = prob_some_rel * prob_no_ent * attention_mask
-
-            # for batch_ind in range(batch_size):
-            #     good_rel_tuples = torch.where(prob_no_rel[batch_ind] < 0.5)
-            #     if len(good_rel_tuples[0]) > 0:
-            #         # there is some relation with probability > 0.5
-                    
+                   
             loss += self.argument_regularization * prob_rel_no_ent.sum()
             
-
-#         if not return_dict:
-#             output = (logits,) + outputs[2:]
-#             return ((loss,) + output) if loss is not None else output
 
         if self.training:
             return SequenceClassifierOutput(
