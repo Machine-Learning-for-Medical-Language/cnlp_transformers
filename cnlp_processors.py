@@ -33,7 +33,7 @@ def tagging_metrics(task_name, preds, labels):
     num_correct = (preds==labels).sum()
 
     acc = num_correct / len(preds)
-    f1 = f1_score(preds, labels, average=None)
+    f1 = f1_score(labels, preds, average=None)
 
     return {'acc': acc, 'token_f1': f1, 'f1': seq_f1([pred_seq], [label_seq]), 'report':'\n'+seq_cls([pred_seq], [label_seq])}
 
@@ -54,7 +54,7 @@ def relation_metrics(task_name, preds, labels):
 
     recall = recall_score(relevant_preds, relevant_labels)
     precision = precision_score(relevant_preds, relevant_labels)
-    f1_report = f1_score(relevant_preds, relevant_labels, average=None)
+    f1_report = f1_score(relevant_labels, relevant_preds, average=None)
 
     return {'f1': f1_report, 'acc': acc, 'recall':recall, 'precision':precision }
 
