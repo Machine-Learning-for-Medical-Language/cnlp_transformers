@@ -41,6 +41,8 @@ from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.data.metrics import acc_and_f1
 from transformers.data.processors.utils import DataProcessor, InputExample, InputFeatures
 from transformers import ALL_PRETRAINED_CONFIG_ARCHIVE_MAP
+from transformers.optimization import AdamW, get_scheduler
+from transformers.trainer_pt_utils import get_parameter_names
 
 from cnlp_processors import cnlp_processors, cnlp_output_modes, cnlp_compute_metrics, tagging, relex
 from cnlp_data import ClinicalNlpDataset, DataTrainingArguments
@@ -158,21 +160,43 @@ def main():
     set_seed(training_args.seed)
 
     try:
+        task_names = []
         num_labels = []
         output_mode = []
         tagger = []
         relations = []
         for task_name in data_args.task_name:
+            task_names.append(task_name)
             num_labels.append(len(cnlp_processors[task_name]().get_labels()))
             output_mode.append(cnlp_output_modes[task_name])
             tagger.append(cnlp_output_modes[task_name] == tagging)
             relations.append(cnlp_output_modes[task_name] == relex)
 
-        # num_labels = [len(cnlp_processors[task_name]().get_labels() for task_name in data_args.task_name)
-        # output_mode = [cnlp_output_modes[data_args.task_name]for task_name in data_args.task_name)
-        # tagger = cnlp_output_modes[data_args.task_name] == tagging
     except KeyError:
         raise ValueError("Task not found: %s" % (data_args.task_name))
+
+    # Load tokenizer: Need this first for loading the datasets
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
+        cache_dir=model_args.cache_dir,
+        add_prefix_space=True,
+        additional_special_tokens=['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>', '<neg>']
+    )
+    
+    # Get datasets
+    train_dataset = (
+        ClinicalNlpDataset(data_args, tokenizer=tokenizer, cache_dir=model_args.cache_dir) if training_args.do_train else None
+    )
+    eval_dataset = (
+        ClinicalNlpDataset(data_args, tokenizer=tokenizer, mode="dev", cache_dir=model_args.cache_dir)
+        if training_args.do_eval
+        else None
+    )
+    test_dataset = (
+        ClinicalNlpDataset(data_args, tokenizer=tokenizer, mode="test", cache_dir=model_args.cache_dir)
+        if training_args.do_predict
+        else None
+    )
 
     # Load pretrained model and tokenizer
     #
@@ -202,25 +226,21 @@ def main():
                 relations=relations,
                 num_attention_heads=model_args.num_rel_feats,
                 head_size=model_args.head_features,
+                class_weights=train_dataset.class_weights,
                 final_task_weight=training_args.final_task_weight,
                 use_prior_tasks=model_args.use_prior_tasks,
                 argument_regularization=model_args.arg_reg)
         delattr(model, 'classifiers')
         delattr(model, 'feature_extractors')
-        tempmodel = tempfile.NamedTemporaryFile(dir=model_args.cache_dir)
-        torch.save(model.state_dict(), tempmodel)
-        model_name = tempmodel.name
+        if training_args.do_train:
+            tempmodel = tempfile.NamedTemporaryFile(dir=model_args.cache_dir)
+            torch.save(model.state_dict(), tempmodel)
+            model_name = tempmodel.name
 
     config = AutoConfig.from_pretrained(
         model_args.config_name if model_args.config_name else model_args.model_name_or_path,
 #        num_labels_list=num_labels,
         finetuning_task=data_args.task_name,
-    )
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
-        cache_dir=model_args.cache_dir,
-        add_prefix_space=True,
-        additional_special_tokens=['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>', '<neg>']
     )
 
     if model_name in baselines:
@@ -241,43 +261,34 @@ def main():
             relations=relations,
             num_attention_heads=model_args.num_rel_feats,
             head_size=model_args.head_features,
+            class_weights=train_dataset.class_weights,
             final_task_weight=training_args.final_task_weight,
             use_prior_tasks=model_args.use_prior_tasks,
             argument_regularization=model_args.arg_reg)
         
         model.resize_token_embeddings(len(tokenizer))
-    
-    # Get datasets
-    train_dataset = (
-        ClinicalNlpDataset(data_args, tokenizer=tokenizer, cache_dir=model_args.cache_dir) if training_args.do_train else None
-    )
-    eval_dataset = (
-        ClinicalNlpDataset(data_args, tokenizer=tokenizer, mode="dev", cache_dir=model_args.cache_dir)
-        if training_args.do_eval
-        else None
-    )
-    test_dataset = (
-        ClinicalNlpDataset(data_args, tokenizer=tokenizer, mode="test", cache_dir=model_args.cache_dir)
-        if training_args.do_predict
-        else None
-    )
 
     best_eval_results = None
     output_eval_file = os.path.join(
         training_args.output_dir, f"eval_results.txt"
     )
-    batches_per_epoch = math.ceil(len(train_dataset) / training_args.train_batch_size)
-    total_steps = int(training_args.num_train_epochs * batches_per_epoch // training_args.gradient_accumulation_steps)
+    output_eval_predictions = os.path.join(
+        training_args.output_dir, f'eval_predictions.txt'
+    )
 
-    if training_args.evals_per_epoch > 0:
-        logger.warning('Overwriting the value of logging steps based on provided evals_per_epoch argument')
-        # steps per epoch factors in gradient accumulation steps (as compared to batches_per_epoch above which doesn't)
-        steps_per_epoch = int(total_steps // training_args.num_train_epochs)
-        training_args.eval_steps = steps_per_epoch // training_args.evals_per_epoch
-        training_args.evaluation_strategy = IntervalStrategy.STEPS
-    elif training_args.do_eval:
-        logger.info('Evaluation strategy not specified so evaluating every epoch')
-        training_args.evaluation_strategy = IntervalStrategy.EPOCH
+    if training_args.do_train:
+        batches_per_epoch = math.ceil(len(train_dataset) / training_args.train_batch_size)
+        total_steps = int(training_args.num_train_epochs * batches_per_epoch // training_args.gradient_accumulation_steps)
+
+        if training_args.evals_per_epoch > 0:
+            logger.warning('Overwriting the value of logging steps based on provided evals_per_epoch argument')
+            # steps per epoch factors in gradient accumulation steps (as compared to batches_per_epoch above which doesn't)
+            steps_per_epoch = int(total_steps // training_args.num_train_epochs)
+            training_args.eval_steps = steps_per_epoch // training_args.evals_per_epoch
+            training_args.evaluation_strategy = IntervalStrategy.STEPS
+        elif training_args.do_eval:
+            logger.info('Evaluation strategy not specified so evaluating every epoch')
+            training_args.evaluation_strategy = IntervalStrategy.EPOCH
 
     def build_compute_metrics_fn(task_names: List[str], model) -> Callable[[EvalPrediction], Dict]:
         def compute_metrics_fn(p: EvalPrediction):
@@ -374,23 +385,42 @@ def main():
                     logger.info("  %s = %s", key, value)
                     writer.write("%s = %s\n" % (key, value))
 
+            with open(output_eval_predictions, 'w') as writer:
+                #Chen wrote the below but it doesn't work for all settings
+                predictions = trainer.predict(test_dataset=eval_dataset).predictions
+                for task_ind, task_name in enumerate(task_names):
+                    if output_mode[task_ind] == 'classification':
+                        task_predictions = np.argmax(predictions[task_ind], axis=1)
+                        for index, item in enumerate(task_predictions):
+                            item = eval_dataset.get_labels()[task_ind][item]
+                            writer.write("%s\n" % (item))
+                    else:
+                        raise NotImplementedError('Writing predictions is not implemented for this output_mode!')
+
         eval_results.update(eval_result)
 
     if training_args.do_predict:
         logging.info("*** Test ***")
+        # FIXME: this part hasn't been updated for the MTL setup so it doesn't work anymore since
+        # predictions is generalized to be a list of predictions and the output needs to be different for each kin.
+        # maybe it's ok to only handle classification since it has a very straightforward output format and evaluation,
+        # while for relations we can punt to the user to just write their own eval code.
         predictions = trainer.predict(test_dataset=test_dataset).predictions
-        if output_mode == "classification":
-            predictions = np.argmax(predictions, axis=1)
-
-        output_test_file = os.path.join(
-            training_args.output_dir, f"test_results.txt"
-        )
-        if trainer.is_world_process_zero():
-            with open(output_test_file, "w") as writer:
-                logger.info("***** Test results *****")
-                for index, item in enumerate(predictions):
-                    item = test_dataset.get_labels()[item]
-                    writer.write("%s\n" % (item))
+        for task_ind, task_name in enumerate(task_names):
+            if output_mode[task_ind] == "classification":
+                task_predictions = np.argmax(predictions[task_ind], axis=1)
+            else:
+                raise NotImplementedError('Writing predictions is not implemented for this output_mode!')
+        
+            output_test_file = os.path.join(
+                training_args.output_dir, f"test_results.txt"
+            )
+            if trainer.is_world_process_zero():
+                with open(output_test_file, "w") as writer:
+                    logger.info("***** Test results *****")
+                    for index, item in enumerate(task_predictions):
+                        item = test_dataset.get_labels()[task_ind][item]
+                        writer.write("%s\n" % (item))
 
     #with open(os.path.join(training_args.output_dir, 'model-summary.txt'), 'w') as model_writer:
     #    model_writer.write(summary(model))

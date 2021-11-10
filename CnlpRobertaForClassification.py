@@ -218,9 +218,6 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
             logits.append(task_logits)
 
             if labels is not None:
-                # in cases where we are only given a single task the HF code will have one fewer dimension in the labels, so just add a dummy dimension to make our indexing work:
-                if labels.ndim == 3:
-                    labels = labels.unsqueeze(1)
 
                 if task_num_labels == 1:
                     #  We are doing regression
@@ -237,11 +234,23 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
                         task_labels = labels[:,0,task_label_ind:task_label_ind+seq_len, :]
                         task_label_ind += seq_len
                         task_loss = loss_fct(task_logits.permute(0, 3, 1, 2), task_labels.type(torch.LongTensor).to(labels.device))
-                    else:
+                    elif self.tagger[task_ind]:
+                        # in cases where we are only given a single task the HF code will have one fewer dimension in the labels, so just add a dummy dimension to make our indexing work:
+                        if labels.ndim == 3:
+                            labels = labels.unsqueeze(1)
                         task_labels = labels[:,0, task_label_ind,:]
                         task_label_ind += 1
                         task_loss = loss_fct(task_logits.view(-1, task_num_labels), task_labels.reshape([batch_size*seq_len,]).type(torch.LongTensor).to(labels.device))
-            
+                    else:
+                        if labels.ndim == 2:
+                            task_labels = labels[:,0]
+                        else:
+                            raise NotImplementedError('Have not implemented the case where a classification task is part of an MTL setup with relations and sequence tagging')
+                        
+                        task_label_ind += 1
+                        task_loss = loss_fct(task_logits, task_labels.type(torch.LongTensor).to(labels.device))
+
+
                 if loss is None:
                     loss = task_loss
                 else:
@@ -252,12 +261,37 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
             # standard e2e relation task -- two entity extractors and relation extractor.
             prob_no_rel = softmax(logits[2], dim=3)[:,:,:,0]
             
-            prob_a1_norel = prob_no_rel.prod(dim=1)
-            prob_a2_norel = prob_no_rel.prod(dim=2)
-            prob_some_rel = relu ( 1 - (prob_a1_norel * prob_a2_norel) - 0.5)
+            ## product gets us something like a joint probability over all relation categories.
+            # the downside is, we're penalizing the event "some relation being more likely than none"
+            # in the joint sense, but we never actually use that event anywhere, i.e., if no
+            # relation meets the threshold we will never create a relation. 
+            # so maybe doing something like relu + sum makes more sense.
+            #
+            #prob_a1_norel = prob_no_rel.prod(dim=1)
+            #prob_a2_norel = prob_no_rel.prod(dim=2)
+            #prob_some_rel = relu ( 1 - (prob_a1_norel * prob_a2_norel) - 0.5)
+            # These values will be greater than 0 at position i if there is any relation that
+            # has i as arg1 or i as arg2.
+            prob_a1_rel = relu(0.5 - prob_no_rel).sum(dim=1)
+            prob_a2_rel = relu(0.5 - prob_no_rel).sum(dim=2)
+            prob_some_rel = prob_a1_rel + prob_a2_rel
 
-            prob_no_e1_type = relu( softmax(logits[0], dim=2)[:,:,0] - 0.5)
-            prob_no_e2_type = relu( softmax(logits[1], dim=2)[:,:,0] - 0.5)
+            #prob_no_e1_type = relu( softmax(logits[0], dim=2)[:,:,0] - 0.5)
+            #prob_no_e2_type = relu( softmax(logits[1], dim=2)[:,:,0] - 0.5)
+            probs_e1 = softmax(logits[0], dim=2)
+            probs_e2 = softmax(logits[1], dim=2)
+
+            # threshold: the penalty is possible if more than this number of probabilities are greater than the 
+            # "no entity" threshold. we subtract 2 because we are removing the None category, and C-1 is the default
+            # case where there is no relation, only if more than that is an issue.
+            t1_threshold = self.num_labels[0] - 2
+            t2_threshold = self.num_labels[1] - 2
+
+            # we take p(none) - p(other relations) inside the sign.
+            # then take the sign, if there are any -1s, the sum will be less than tx_threshold and the inner part will be < 0,
+            # and relu will be 0. If there are no -1, the sum will be > tx_threshold and the innter part will be 1, relu also 1.
+            prob_no_e1_type = relu(torch.sign(probs_e1[:,:,0].unsqueeze(2) - probs_e1[:,:,1:]).sum(dim=2) - t1_threshold)
+            prob_no_e2_type = relu(torch.sign(probs_e2[:,:,0].unsqueeze(2) - probs_e2[:,:,1:]).sum(dim=2) - t2_threshold)
 
             prob_no_ent = prob_no_e1_type * prob_no_e2_type
 

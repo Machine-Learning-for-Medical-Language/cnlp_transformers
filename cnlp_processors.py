@@ -52,19 +52,23 @@ def relation_metrics(task_name, preds, labels):
     num_correct = (relevant_labels == relevant_preds).sum()
     acc = num_correct / len(relevant_preds)
 
-    recall = recall_score(relevant_preds, relevant_labels)
-    precision = precision_score(relevant_preds, relevant_labels)
+    recall = recall_score(relevant_preds, relevant_labels, average=None)
+    precision = precision_score(relevant_preds, relevant_labels, average=None)
     f1_report = f1_score(relevant_labels, relevant_preds, average=None)
 
     return {'f1': f1_report, 'acc': acc, 'recall':recall, 'precision':precision }
 
 def acc_and_f1(preds, labels):
     acc = simple_accuracy(preds, labels)
+    recall = recall_score(y_true=labels, y_pred=preds, average=None)
+    precision = precision_score(y_true=labels, y_pred=preds, average=None)
     f1 = f1_score(y_true=labels, y_pred=preds, average=None)
     return {
         "acc": acc,
         "f1": f1,
         "acc_and_f1": (acc + f1) / 2,
+        "recall": recall,
+        "precision": precision
     }
 
 tasks = {'polarity', 'dtr', 'alink', 'alinkx', 'tlink'}
@@ -73,7 +77,7 @@ def cnlp_compute_metrics(task_name, preds, labels):
     assert len(preds) == len(
         labels
     ), f"Predictions and labels have mismatched lengths {len(preds)} and {len(labels)}"
-    if task_name == "polarity":
+    if task_name == "polarity" or task_name == "uncertainty" or task_name == "history" or task_name == "subject":
         return acc_and_f1(preds, labels)
     elif task_name == "dtr":
         return acc_and_f1(preds, labels)
@@ -87,10 +91,12 @@ def cnlp_compute_metrics(task_name, preds, labels):
         return acc_and_f1(preds, labels)
     elif task_name == 'timecat':
         return acc_and_f1(preds, labels)
-    elif task_name == 'timex' or task_name == 'event':
+    elif task_name == 'timex' or task_name == 'event' or task_name == 'dphe':
         return tagging_metrics(task_name, preds, labels)
     elif task_name == 'tlink-sent':
         return relation_metrics(task_name, preds, labels)
+    else:
+        raise Exception('There is no metric defined for this task in function cnlp_compute_metrics()')
 
 class CnlpProcessor(DataProcessor):
     def __init__(self, downsampling={}):
@@ -136,7 +142,7 @@ class CnlpProcessor(DataProcessor):
                 if sequence:
                     label = line[0].split(' ')
                 elif relations:
-                    if line[0] == 'None':
+                    if line[0].lower() == 'none':
                         label = []
                     else:
                         label = [x[1:-1].split(',') for x in line[0].split(' , ')]
@@ -167,6 +173,23 @@ class NegationProcessor(LabeledSentenceProcessor):
     def get_one_score(self, results):
         return results['f1'][1]
 
+class UncertaintyProcessor(LabeledSentenceProcessor):
+    """ Processor for the negation datasets """
+    def get_labels(self):
+        """See base class."""
+        return ["-1", "1"]
+
+    def get_one_score(self, results):
+        return results['f1'][1]
+
+class HistoryProcessor(LabeledSentenceProcessor):
+    """ Processor for the negation datasets """
+    def get_labels(self):
+        """See base class."""
+        return ["-1", "1"]
+
+    def get_one_score(self, results):
+        return results['f1'][1]
 
 class DtrProcessor(LabeledSentenceProcessor):
     """ Processor for DocTimeRel datasets """
@@ -248,6 +271,7 @@ class TlinkRelationProcessor(RelationProcessor):
     
     def get_labels(self):
         return ['None', 'CONTAINS']
+        #return ['None', 'CONTAINS', 'NOTED-ON']
         # return ['None', 'CONTAINS', 'OVERLAP', 'BEFORE', 'BEGINS-ON', 'ENDS-ON']
 
 class SequenceProcessor(CnlpProcessor):
@@ -259,8 +283,8 @@ class TimexProcessor(SequenceProcessor):
         return results['f1']
 
     def get_labels(self):
-        return ["O", "B-DATE","B-DURATION","B-PREPOSTEXP","B-QUANTIFIER","B-SET","B-TIME",
-                "I-DATE","I-DURATION","I-PREPOSTEXP","I-QUANTIFIER","I-SET","I-TIME"
+        return ["O", "B-DATE","B-DURATION","B-PREPOSTEXP","B-QUANTIFIER","B-SET","B-TIME","B-SECTIONTIME","B-DOCTIME",
+                "I-DATE","I-DURATION","I-PREPOSTEXP","I-QUANTIFIER","I-SET","I-TIME","I-SECTIONTIME","I-DOCTIME",
                 ]
 
 class EventProcessor(SequenceProcessor):
@@ -272,7 +296,18 @@ class EventProcessor(SequenceProcessor):
                 ,"I-BEFORE/OVERLAP","I-OVERLAP"]
         # return ['B-EVENT', 'I-EVENT', 'O']
 
+class DpheProcessor(SequenceProcessor):
+    def get_one_score(self, results):
+        return results['f1']
+
+    def get_labels(self):
+        return ["O", "B-drug","B-dosage","B-duration","B-frequency","B-form","B-route","B-strength",
+                "I-drug","I-dosage","I-duration","I-frequency","I-form","I-route","I-strength"
+                ]
+
 cnlp_processors = {'polarity': NegationProcessor,
+                   'uncertainty': UncertaintyProcessor,
+                   'history': HistoryProcessor,
                    'dtr': DtrProcessor,
                    'alink': AlinkProcessor,
                    'alinkx': AlinkxProcessor,
@@ -283,6 +318,7 @@ cnlp_processors = {'polarity': NegationProcessor,
                    'timex': TimexProcessor,
                    'event': EventProcessor,
                    'tlink-sent': TlinkRelationProcessor,
+                   'dphe': DpheProcessor,
                   }
 
 # cnlp_num_labels = { 'polarity': 2,
@@ -302,6 +338,8 @@ tagging = 'tagging'
 relex = 'relations'
 
 cnlp_output_modes = {'polarity': classification,
+                'uncertainty': classification,
+                'history': classification,
                 'dtr': classification,
                 'alink': classification,
                 'alinkx': classification,
@@ -311,6 +349,7 @@ cnlp_output_modes = {'polarity': classification,
                 'conmod': classification,
                 'timex': tagging,
                 'event': tagging,
+                'dphe': tagging,
                 'tlink-sent': relex
                 }
 

@@ -83,7 +83,8 @@ def cnlp_convert_examples_to_features(
 
     def label_from_example(example: InputExample) -> Union[int, float, None]:
         if example.label is None:
-            return None
+            # give it a random label, if we didn't specify a label with the data we won't be comparing it.
+            return list(label_map.values())[0]
         if output_mode == classification:
             try:
                 return label_map[example.label]
@@ -115,6 +116,10 @@ def cnlp_convert_examples_to_features(
         is_split_into_words=True,
     )
 
+    roberta_based = tokenizer.cls_token == '<s>'
+    if not roberta_based:
+        assert tokenizer.cls_token == '[CLS]', 'This tokenizer does not seem to be based on BERT or Roberta -- this will cause errors with the dataset encoding.'
+
     # This code has to solve the problem of properly setting labels for word pieces that do not actually need to be tagged.
     encoded_labels = []
     if output_mode == tagging:
@@ -124,8 +129,9 @@ def cnlp_convert_examples_to_features(
             ## FIXME -- this is stupid and won't work outside the roberta encoding
             label_ind = 0
             for wp_ind,wp in enumerate(batch_encoding[sent_ind].tokens):
-                if wp.startswith('Ġ') or wp in special_tokens:
-                    sent_labels.append(labels[sent_ind].pop(0))
+                if ((roberta_based and (wp.startswith('Ġ') or wp in special_tokens)) or 
+                    (not roberta_based and not wp.startswith('[') and (not wp.startswith('##') or wp in special_tokens))):
+                        sent_labels.append(labels[sent_ind].pop(0))
                 else:
                     sent_labels.append(-100)
                 # if wp_ind in word_inds:
