@@ -44,7 +44,7 @@ from transformers import ALL_PRETRAINED_CONFIG_ARCHIVE_MAP
 from transformers.optimization import AdamW, get_scheduler
 from transformers.trainer_pt_utils import get_parameter_names
 
-from cnlp_processors import cnlp_processors, cnlp_output_modes, cnlp_compute_metrics, tagging, relex
+from cnlp_processors import cnlp_processors, cnlp_output_modes, cnlp_compute_metrics, tagging, relex, classification
 from cnlp_data import ClinicalNlpDataset, DataTrainingArguments
 
 from CnlpRobertaForClassification import CnlpRobertaForClassification
@@ -166,11 +166,21 @@ def main():
         tagger = []
         relations = []
         for task_name in data_args.task_name:
-            task_names.append(task_name)
-            num_labels.append(len(cnlp_processors[task_name]().get_labels()))
-            output_mode.append(cnlp_output_modes[task_name])
-            tagger.append(cnlp_output_modes[task_name] == tagging)
-            relations.append(cnlp_output_modes[task_name] == relex)
+            processor = cnlp_processors[task_name]()
+            if processor.get_num_tasks() > 1:
+                for subtask_num in range(processor.get_num_tasks()):
+                    task_names.append(task_name + "-" + processor.get_classifiers()[subtask_num])
+                    num_labels.append(len(processor.get_labels()))
+                    output_mode.append(classification)
+                    tagger.append(False)
+                    relations.append(False)
+            else:
+                task_names.append(task_name)
+                num_labels.append(len(processor.get_labels()))
+
+                output_mode.append(cnlp_output_modes[task_name])
+                tagger.append(cnlp_output_modes[task_name] == tagging)
+                relations.append(cnlp_output_modes[task_name] == relex)
 
     except KeyError:
         raise ValueError("Task not found: %s" % (data_args.task_name))
@@ -314,13 +324,16 @@ def main():
                 elif relations[task_ind]:
                     labels = p.label_ids[:,0,task_label_ind:task_label_ind+data_args.max_seq_length,:].squeeze()
                     task_label_ind += data_args.max_seq_length
-                else:
+                elif p.label_ids.ndim == 4:
                     labels = p.label_ids[:,0,task_label_ind:task_label_ind+1,:].squeeze()
+                    task_label_ind += 1
+                elif p.label_ids.ndim == 3:
+                    labels = p.label_ids[:,0,task_label_ind:task_label_ind+1].squeeze()
                     task_label_ind += 1
 
                 metrics[task_name] = cnlp_compute_metrics(task_name, preds, labels)
-                processor = cnlp_processors[task_name]()
-                task_scores.append(processor.get_one_score(metrics[task_name]))
+                processor = cnlp_processors.get(task_name, cnlp_processors.get(task_name.split('-')[0], None))()
+                task_scores.append(processor.get_one_score(metrics.get(task_name, metrics.get(task_name.split('-')[0], None))))
 
             one_score = sum(task_scores) / len(task_scores)
 
@@ -351,8 +364,11 @@ def main():
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        compute_metrics=build_compute_metrics_fn(data_args.task_name, model),
+        compute_metrics=build_compute_metrics_fn(task_names, model),
     )
+
+    # from watchpoints import watch
+    # watch(trainer.control.should_save)
 
     # Training
     if training_args.do_train:
@@ -388,12 +404,17 @@ def main():
             with open(output_eval_predictions, 'w') as writer:
                 #Chen wrote the below but it doesn't work for all settings
                 predictions = trainer.predict(test_dataset=eval_dataset).predictions
+                dataset_labels = eval_dataset.get_labels()
                 for task_ind, task_name in enumerate(task_names):
                     if output_mode[task_ind] == 'classification':
                         task_predictions = np.argmax(predictions[task_ind], axis=1)
                         for index, item in enumerate(task_predictions):
-                            item = eval_dataset.get_labels()[task_ind][item]
-                            writer.write("%s\n" % (item))
+                            if len(task_names) > len(dataset_labels):
+                                subtask_ind = 0
+                            else:
+                                subtask_ind = task_ind
+                            item = dataset_labels[subtask_ind][item]
+                            writer.write("Task %d (%s) - Index %d - %s\n" % (task_ind, task_name, index, item))
                     else:
                         raise NotImplementedError('Writing predictions is not implemented for this output_mode!')
 

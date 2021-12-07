@@ -2,6 +2,7 @@ import os
 from os.path import basename, dirname
 import time
 import logging
+import json
 
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Optional, List, Union
@@ -58,17 +59,28 @@ def relation_metrics(task_name, preds, labels):
 
     return {'f1': f1_report, 'acc': acc, 'recall':recall, 'precision':precision }
 
+def fix_np_types(input_variable):
+    ''' in the mtl classification setting, f1 is an array, and when the HF library
+        tries to write out the trainig history to a json file it will throw an error.
+        Here, we just check whether it's an numpy array and if so convert to a list.
+    '''
+    if isinstance(input_variable, np.ndarray):
+        return list(input_variable)
+    
+    return input_variable
+
 def acc_and_f1(preds, labels):
     acc = simple_accuracy(preds, labels)
     recall = recall_score(y_true=labels, y_pred=preds, average=None)
     precision = precision_score(y_true=labels, y_pred=preds, average=None)
     f1 = f1_score(y_true=labels, y_pred=preds, average=None)
+    
     return {
-        "acc": acc,
+        "acc": fix_np_types(acc),
         "f1": f1,
-        "acc_and_f1": (acc + f1) / 2,
-        "recall": recall,
-        "precision": precision
+        "acc_and_f1": fix_np_types((acc + f1) / 2),
+        "recall": fix_np_types(recall),
+        "precision": fix_np_types(precision)
     }
 
 tasks = {'polarity', 'dtr', 'alink', 'alinkx', 'tlink'}
@@ -90,6 +102,8 @@ def cnlp_compute_metrics(task_name, preds, labels):
     elif task_name == 'conmod':
         return acc_and_f1(preds, labels)
     elif task_name == 'timecat':
+        return acc_and_f1(preds, labels)
+    elif task_name.startswith('i2b22008'):
         return acc_and_f1(preds, labels)
     elif task_name == 'timex' or task_name == 'event' or task_name == 'dphe':
         return tagging_metrics(task_name, preds, labels)
@@ -131,7 +145,7 @@ class CnlpProcessor(DataProcessor):
         for (i, line) in enumerate(lines):
             guid = "%s-%s" % (set_type, i)
             if test_mode:
-                # Some test sets have labels and some do not. discard the label if it has it but hvae to check so
+                # Some test sets have labels and some do not. discard the label if it has it but have to check so
                 # we know which part of the line has the data.
                 if line[0] in self.get_labels():
                     text_a = '\t'.join(line[1:])
@@ -159,6 +173,9 @@ class CnlpProcessor(DataProcessor):
                     continue
             examples.append(InputExample(guid=guid, text_a=text_a, text_b=None, label=label))
         return examples
+
+    def get_num_tasks(self):
+        return 1
 
 class LabeledSentenceProcessor(CnlpProcessor):
     def _create_examples(self, lines, set_type):
@@ -305,6 +322,57 @@ class DpheProcessor(SequenceProcessor):
                 "I-drug","I-dosage","I-duration","I-frequency","I-form","I-route","I-strength"
                 ]
 
+class MTLClassifierProcessor(DataProcessor):
+    def __init__(self):
+        pass
+
+    def get_train_examples(self, data_dir):
+        return self.get_json_examples(os.path.join(data_dir, 'training.json'), 'train')
+
+    def get_dev_examples(self, data_dir):
+        return self.get_json_examples(os.path.join(data_dir, 'dev.json'), 'dev')
+
+    def get_test_examples(self, data_dir):
+        return self.get_json_examples(os.path.join(data_dir, 'test.json'), 'test')
+
+    def get_json_examples(self, fn, set_type):
+        test_mode = set_type == "test"
+        examples = []
+
+        with open(fn, 'rt') as f:
+            data = json.load(f)
+        
+        for inst_id, instance in data.items():
+            guid = '%s-%s' % (self.get_classifier_id(), inst_id)
+            text_a = instance['text']
+            label_dict = instance['labels']
+            labels = [label_dict.get(x, self.get_default_label()) for x in self.get_classifiers()]
+            examples.append(InputExample(guid=guid, text_a=text_a, text_b=None, label=labels))
+        
+        return examples
+
+
+class i2b22008Processor(MTLClassifierProcessor):
+    def get_classifiers(self):
+        return ['Asthma', 'CAD', 'CHF', 'Depression', 'Diabetes', 'Gallstones', 'GERD', 'Gout', 'Hypertension',
+                'Hypertriglyceridemia', 'Hypercholesterolemia', 'OA', 'Obesity', 'OSA', 'PVD', 'Venous Insufficiency']
+
+    def get_labels(self):
+        # return [ ["Unlabeled", "Y", "N", "Q", "U"] for x in range(len(self.get_classifiers()))]
+        return ["Unlabeled", "Y", "N", "Q", "U"]
+
+    def get_default_label(self):
+        return 'Unlabeled'
+    
+    def get_classifier_id(self):
+        return 'i2b2-2008'
+
+    def get_num_tasks(self):
+        return len(self.get_classifiers())
+    
+    def get_one_score(self, results):
+        return results['f1'].mean()
+
 cnlp_processors = {'polarity': NegationProcessor,
                    'uncertainty': UncertaintyProcessor,
                    'history': HistoryProcessor,
@@ -319,6 +387,7 @@ cnlp_processors = {'polarity': NegationProcessor,
                    'event': EventProcessor,
                    'tlink-sent': TlinkRelationProcessor,
                    'dphe': DpheProcessor,
+                   'i2b22008': i2b22008Processor
                   }
 
 # cnlp_num_labels = { 'polarity': 2,
@@ -333,6 +402,7 @@ cnlp_processors = {'polarity': NegationProcessor,
 #                     'event': 9,
 #                   }
 
+mtl = 'mtl'
 classification = 'classification'
 tagging = 'tagging'
 relex = 'relations'
@@ -350,6 +420,7 @@ cnlp_output_modes = {'polarity': classification,
                 'timex': tagging,
                 'event': tagging,
                 'dphe': tagging,
-                'tlink-sent': relex
+                'tlink-sent': relex,
+                'i2b22008': mtl,
                 }
 

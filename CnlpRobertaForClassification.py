@@ -34,7 +34,7 @@ class ClassificationHead(nn.Module):
         return x
 
 class RepresentationProjectionLayer(nn.Module):
-    def __init__(self, config, layer=-1, tokens=False, tagger=False, relations=False, num_attention_heads=-1, head_size=64):
+    def __init__(self, config, layer=10, tokens=False, tagger=False, relations=False, num_attention_heads=-1, head_size=64):
         super().__init__()
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         if relations:
@@ -105,7 +105,7 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
     config_class = RobertaConfig
     base_model_prefix = "roberta"
 
-    def __init__(self, config, num_labels_list=[], layer=-1, freeze=False, tokens=False, tagger=False, relations=False, num_attention_heads=12, class_weights=None, final_task_weight=1.0, use_prior_tasks=False, argument_regularization=-1, head_size=64):
+    def __init__(self, config, num_labels_list=[], layer=10, freeze=False, tokens=False, tagger=False, relations=False, num_attention_heads=12, class_weights=None, final_task_weight=1.0, use_prior_tasks=False, argument_regularization=-1, head_size=64):
         super().__init__(config)
         self.num_labels = num_labels_list
 
@@ -244,6 +244,8 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
                     else:
                         if labels.ndim == 2:
                             task_labels = labels[:,0]
+                        elif labels.ndim == 3:
+                            task_labels = labels[:,0,task_ind]
                         else:
                             raise NotImplementedError('Have not implemented the case where a classification task is part of an MTL setup with relations and sequence tagging')
                         

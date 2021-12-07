@@ -21,8 +21,8 @@ def main(args):
     hostname = args[1]
 
     # initialize rest server
-    init_url = 'http://%s:8000/temporal/initialize' % hostname
-    process_url = 'http://%s:8000/temporal/process' % hostname
+    init_url = 'http://%s:8001/temporal/initialize' % hostname
+    process_url = 'http://%s:8001/temporal/process' % hostname
 
     # sentence segmenter
     rush = RuSH('conf/rush_rules.tsv')
@@ -34,6 +34,8 @@ def main(args):
         sys.stderr.write('Error: rest init call was not successful\n')
         sys.exit(-1)
     
+    combine_sentences = True 
+    token_threshold = 150
 
     for sub_dir, text_name, xml_names in anafora.walk(args[0], xml_name_regex):
         print("Processing filename: %s" % (text_name))
@@ -55,10 +57,25 @@ def main(args):
         
         sentences = rush.segToSentenceSpans(text)
         sent_tokens = []
-        
-        for sentence in sentences:
-            sent_txt = text[sentence.begin:sentence.end]
-            sent_tokens.append(tokenize(sent_txt))
+        merged_sentences = []
+
+        if combine_sentences:
+            for sentence_ind,sentence in enumerate(sentences):
+                sent_txt = text[sentence.begin:sentence.end]
+                tokens = tokenize(sent_txt)
+                # print("Sentence number %d has %d tokens" % (sentence_ind, len(tokens)))
+
+                if len(sent_tokens) > 0 and (len(sent_tokens[-1]) + len(tokens)) < token_threshold:
+                    sent_tokens[-1].extend(tokens)
+                    merged_sentences[-1].end = sentence.end
+                else:
+                    sent_tokens.append(tokens)
+                    merged_sentences.append(sentence)
+            sentences = merged_sentences
+        else:
+            for sentence in sentences:
+                sent_txt = text[sentence.begin:sentence.end]
+                sent_tokens.append(tokenize(sent_txt))
         
         r = requests.post(process_url, json={'sent_tokens': sent_tokens, 'metadata':text_name})
         if r.status_code != 200:
@@ -90,15 +107,22 @@ def main(args):
                 dtr = event['dtr']
                 event_start_offset = token_spans[begin_token_ind][0] + sentence.begin
                 event_end_offset = token_spans[end_token_ind][1] + sentence.begin
-                event_text = text[event_start_offset:event_end_offset]
+                event_text = text[event_start_offset:event_end_offset]                    
+
                 annot = AnaforaEntity()
                 annot.id = str(cur_id)+"@e@" + text_name
-                event_ids.append(annot.id)
+
+                if event_text.endswith('_date'):
+                    annot.properties['datesectiontime'] = 'True'
+                    event_ids.append(-1)
+                else:                    
+                    event_ids.append(annot.id)
+                    annot.spans = ( (event_start_offset, event_end_offset), )
+                    annot.type = "EVENT"
+                    annot.properties['DocTimeRel'] = dtr                    
+                    anafora_data.annotations.append(annot)
+
                 cur_id += 1
-                annot.spans = ( (event_start_offset, event_end_offset), )
-                annot.type = "EVENT"
-                annot.properties['DocTimeRel'] = dtr
-                anafora_data.annotations.append(annot)
 
                 #print("Found event %s" % (event_text))
 
@@ -122,28 +146,36 @@ def main(args):
 
                 #print("Found timex %s" % (timex_text))
 
-            for rel in sent_rels:
-                arg1_type, arg1_ind = rel['arg1'].split('-')
-                arg2_type, arg2_ind = rel['arg2'].split('-')
-                if arg1_type == 'EVENT':
-                    arg1 = event_ids[int(arg1_ind)]
-                elif arg1_type == 'TIMEX':
-                    arg1 = timex_ids[int(arg1_ind)]
+            if not 'path' in text_name.lower():
+                # no relations in pathology notes, so if we find any they are false positives.
+                for rel in sent_rels:
+                    arg1_type, arg1_ind = rel['arg1'].split('-')
+                    arg2_type, arg2_ind = rel['arg2'].split('-')
+                    if arg1_type == 'EVENT':
+                        arg1 = event_ids[int(arg1_ind)]
+                    elif arg1_type == 'TIMEX':
+                        arg1 = timex_ids[int(arg1_ind)]
 
-                if arg2_type == 'EVENT':
-                    arg2 = event_ids[int(arg2_ind)]
-                elif arg2_type == 'TIMEX':
-                    arg2 = timex_ids[int(arg2_ind)]
+                    if arg1 == -1:
+                        continue
 
-                reln = AnaforaRelation()
-                reln.id = str(rel_id)+'@r@'+text_name
-                rel_id += 1
-                reln.type = 'TLINK'
-                reln.properties['Type'] = rel['category']
-                reln.properties['Source'] = arg1
-                reln.properties['Target'] = arg2
+                    if arg2_type == 'EVENT':
+                        arg2 = event_ids[int(arg2_ind)]
+                    elif arg2_type == 'TIMEX':
+                        arg2 = timex_ids[int(arg2_ind)]
 
-                anafora_data.annotations.append(reln)
+                    if arg2 == -1:
+                        continue
+
+                    reln = AnaforaRelation()
+                    reln.id = str(rel_id)+'@r@'+text_name
+                    rel_id += 1
+                    reln.type = 'TLINK'
+                    reln.properties['Type'] = rel['category']
+                    reln.properties['Source'] = arg1
+                    reln.properties['Target'] = arg2
+
+                    anafora_data.annotations.append(reln)
 
 
         #break

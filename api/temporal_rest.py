@@ -41,8 +41,8 @@ logger = logging.getLogger('Temporal_REST_Processor')
 logger.setLevel(logging.INFO)
 
 labels = ["-1", "1"]
-timex_label_list = ["O", "B-DATE","B-DURATION","B-PREPOSTEXP","B-QUANTIFIER","B-SET","B-TIME",
-                    "I-DATE","I-DURATION","I-PREPOSTEXP","I-QUANTIFIER","I-SET","I-TIME"]
+timex_label_list = ["O", "B-DATE","B-DURATION","B-PREPOSTEXP","B-QUANTIFIER","B-SET","B-TIME","B-SECTIONTIME","B-DOCTIME",
+                    "I-DATE","I-DURATION","I-PREPOSTEXP","I-QUANTIFIER","I-SET","I-TIME","I-SECTIONTIME","I-DOCTIME"]
 timex_label_dict = { val:ind for ind,val in enumerate(timex_label_list)}
 event_label_list = ["O", "B-AFTER","B-BEFORE","B-BEFORE/OVERLAP","B-OVERLAP","I-AFTER","I-BEFORE"
     ,"I-BEFORE/OVERLAP","I-OVERLAP"]
@@ -112,7 +112,7 @@ def create_instance_string(tokens: List[str]):
 
 @app.on_event("startup")
 async def startup_event():
-    args = ['--output_dir', 'save_run/', '--per_device_eval_batch_size', '128', '--do_predict']
+    args = ['--output_dir', 'save_run/', '--per_device_eval_batch_size', '8', '--do_predict']
     # training_args = parserTrainingArguments('save_run/')
     parser = HfArgumentParser((TrainingArguments,))
     training_args, = parser.parse_args_into_dataclasses(args=args)
@@ -125,10 +125,12 @@ async def startup_event():
 @app.post("/temporal/initialize")
 async def initialize():
     ''' Load the model from disk and move to the device'''
+    #import pdb; pdb.set_trace()
+
     config = AutoConfig.from_pretrained(model_name)
     app.tokenizer = AutoTokenizer.from_pretrained(model_name,
                                                   config=config)
-    model = CnlpRobertaForClassification.from_pretrained(model_name, config=config, tagger=[True,True, False], relations=[False,False,True], num_labels_list=[13, 9, 2], )
+    model = CnlpRobertaForClassification.from_pretrained(model_name, config=config, tagger=[True,True, False], relations=[False,False,True], num_labels_list=[17, 9, 2], num_attention_heads=256)
     model.to('cuda')
 
     app.trainer = Trainer(
@@ -175,7 +177,6 @@ async def process(doc: TokenizedSentenceDocument):
         rels_by_sent[sent_ind].append( (arg1_ind, arg2_ind, rel_cat) )
 
     pred_end = time()
-
 
     timex_results = []
     event_results = []

@@ -14,7 +14,7 @@ from transformers.tokenization_utils import PreTrainedTokenizer
 from dataclasses import dataclass, field
 from enum import Enum
 
-from cnlp_processors import cnlp_processors, cnlp_output_modes, classification, tagging, relex
+from cnlp_processors import cnlp_processors, cnlp_output_modes, classification, tagging, relex, mtl
 
 special_tokens = ['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>', '<neg>']
 
@@ -98,6 +98,8 @@ def cnlp_convert_examples_to_features(
             return [ label_map[label] for label in example.label]
         elif output_mode == relex:
             return [ (int(start_token),int(end_token),label_map.get(category, 0)) for (start_token,end_token,category) in example.label]
+        elif output_mode == mtl:
+            return [ label_map[x] for x in example.label]
 
         raise KeyError(output_mode)
 
@@ -270,10 +272,20 @@ class ClinicalNlpDataset(Dataset):
         cache_dir: Optional[str] = None,
     ):
         self.args = args
-        self.processors = [cnlp_processors[task]() for task in args.task_name]
-        self.output_mode = [cnlp_output_modes[task] for task in args.task_name]
+        self.processors = []
+        self.output_mode = []
+        self.class_weights = []
+
+        for task in args.task_name:
+            self.processors.append(cnlp_processors[task]())
+            self.output_mode.append(cnlp_output_modes[task])
+            if self.output_mode[-1] == mtl:
+                for subtask in range(self.processors[-1].get_num_tasks()):
+                    self.class_weights.append(None)
+            else:
+                self.class_weights.append(None)
+        
         self.features = None
-        self.class_weights = [None] * len(args.task_name)
 
         if isinstance(mode, str):
             try:
