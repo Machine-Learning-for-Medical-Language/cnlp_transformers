@@ -62,19 +62,16 @@ To demo the temporal API:
 >>> import requests
 >>> from pprint import pprint
 >>> init_url = 'http://hostname:8000/temporal/initialize'  ## Replace hostname with your host name
->>> process_url = 'http://hostname:8000/temporal/process'  ## Replace hostname with your host name
+>>> process_url = 'http://hostname:8000/temporal/process_sentence'  ## Replace hostname with your host name
 
 ## Load the model
 >>> r = requests.post(init_url)
 >>> r.status_code
 # should return 200
 
-## Prepare the document
->>> sent = 'The patient was diagnosed with adenocarcinoma March 3 , 2010 and will be returning for chemotherapy next week .'
->>> tokens = sent.split(' ')
->>> sents = [tokens,]
->>> metadata = 'Sample instance'
->>> r = requests.post(process_url, json=doc)
+## Prepare and process the document
+>>> sent = 'The patient was diagnosed with adenocarcinoma March 3, 2010 and will be returning for chemotherapy next week.'
+>>> r = requests.post(process_url, json={'sentence':sent})
 >>> pprint(r.json())
 
 # should return:

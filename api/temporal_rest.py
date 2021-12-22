@@ -34,6 +34,7 @@ from CnlpRobertaForClassification import CnlpRobertaForClassification
 from seqeval.metrics.sequence_labeling import get_entities
 import logging
 from time import time
+from nltk.tokenize import wordpunct_tokenize as tokenize
 
 app = FastAPI()
 model_name = "tmills/clinical_tempeval"
@@ -52,6 +53,9 @@ relation_label_list = ['None', 'CONTAINS']
 relation_label_dict = { val:ind for ind,val in enumerate(relation_label_list)}
 
 max_length = 128
+
+class SentenceDocument(BaseModel):
+    sentence: str
 
 class TokenizedSentenceDocument(BaseModel):
     '''sent_tokens: a list of sentences, where each sentence is a list of tokens'''
@@ -136,6 +140,15 @@ async def initialize():
 
 @app.post("/temporal/process")
 async def process(doc: TokenizedSentenceDocument):
+    return process_tokenized_sentence_document(doc)
+
+@app.post("/temporal/process_sentence")
+async def process_sentence(doc: SentenceDocument):
+    tokenized_sent = tokenize(doc.sentence)
+    doc = TokenizedSentenceDocument(sent_tokens=[tokenized_sent,], metadata='Single sentence')
+    return process_tokenized_sentence_document(doc)
+
+def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     sents = doc.sent_tokens
     metadata = doc.metadata
 
