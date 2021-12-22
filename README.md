@@ -58,7 +58,7 @@ To demo the negation API:
 To demo the temporal API:
 1. Install the `cnlp-transformers` package.
 2. Run `cnlpt_temporal_rest [-p PORT]`
-3. Open a ptyhon console and run the following commands to test:
+3. Open a python console and run the following commands to test:
 ```
 ## Setup variables
 >>> import requests
