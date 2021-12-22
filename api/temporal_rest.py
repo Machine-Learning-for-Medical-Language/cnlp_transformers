@@ -82,16 +82,11 @@ class TemporalResults(BaseModel):
 class TemporalDocumentDataset(Dataset):
     def __init__(self, features):
         self.features = features
-        self.timex_label_list = ["O", "B-DATE","B-DURATION","B-PREPOSTEXP","B-QUANTIFIER","B-SET","B-TIME",
-                                 "I-DATE","I-DURATION","I-PREPOSTEXP","I-QUANTIFIER","I-SET","I-TIME"]
-        self.event_label_list = ["O", "B-AFTER","B-BEFORE","B-BEFORE/OVERLAP","B-OVERLAP","I-AFTER","I-BEFORE"
-            ,"I-BEFORE/OVERLAP","I-OVERLAP"]
     def __len__(self):
         return len(self.features)
     def __getitem__(self, i) -> InputFeatures:
         return self.features[i]
-    def get_labels(self):
-        return [self.timex_label_list, self.event_label_list]
+
     @classmethod
     def from_instance_list(cls, inst_list, tokenizer):
         examples = []

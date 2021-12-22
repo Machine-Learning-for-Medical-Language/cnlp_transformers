@@ -31,6 +31,7 @@ import math
 from enum import Enum
 
 import numpy as np
+from seqeval.metrics.sequence_labeling import get_entities
 
 import torch
 from torch.utils.data.dataset import Dataset
@@ -236,7 +237,7 @@ def main():
                 relations=relations,
                 num_attention_heads=model_args.num_rel_feats,
                 head_size=model_args.head_features,
-                class_weights=train_dataset.class_weights,
+                class_weights=None if train_dataset is None else train_dataset.class_weights,
                 final_task_weight=training_args.final_task_weight,
                 use_prior_tasks=model_args.use_prior_tasks,
                 argument_regularization=model_args.arg_reg)
@@ -271,7 +272,7 @@ def main():
             relations=relations,
             num_attention_heads=model_args.num_rel_feats,
             head_size=model_args.head_features,
-            class_weights=train_dataset.class_weights,
+            class_weights=None if train_dataset is None else train_dataset.class_weights,
             final_task_weight=training_args.final_task_weight,
             use_prior_tasks=model_args.use_prior_tasks,
             argument_regularization=model_args.arg_reg)
@@ -415,6 +416,24 @@ def main():
                                 subtask_ind = task_ind
                             item = dataset_labels[subtask_ind][item]
                             writer.write("Task %d (%s) - Index %d - %s\n" % (task_ind, task_name, index, item))
+                    elif output_mode[task_ind] == 'tagging':
+                        task_predictions = np.argmax(predictions[task_ind], axis=2)
+                        task_labels = dataset_labels[task_ind]
+                        for index, pred_seq in enumerate(task_predictions):
+                            wpind_to_ind = {}
+                            chunk_labels = []
+
+                            tokens = tokenizer.convert_ids_to_tokens(eval_dataset.features[index].input_ids)
+                            for token_ind in range(1,len(tokens)):
+                                if eval_dataset[index].input_ids[token_ind] <= 2:
+                                    break
+                                if tokens[token_ind].startswith('Ġ'):
+                                    wpind_to_ind[token_ind] = len(wpind_to_ind)
+                                    chunk_labels.append(task_labels[task_predictions[index][token_ind]])
+
+                            entities = get_entities(chunk_labels)
+                            writer.write('Task %d (%s) - Index %d: %s\n' % (task_ind, task_name, index, str(entities)))
+
                     else:
                         raise NotImplementedError('Writing predictions is not implemented for this output_mode!')
 
