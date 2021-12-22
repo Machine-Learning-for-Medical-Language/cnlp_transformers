@@ -19,9 +19,9 @@ This will build the package in the `./dist/` directory, creating it if it does n
 
 First, set up your PyPI API key:
 
-0. Log into your PyPI account
-0. Generate an API key for the `cnlp-transformers` project [here](https://pypi.org/manage/account/#api-tokens)
-0. Create a file `~/.pypirc`:
+1. Log into your PyPI account
+1. Generate an API key for the `cnlp-transformers` project [here](https://pypi.org/manage/account/#api-tokens)
+1. Create a file `~/.pypirc`:
 ```cfg
 [pypi]
 username = __token__
