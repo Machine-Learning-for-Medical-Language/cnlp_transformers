@@ -30,7 +30,7 @@ from transformers.data.processors.utils import InputFeatures, InputExample
 from torch.utils.data.dataset import Dataset
 from transformers.data.processors.glue import glue_convert_examples_to_features
 import numpy as np
-from CnlpRobertaForClassification import CnlpRobertaForClassification
+from ..CnlpRobertaForClassification import CnlpRobertaForClassification
 from seqeval.metrics.sequence_labeling import get_entities
 import logging
 from time import time

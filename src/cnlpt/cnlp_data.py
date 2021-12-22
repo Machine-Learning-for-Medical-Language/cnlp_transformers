@@ -14,7 +14,7 @@ from transformers.tokenization_utils import PreTrainedTokenizer
 from dataclasses import dataclass, field
 from enum import Enum
 
-from cnlp_processors import cnlp_processors, cnlp_output_modes, classification, tagging, relex, mtl
+from .cnlp_processors import cnlp_processors, cnlp_output_modes, classification, tagging, relex, mtl
 
 special_tokens = ['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>', '<neg>']
 
