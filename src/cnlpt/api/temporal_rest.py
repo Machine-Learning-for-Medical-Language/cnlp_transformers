@@ -262,3 +262,19 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
 @app.post("/temporal/collection_process_complete")
 async def collection_process_complete():
     app.trainer = None
+
+
+def rest():
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Run the http server for temporal')
+    parser.add_argument('-p', '--port', type=int, help='The port number to run the server on', default=8000)
+
+    args = parser.parse_args()
+
+    import uvicorn
+    uvicorn.run("cnlpt.api.temporal_rest:app", host='0.0.0.0', port=args.port, reload=True)
+
+
+if __name__ == '__main__':
+    rest()
