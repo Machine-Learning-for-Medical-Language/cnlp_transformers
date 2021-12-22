@@ -33,8 +33,8 @@ To demo the negation API:
 ```
 ## Setup variables
 >>> import requests
->>> init_url = 'http://localhost:8000/negation/initialize'
->>> process_url = 'http://nlp-gpu:8000/negation/process'
+>>> init_url = 'http://hostname:8000/negation/initialize'  ## Replace hostname with your host name
+>>> process_url = 'http://hostname:8000/negation/process'  ## Replace hostname with your host name
 
 ## Load the model
 >>> r = requests.post(init_url)
@@ -51,3 +51,47 @@ To demo the negation API:
 >>> r.json()
 # Output: {'statuses': [-1, -1, -1, 1]}
 # The model thinks only one of the entities is negated (anosmia). It missed "nausea" for some reason.
+```
+
+### Temporal API (End-to-end temporal information extraction)
+To demo the temporal API:
+1. Run ```uvicorn api.temporal_rest:app --host 0.0.0.0```
+2. Open a ptyhon console and run the following commands to test:
+```
+## Setup variables
+>>> import requests
+>>> from pprint import pprint
+>>> init_url = 'http://hostname:8000/temporal/initialize'  ## Replace hostname with your host name
+>>> process_url = 'http://hostname:8000/temporal/process'  ## Replace hostname with your host name
+
+## Load the model
+>>> r = requests.post(init_url)
+>>> r.status_code
+# should return 200
+
+## Prepare the document
+>>> sent = 'The patient was diagnosed with adenocarcinoma March 3 , 2010 and will be returning for chemotherapy next week .'
+>>> tokens = sent.split(' ')
+>>> sents = [tokens,]
+>>> metadata = 'Sample instance'
+>>> r = requests.post(process_url, json=doc)
+>>> pprint(r.json())
+
+# should return:
+{'events': [[{'begin': 3, 'dtr': 'BEFORE', 'end': 3},
+             {'begin': 5, 'dtr': 'BEFORE', 'end': 5},
+             {'begin': 13, 'dtr': 'AFTER', 'end': 13},
+             {'begin': 15, 'dtr': 'AFTER', 'end': 15}]],
+ 'relations': [[{'arg1': 'TIMEX-0', 'arg2': 'EVENT-0', 'category': 'CONTAINS'},
+                {'arg1': 'EVENT-2', 'arg2': 'EVENT-3', 'category': 'CONTAINS'},
+                {'arg1': 'TIMEX-1', 'arg2': 'EVENT-2', 'category': 'CONTAINS'},
+                {'arg1': 'TIMEX-1',
+                 'arg2': 'EVENT-3',
+                 'category': 'CONTAINS'}]],
+ 'timexes': [[{'begin': 6, 'end': 9, 'timeClass': 'DATE'},
+              {'begin': 16, 'end': 17, 'timeClass': 'DATE'}]]}
+
+# This output indicates the token spans of events and timexes, and relations between events and timexes, where the suffixes are indices into the respective arrays (e.g., TIMEX-0 in a relation refers to the 0th time expression found, which begins at token 6 and ends at token 9 -- ["March 3, 2010"])
+
+```
+
