@@ -45,7 +45,7 @@ max_length = 128
 
 class EntityDocument(BaseModel):
     ''' doc_text: The raw text of the document
-    offset:  A list of entities, where each is a mapping from some identifier to the character offsets into doc_text for that entity'''
+    offset:  A list of entities, where each is a tuple of character offsets into doc_text for that entity'''
     doc_text: str
     entities: List[List[int]]
 
