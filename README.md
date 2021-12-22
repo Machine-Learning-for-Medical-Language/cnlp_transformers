@@ -89,6 +89,13 @@ To demo the temporal API:
               {'begin': 16, 'end': 17, 'timeClass': 'DATE'}]]}
 
 # This output indicates the token spans of events and timexes, and relations between events and timexes, where the suffixes are indices into the respective arrays (e.g., TIMEX-0 in a relation refers to the 0th time expression found, which begins at token 6 and ends at token 9 -- ["March 3, 2010"])
-
 ```
+
+To run only the time expression or event taggers, change the run command to:
+
+```uvicorn api.timex_rest:app --host 0.0.0.0``` or
+
+```uvicorn api.event_rest:app --host 0.0.0.0```
+
+then run the same init and process commands as above. You will get similar json output, but only one of the dictionary elements (timexes or events) will be populated.
 
