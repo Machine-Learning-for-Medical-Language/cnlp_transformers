@@ -30,13 +30,13 @@ from transformers.data.processors.utils import InputFeatures, InputExample
 from torch.utils.data.dataset import Dataset
 from transformers.data.processors.glue import glue_convert_examples_to_features
 import numpy as np
-from CnlpRobertaForClassification import CnlpRobertaForClassification
+from ..CnlpRobertaForClassification import CnlpRobertaForClassification
 from seqeval.metrics.sequence_labeling import get_entities
 import logging
 from time import time
 from nltk.tokenize import wordpunct_tokenize as tokenize
 
-from api.temporal_rest import event_label_list, event_label_dict, TokenizedSentenceDocument, SentenceDocument, Event, TemporalResults, TemporalDocumentDataset, create_instance_string
+from .temporal_rest import event_label_list, event_label_dict, TokenizedSentenceDocument, SentenceDocument, Event, TemporalResults, TemporalDocumentDataset, create_instance_string
 
 app = FastAPI()
 model_name = "tmills/event-thyme-colon"
