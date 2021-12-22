@@ -45,11 +45,11 @@ from transformers import ALL_PRETRAINED_CONFIG_ARCHIVE_MAP
 from transformers.optimization import AdamW, get_scheduler
 from transformers.trainer_pt_utils import get_parameter_names
 
-from cnlp_processors import cnlp_processors, cnlp_output_modes, cnlp_compute_metrics, tagging, relex, classification
-from cnlp_data import ClinicalNlpDataset, DataTrainingArguments
+from .cnlp_processors import cnlp_processors, cnlp_output_modes, cnlp_compute_metrics, tagging, relex, classification
+from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
 
-from CnlpRobertaForClassification import CnlpRobertaForClassification
-from BaselineModels import CnnSentenceClassifier
+from .CnlpRobertaForClassification import CnlpRobertaForClassification
+from .BaselineModels import CnnSentenceClassifier
 
 from transformers import (
     HfArgumentParser,
