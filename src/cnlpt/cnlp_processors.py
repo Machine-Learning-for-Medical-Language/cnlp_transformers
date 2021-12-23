@@ -77,7 +77,7 @@ def acc_and_f1(preds, labels):
     
     return {
         "acc": fix_np_types(acc),
-        "f1": f1,
+        "f1": fix_np_types(f1),
         "acc_and_f1": fix_np_types((acc + f1) / 2),
         "recall": fix_np_types(recall),
         "precision": fix_np_types(precision)
@@ -109,6 +109,9 @@ def cnlp_compute_metrics(task_name, preds, labels):
         return tagging_metrics(task_name, preds, labels)
     elif task_name == 'tlink-sent':
         return relation_metrics(task_name, preds, labels)
+    elif cnlp_output_modes[task_name] == classification:
+        logger.warn("Choosing accuracy and f1 as default metrics; modify cnlp_compute_metrics() to customize for this task.")
+        return acc_and_f1(preds, labels)
     else:
         raise Exception('There is no metric defined for this task in function cnlp_compute_metrics()')
 
@@ -180,6 +183,9 @@ class CnlpProcessor(DataProcessor):
 class LabeledSentenceProcessor(CnlpProcessor):
     def _create_examples(self, lines, set_type):
         return super()._create_examples(lines, set_type, sequence=False)
+
+    def get_one_score(self, results):
+        return results['f1'].mean()
 
 class NegationProcessor(LabeledSentenceProcessor):
     """ Processor for the negation datasets """
@@ -276,6 +282,13 @@ class ContextualModalityProcessor(LabeledSentenceProcessor):
     def get_one_score(self, results):
         # actual is the default and it's very common so we use the macro f1 of non-default categories for model selection.
         return np.mean(results['f1'][1:])
+
+class UciDrugSentimentProcessor(LabeledSentenceProcessor):
+    def get_labels(self):
+        return ['Low', 'Medium', 'High']
+
+    def get_one_score(self, results):
+        return np.mean(results['f1'])
 
 class RelationProcessor(CnlpProcessor):
     def _create_examples(self, lines, set_type):
@@ -387,7 +400,8 @@ cnlp_processors = {'polarity': NegationProcessor,
                    'event': EventProcessor,
                    'tlink-sent': TlinkRelationProcessor,
                    'dphe': DpheProcessor,
-                   'i2b22008': i2b22008Processor
+                   'i2b22008': i2b22008Processor,
+                   'ucidrug': UciDrugSentimentProcessor,
                   }
 
 # cnlp_num_labels = { 'polarity': 2,
@@ -422,5 +436,6 @@ cnlp_output_modes = {'polarity': classification,
                 'dphe': tagging,
                 'tlink-sent': relex,
                 'i2b22008': mtl,
+                'ucidrug': classification,
                 }
 

@@ -49,7 +49,7 @@ from .cnlp_processors import cnlp_processors, cnlp_output_modes, cnlp_compute_me
 from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
 
 from .CnlpRobertaForClassification import CnlpRobertaForClassification
-from .BaselineModels import CnnSentenceClassifier
+from .BaselineModels import CnnSentenceClassifier, LstmSentenceClassifier
 
 from transformers import (
     HfArgumentParser,
@@ -248,17 +248,19 @@ def main():
             torch.save(model.state_dict(), tempmodel)
             model_name = tempmodel.name
 
-    config = AutoConfig.from_pretrained(
-        model_args.config_name if model_args.config_name else model_args.model_name_or_path,
-#        num_labels_list=num_labels,
-        finetuning_task=data_args.task_name,
-    )
 
     if model_name in baselines:
         if model_name == 'cnn':
-            model = CnnSentenceClassifier(len(tokenizer), num_labels=num_labels)
+            model = CnnSentenceClassifier(len(tokenizer), num_labels_list=num_labels)
+        elif model_name == 'lstm':
+            model = LstmSentenceClassifier(len(tokenizer), num_labels_list=num_labels)
+        
         pretrained = False
     else:
+        config = AutoConfig.from_pretrained(
+            model_args.config_name if model_args.config_name else model_args.model_name_or_path,
+            finetuning_task=data_args.task_name,
+        )
         pretrained = True
         model = CnlpRobertaForClassification.from_pretrained(
             model_name,
