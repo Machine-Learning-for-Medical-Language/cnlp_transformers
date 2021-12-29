@@ -1,0 +1,4 @@
+build
+pip>=21.3
+setuptools>=58.0
+twine
