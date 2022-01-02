@@ -105,13 +105,23 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
     config_class = RobertaConfig
     base_model_prefix = "roberta"
 
-    def __init__(self, config, num_labels_list=[], layer=10, freeze=False, tokens=False, tagger=False, relations=False, num_attention_heads=12, class_weights=None, final_task_weight=1.0, use_prior_tasks=False, argument_regularization=-1, head_size=64):
+    def __init__(self,
+                config,
+                num_labels_list=[],
+                tagger=[False],
+                relations=[False],
+                class_weights=None,
+                final_task_weight=1.0,
+                use_prior_tasks=False,
+                argument_regularization=-1,
+        ):
+
         super().__init__(config)
         self.num_labels = num_labels_list
 
         self.roberta = RobertaModel(config)
         
-        if freeze:
+        if config.freeze:
             for param in self.roberta.parameters():
                 param.requires_grad = False
         
@@ -120,9 +130,9 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
         self.classifiers = nn.ModuleList()
         total_prev_task_labels = 0
         for task_ind,task_num_labels in enumerate(num_labels_list):
-            self.feature_extractors.append(RepresentationProjectionLayer(config, layer=layer, tokens=tokens, tagger=tagger[task_ind], relations=relations[task_ind], num_attention_heads=num_attention_heads, head_size=head_size))
+            self.feature_extractors.append(RepresentationProjectionLayer(config, layer=config.layer, tokens=config.tokens, tagger=tagger[task_ind], relations=relations[task_ind], num_attention_heads=config.num_rel_attention_heads, head_size=config.rel_attention_head_dims))
             if relations[task_ind]:
-                hidden_size = num_attention_heads 
+                hidden_size = config.num_rel_attention_heads
                 if use_prior_tasks:
                     hidden_size += total_prev_task_labels
 

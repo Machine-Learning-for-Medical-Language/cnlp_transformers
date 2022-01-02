@@ -230,13 +230,8 @@ def main():
                 model_args.model_name_or_path,
                 config=config,
                 cache_dir=model_args.cache_dir,
-                layer=model_args.layer,
-                tokens=model_args.token,
-                freeze=model_args.freeze,
                 tagger=tagger,
                 relations=relations,
-                num_attention_heads=model_args.num_rel_feats,
-                head_size=model_args.head_features,
                 class_weights=None if train_dataset is None else train_dataset.class_weights,
                 final_task_weight=training_args.final_task_weight,
                 use_prior_tasks=model_args.use_prior_tasks,
@@ -261,19 +256,25 @@ def main():
             model_args.config_name if model_args.config_name else model_args.model_name_or_path,
             finetuning_task=data_args.task_name,
         )
+
+        if training_args.do_train:
+            # if we're training from a pre-trained model we need to add our arguments to the config.
+            # if we're doing eval/predict these arguments should already be part of the config and 
+            # we don't want to overwrite them.
+            config.layer = model_args.layer
+            config.tokens = model_args.token
+            config.freeze = model_args.freeze
+            config.num_rel_attention_heads = model_args.num_rel_feats
+            config.rel_attention_head_dims = model_args.head_features
+
         pretrained = True
         model = CnlpRobertaForClassification.from_pretrained(
             model_name,
             config=config,
             num_labels_list=num_labels,
             cache_dir=model_args.cache_dir,
-            layer=model_args.layer,
-            tokens=model_args.token,
-            freeze=model_args.freeze,
             tagger=tagger,
             relations=relations,
-            num_attention_heads=model_args.num_rel_feats,
-            head_size=model_args.head_features,
             class_weights=None if train_dataset is None else train_dataset.class_weights,
             final_task_weight=training_args.final_task_weight,
             use_prior_tasks=model_args.use_prior_tasks,

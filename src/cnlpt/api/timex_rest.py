@@ -28,7 +28,6 @@ from transformers import (
 )
 from transformers.data.processors.utils import InputFeatures, InputExample
 from torch.utils.data.dataset import Dataset
-from transformers.data.processors.glue import glue_convert_examples_to_features
 import numpy as np
 from ..CnlpRobertaForClassification import CnlpRobertaForClassification
 from seqeval.metrics.sequence_labeling import get_entities
@@ -103,6 +102,7 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     output = app.trainer.predict(test_dataset=dataset)
 
     timex_predictions = np.argmax(output.predictions[0], axis=2)
+    
     timex_results = []
     event_results = []
     relation_results = []
@@ -143,3 +143,18 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
 @app.post("/temporal/collection_process_complete")
 async def collection_process_complete():
     app.trainer = None
+
+def rest():
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Run the http server for temporal')
+    parser.add_argument('-p', '--port', type=int, help='The port number to run the server on', default=8000)
+
+    args = parser.parse_args()
+
+    import uvicorn
+    uvicorn.run("cnlpt.api.timex_rest:app", host='0.0.0.0', port=args.port, reload=True)
+
+
+if __name__ == '__main__':
+    rest()

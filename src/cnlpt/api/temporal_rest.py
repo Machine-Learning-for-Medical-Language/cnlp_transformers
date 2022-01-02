@@ -28,7 +28,7 @@ from transformers import (
 )
 from transformers.data.processors.utils import InputFeatures, InputExample
 from torch.utils.data.dataset import Dataset
-from transformers.data.processors.glue import glue_convert_examples_to_features
+from ..cnlp_data import cnlp_convert_examples_to_features
 import numpy as np
 from ..CnlpRobertaForClassification import CnlpRobertaForClassification
 from seqeval.metrics.sequence_labeling import get_entities
@@ -78,7 +78,7 @@ class Relation(BaseModel):
     category: str
 
 class TemporalResults(BaseModel):
-    ''' statuses: dictionary from entity id to classification decision about negation; true -> negated, false -> not negated'''
+    ''' lists of timexes, events and relations for list of sentences '''
     timexes: List[List[Timex]]
     events: List[List[Event]]
     relations: List[List[Relation]]
@@ -96,13 +96,14 @@ class TemporalDocumentDataset(Dataset):
         examples = []
         for (ind,inst) in enumerate(inst_list):
             guid = 'instance-%d' % (ind)
-            examples.append(InputExample(guid=guid, text_a=inst, text_b='', label=None))
-        features = glue_convert_examples_to_features(
+            examples.append(InputExample(guid=guid, text_a=inst, text_b=None, label=None))
+        features = cnlp_convert_examples_to_features(
             examples,
             tokenizer,
             max_length=max_length,
             label_list = labels,
-            output_mode='classification'
+            output_mode='classification',
+            inference=True
         )
         return cls(features)
 
