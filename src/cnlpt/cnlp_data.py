@@ -131,6 +131,27 @@ def cnlp_convert_examples_to_features(
             for sent_ind,sent in enumerate(sentences):
                 sent_labels = []
 
+                ## FIXME -- this is Dongfang did for NER task using BERT, also works on roberta
+                # word_ids = batch_encoding.word_ids(batch_index=sent_ind)
+                # previous_word_idx = None
+                # label_ids = []
+                # for word_idx in word_ids:
+                #     # Special tokens have a word id that is None. We set the label to -100 so they are automatically
+                #     # ignored in the loss function.
+                #     if word_idx is None:
+                #         label_ids.append(-100)
+                #     # We set the label for the first token of each word.
+                #     elif word_idx != previous_word_idx:
+                #         label_ids.append(labels[sent_ind][word_idx])
+                #     # For the other tokens in a word, we set the label to either the current label or -100, depending on
+                #     # the label_all_tokens flag.
+                #     else:
+                #         label_ids.append(-100)
+                #     previous_word_idx = word_idx
+
+                # encoded_labels.append(label_ids)
+
+
                 ## FIXME -- this is stupid and won't work outside the roberta encoding
                 label_ind = 0
                 for wp_ind,wp in enumerate(batch_encoding[sent_ind].tokens):

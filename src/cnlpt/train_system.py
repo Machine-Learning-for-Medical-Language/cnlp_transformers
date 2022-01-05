@@ -226,8 +226,8 @@ def main():
             model_args.config_name if model_args.config_name else model_args.model_name_or_path,
             cache_dir=model_args.cache_dir,
         )
-        model = CnlpRobertaForClassification.from_pretrained(
-                model_args.model_name_or_path,
+        model = CnlpRobertaForClassification(
+                model_path = model_name,
                 config=config,
                 cache_dir=model_args.cache_dir,
                 tagger=tagger,
@@ -268,8 +268,8 @@ def main():
             config.rel_attention_head_dims = model_args.head_features
 
         pretrained = True
-        model = CnlpRobertaForClassification.from_pretrained(
-            model_name,
+        model = CnlpRobertaForClassification(
+            model_path=model_name,
             config=config,
             num_labels_list=num_labels,
             cache_dir=model_args.cache_dir,
@@ -280,7 +280,7 @@ def main():
             use_prior_tasks=model_args.use_prior_tasks,
             argument_regularization=model_args.arg_reg)
         
-        model.resize_token_embeddings(len(tokenizer))
+        model.encoder.resize_token_embeddings(len(tokenizer))
 
     best_eval_results = None
     output_eval_file = os.path.join(

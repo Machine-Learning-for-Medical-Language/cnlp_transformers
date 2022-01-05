@@ -1,26 +1,15 @@
-from transformers.models.roberta.modeling_roberta import RobertaForSequenceClassification, RobertaModel, RobertaConfig, RobertaPreTrainedModel
+from transformers.models.auto import  AutoModel
+from transformers.modeling_utils import PreTrainedModel
+
 import torch
 from torch import nn
 import logging
-from torch.nn import CrossEntropyLoss
+from torch.nn import CrossEntropyLoss, MSELoss
 from transformers.modeling_outputs import SequenceClassifierOutput
 from torch.nn.functional import softmax, relu
 import math
 
 logger = logging.getLogger(__name__)
-
-_CONFIG_FOR_DOC = "RobertaConfig"
-_TOKENIZER_FOR_DOC = "RobertaTokenizer"
-
-ROBERTA_PRETRAINED_MODEL_ARCHIVE_LIST = [
-    "roberta-base",
-    "roberta-large",
-    "roberta-large-mnli",
-    "distilroberta-base",
-    "roberta-base-openai-detector",
-    "roberta-large-openai-detector",
-    # See all RoBERTa models at https://huggingface.co/models?filter=roberta
-]
 
 class ClassificationHead(nn.Module):
     def __init__(self, config, num_labels, hidden_size=-1):
@@ -101,11 +90,11 @@ class RepresentationProjectionLayer(nn.Module):
 
 
 
-class CnlpRobertaForClassification(RobertaPreTrainedModel):
-    config_class = RobertaConfig
-    base_model_prefix = "roberta"
+class CnlpRobertaForClassification(PreTrainedModel):
 
     def __init__(self,
+                model_path,
+                cache_dir,
                 config,
                 num_labels_list=[],
                 tagger=[False],
@@ -119,10 +108,11 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
         super().__init__(config)
         self.num_labels = num_labels_list
 
-        self.roberta = RobertaModel(config)
+        model = AutoModel.from_config(config)
+        self.encoder = model.from_pretrained(model_path)
         
         if config.freeze:
-            for param in self.roberta.parameters():
+            for param in self.encoder.parameters():
                 param.requires_grad = False
         
         self.feature_extractors = nn.ModuleList()
@@ -155,7 +145,7 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
         self.argument_regularization = argument_regularization
         self.reg_temperature = 1.0
 
-        self.init_weights()
+        # self.init_weights()
 
     def predict_relations_with_previous_logits(self, features, logits):
         seq_len = features.shape[1]
@@ -199,7 +189,7 @@ class CnlpRobertaForClassification(RobertaPreTrainedModel):
             If :obj:`config.num_labels > 1` a classification loss is computed (Cross-Entropy).
         """
 
-        outputs = self.roberta(
+        outputs = self.encoder(
             input_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
