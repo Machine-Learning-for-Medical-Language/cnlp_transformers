@@ -90,7 +90,7 @@ class RepresentationProjectionLayer(nn.Module):
 
 
 
-class CnlpRobertaForClassification(PreTrainedModel):
+class CnlpModelForClassification(PreTrainedModel):
 
     def __init__(self,
                 model_path,

@@ -44,12 +44,14 @@ from transformers.data.processors.utils import DataProcessor, InputExample, Inpu
 from transformers import ALL_PRETRAINED_CONFIG_ARCHIVE_MAP
 from transformers.optimization import AdamW, get_scheduler
 from transformers.trainer_pt_utils import get_parameter_names
+from transformers.file_utils import hf_bucket_url, CONFIG_NAME
 
 from .cnlp_processors import cnlp_processors, cnlp_output_modes, cnlp_compute_metrics, tagging, relex, classification
 from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
 
-from .CnlpRobertaForClassification import CnlpRobertaForClassification
+from .CnlpModelForClassification import CnlpModelForClassification
 from .BaselineModels import CnnSentenceClassifier, LstmSentenceClassifier
+import requests
 
 from transformers import (
     HfArgumentParser,
@@ -112,6 +114,19 @@ class ModelArguments:
     arg_reg: Optional[float] = field(
         default=-1, metadata={"help": "Weight to use on argument regularization term (penalizes end-to-end system if a discovered relation has low probability of being any entity type). Value < 0 (default) turns off this penalty."}
     )
+
+def is_pretrained_model(model_name):
+    # check if it's a built-in pre-trained config:
+    if model_name in ALL_PRETRAINED_CONFIG_ARCHIVE_MAP:
+        return True
+    
+    # check if it's a model on the huggingface model hub:
+    url = hf_bucket_url(model_name, CONFIG_NAME)
+    r = requests.head(url)
+    if r.status_code == 200:
+        return True
+
+    return False
 
 def main():
     # See all possible arguments in src/transformers/training_args.py
@@ -216,9 +231,10 @@ def main():
     # download model & vocab.
 
     model_name = model_args.model_name_or_path
-    if not model_name in ALL_PRETRAINED_CONFIG_ARCHIVE_MAP and not model_name in baselines:
-        # we are loading one of our own trained models, load it as-is initially,
-        # then delete its classifier head, save as temp file, and make that temp file
+    if not is_pretrained_model(model_name) and not model_name in baselines:
+        # we are loading one of our own trained models as a starting point.
+        # we will load it as-is initially, then delete its classifier head, save the encoder
+        # as a temp file, and make that temp file
         # the model file to be loaded down below the normal way. since that temp file
         # doesn't have a stored classifier it will use the randomly-inited classifier head
         # with the size of the supplied config (for the new task)
@@ -226,7 +242,7 @@ def main():
             model_args.config_name if model_args.config_name else model_args.model_name_or_path,
             cache_dir=model_args.cache_dir,
         )
-        model = CnlpRobertaForClassification(
+        model = CnlpModelForClassification(
                 model_path = model_name,
                 config=config,
                 cache_dir=model_args.cache_dir,
@@ -268,7 +284,7 @@ def main():
             config.rel_attention_head_dims = model_args.head_features
 
         pretrained = True
-        model = CnlpRobertaForClassification(
+        model = CnlpModelForClassification(
             model_path=model_name,
             config=config,
             num_labels_list=num_labels,

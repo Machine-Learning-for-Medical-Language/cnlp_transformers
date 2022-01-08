@@ -131,42 +131,25 @@ def cnlp_convert_examples_to_features(
             for sent_ind,sent in enumerate(sentences):
                 sent_labels = []
 
-                ## FIXME -- this is Dongfang did for NER task using BERT, also works on roberta
-                # word_ids = batch_encoding.word_ids(batch_index=sent_ind)
-                # previous_word_idx = None
-                # label_ids = []
-                # for word_idx in word_ids:
-                #     # Special tokens have a word id that is None. We set the label to -100 so they are automatically
-                #     # ignored in the loss function.
-                #     if word_idx is None:
-                #         label_ids.append(-100)
-                #     # We set the label for the first token of each word.
-                #     elif word_idx != previous_word_idx:
-                #         label_ids.append(labels[sent_ind][word_idx])
-                #     # For the other tokens in a word, we set the label to either the current label or -100, depending on
-                #     # the label_all_tokens flag.
-                #     else:
-                #         label_ids.append(-100)
-                #     previous_word_idx = word_idx
-
-                # encoded_labels.append(label_ids)
-
-
-                ## FIXME -- this is stupid and won't work outside the roberta encoding
-                label_ind = 0
-                for wp_ind,wp in enumerate(batch_encoding[sent_ind].tokens):
-                    if ((roberta_based and (wp.startswith('Ġ') or wp in special_tokens)) or 
-                        (not roberta_based and not wp.startswith('[') and (not wp.startswith('##') or wp in special_tokens))):
-                            sent_labels.append(labels[sent_ind].pop(0))
+                ## align word-piece tokens to the tokenization we got as input and only assign labels to input tokens
+                word_ids = batch_encoding.word_ids(batch_index=sent_ind)
+                previous_word_idx = None
+                label_ids = []
+                for word_idx in word_ids:
+                    # Special tokens have a word id that is None. We set the label to -100 so they are automatically
+                    # ignored in the loss function.
+                    if word_idx is None:
+                        label_ids.append(-100)
+                    # We set the label for the first token of each word.
+                    elif word_idx != previous_word_idx:
+                        label_ids.append(labels[sent_ind][word_idx])
+                    # For the other tokens in a word, we set the label to either the current label or -100, depending on
+                    # the label_all_tokens flag.
                     else:
-                        sent_labels.append(-100)
-                    # if wp_ind in word_inds:
-                    #     sent_labels.append(labels[sent_ind][label_ind])
-                    #     label_ind += 1
-                    # else:
-                    #     sent_labels.append(-100)
-                
-                encoded_labels.append(np.array(sent_labels))
+                        label_ids.append(-100)
+                    previous_word_idx = word_idx
+
+                encoded_labels.append(np.array(label_ids))
     
             labels = encoded_labels
         elif output_mode == relex:
@@ -175,21 +158,24 @@ def cnlp_convert_examples_to_features(
             out_of_bounds = 0
             num_relations = 0
             for sent_ind, sent in enumerate(sentences):
+                word_ids = batch_encoding.word_ids(batch_index=sent_ind)
                 num_relations += len(labels[sent_ind])
                 wpi_to_tokeni = {}
                 tokeni_to_wpi = {}
                 sent_labels = np.zeros( (max_length, max_length)) - 100
                 wps = batch_encoding[sent_ind].tokens
                 sent_len = len(wps)
-                ## FIXME -- this is stupid and won't work outside the roberta encoding
-                for wp_ind,wp in enumerate(wps):
-                    if wp.startswith('Ġ') or wp in special_tokens:
-                        key = wp_ind
+                
+                ## align word-piece tokens to the tokenization we got as input and only assign labels to input tokens
+                previous_word_idx = None
+                for word_pos_idx, word_idx in enumerate(word_ids):
+                    if word_idx != previous_word_idx or word_idx is None:
+                        key = word_pos_idx
                         val = len(wpi_to_tokeni)
 
                         wpi_to_tokeni[key] = val
                         tokeni_to_wpi[val] = key
-                
+                    previous_word_idx = word_idx
                 # make every label beween pairs a 0 to start:
                 for wpi in wpi_to_tokeni.keys():
                     for wpi2 in wpi_to_tokeni.keys():
