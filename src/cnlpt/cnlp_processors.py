@@ -384,7 +384,7 @@ class i2b22008Processor(MTLClassifierProcessor):
         return len(self.get_classifiers())
     
     def get_one_score(self, results):
-        return results['f1'].mean()
+        return np.mean(results['f1'])
 
 cnlp_processors = {'polarity': NegationProcessor,
                    'uncertainty': UncertaintyProcessor,
