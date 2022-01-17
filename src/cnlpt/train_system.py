@@ -35,7 +35,7 @@ from seqeval.metrics.sequence_labeling import get_entities
 
 import torch
 from torch.utils.data.dataset import Dataset
-from transformers import AutoConfig, AutoModelForSequenceClassification, AutoTokenizer, EvalPrediction
+from transformers import AutoConfig, AutoTokenizer, AutoModel, EvalPrediction
 from transformers.training_args import IntervalStrategy
 from transformers.data.processors.utils import InputFeatures
 from transformers.tokenization_utils import PreTrainedTokenizer
@@ -49,8 +49,10 @@ from transformers.file_utils import hf_bucket_url, CONFIG_NAME
 from .cnlp_processors import cnlp_processors, cnlp_output_modes, cnlp_compute_metrics, tagging, relex, classification
 from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
 
-from .CnlpModelForClassification import CnlpModelForClassification
+from .CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
 from .BaselineModels import CnnSentenceClassifier, LstmSentenceClassifier
+from .HierarchicalTransformer import HierarchicalTransformer, HierarchicalTransformerConfig
+
 import requests
 
 from transformers import (
@@ -60,6 +62,7 @@ from transformers import (
     set_seed,
 )
 
+cnlpt_models = ['cnn', 'lstm', 'hier', 'cnlpt']
 
 logger = logging.getLogger(__name__)
 
@@ -74,14 +77,22 @@ class CnlpTrainingArguments(TrainingArguments):
     final_task_weight: Optional[float] = field(
         default=1.0, metadata={"help": "Amount to up/down-weight final task in task list (other tasks weighted 1.0)"}
     )
+    freeze: bool = field(
+        default=False, metadata={"help": "Freeze the encoder layers and only train the layer between the encoder and classification architecture. Probably works best with --token flag since [CLS] may not be well-trained for anything in particular."}
+    )
+    arg_reg: Optional[float] = field(
+        default=-1, metadata={"help": "Weight to use on argument regularization term (penalizes end-to-end system if a discovered relation has low probability of being any entity type). Value < 0 (default) turns off this penalty."}
+    )
 
 @dataclass
 class ModelArguments:
     """
     Arguments pertaining to which model/config/tokenizer we are going to fine-tune from.
     """
-
-    model_name_or_path: str = field(
+    model: Optional[str] = field( default='cnlpt', 
+        metadata={'help': "Model type", 'choices':cnlpt_models}
+    )
+    encoder_name: Optional[str] = field(default='roberta-base',
         metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
     )
     config_name: Optional[str] = field(
@@ -99,9 +110,6 @@ class ModelArguments:
     token: bool = field(
         default=False, metadata={"help": "Classify over an actual token rather than the [CLS] ('<s>') token -- requires that the tokens to be classified are surrounded by <e>/</e> tokens"}
     )
-    freeze: bool = field(
-        default=False, metadata={"help": "Freeze the encoder layers and only train the layer between the encoder and classification architecture. Probably works best with --token flag since [CLS] may not be well-trained for anything in particular."}
-    )
     num_rel_feats: Optional[int] = field(
         default=12, metadata={"help": "Number of features/attention heads to use in the NxN relation classifier"}
     )
@@ -110,9 +118,6 @@ class ModelArguments:
     )
     use_prior_tasks: bool = field(
         default=False, metadata={"help": "In the multi-task setting, incorporate the logits from the previous tasks into subsequent representation layers. This will be done in the task order specified in the command line."}
-    )
-    arg_reg: Optional[float] = field(
-        default=-1, metadata={"help": "Weight to use on argument regularization term (penalizes end-to-end system if a discovered relation has low probability of being any entity type). Value < 0 (default) turns off this penalty."}
     )
 
 def is_pretrained_model(model_name):
@@ -153,7 +158,6 @@ def main():
 
     assert len(data_args.task_name) == len(data_args.data_dir), 'Number of tasks and data directories should be the same!'
 
-    baselines = ['cnn', 'lstm']
     
     # Setup logging
     logging.basicConfig(
@@ -203,7 +207,7 @@ def main():
 
     # Load tokenizer: Need this first for loading the datasets
     tokenizer = AutoTokenizer.from_pretrained(
-        model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
+        model_args.tokenizer_name if model_args.tokenizer_name else model_args.encoder_name,
         cache_dir=model_args.cache_dir,
         add_prefix_space=True,
         additional_special_tokens=['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>', '<neg>']
@@ -230,73 +234,97 @@ def main():
     # The .from_pretrained methods guarantee that only one local process can concurrently
     # download model & vocab.
 
-    model_name = model_args.model_name_or_path
-    if not is_pretrained_model(model_name) and not model_name in baselines:
-        # we are loading one of our own trained models as a starting point.
-        # we will load it as-is initially, then delete its classifier head, save the encoder
-        # as a temp file, and make that temp file
-        # the model file to be loaded down below the normal way. since that temp file
-        # doesn't have a stored classifier it will use the randomly-inited classifier head
-        # with the size of the supplied config (for the new task)
-        config = AutoConfig.from_pretrained(
-            model_args.config_name if model_args.config_name else model_args.model_name_or_path,
-            cache_dir=model_args.cache_dir,
-        )
-        model = CnlpModelForClassification(
-                model_path = model_name,
-                config=config,
-                cache_dir=model_args.cache_dir,
-                tagger=tagger,
-                relations=relations,
-                class_weights=None if train_dataset is None else train_dataset.class_weights,
-                final_task_weight=training_args.final_task_weight,
-                use_prior_tasks=model_args.use_prior_tasks,
-                argument_regularization=model_args.arg_reg)
-        delattr(model, 'classifiers')
-        delattr(model, 'feature_extractors')
-        if training_args.do_train:
-            tempmodel = tempfile.NamedTemporaryFile(dir=model_args.cache_dir)
-            torch.save(model.state_dict(), tempmodel)
-            model_name = tempmodel.name
+    model_name = model_args.model
+    pretrained = False
 
-
-    if model_name in baselines:
-        if model_name == 'cnn':
-            model = CnnSentenceClassifier(len(tokenizer), num_labels_list=num_labels)
-        elif model_name == 'lstm':
-            model = LstmSentenceClassifier(len(tokenizer), num_labels_list=num_labels)
-        
-        pretrained = False
-    else:
-        config = AutoConfig.from_pretrained(
-            model_args.config_name if model_args.config_name else model_args.model_name_or_path,
+    if model_name == 'cnn':
+        model = CnnSentenceClassifier(len(tokenizer), num_labels_list=num_labels)
+    elif model_name == 'lstm':
+        model = LstmSentenceClassifier(len(tokenizer), num_labels_list=num_labels)
+    elif model_name == 'hier':
+        encoder_config = AutoConfig.from_pretrained(
+            model_args.config_name if model_args.config_name else model_args.encoder_name,
             finetuning_task=data_args.task_name,
         )
+        ## TODO make these cli model params
+        args_tuneable = dict(
+            # transformer head
+            n_layers=2,
+            d_model=768,
+            d_inner=2048,
+            n_head=8,
+            d_k=8,
+            d_v=96,
+        )
 
-        if training_args.do_train:
-            # if we're training from a pre-trained model we need to add our arguments to the config.
-            # if we're doing eval/predict these arguments should already be part of the config and 
-            # we don't want to overwrite them.
-            config.layer = model_args.layer
-            config.tokens = model_args.token
-            config.freeze = model_args.freeze
-            config.num_rel_attention_heads = model_args.num_rel_feats
-            config.rel_attention_head_dims = model_args.head_features
+        transformer_head_config = HierarchicalTransformerConfig(n_layers=args_tuneable['n_layers'],
+                                            d_model=args_tuneable['d_model'],
+                                            n_head=args_tuneable['n_head'],
+                                            d_v=args_tuneable['d_v'],
+                                            d_k=args_tuneable['d_k'],
+                                            d_inner=args_tuneable['d_inner'])
+        model = HierarchicalTransformer(encoder_config, transformer_head_config)
+    else:
+        # by default cnlpt model, but need to check which encoder they want
+        encoder_name = model_args.encoder_name
+        # sometimes we may want to use an encoder that has been had continued pre-training, either on
+        # in-domain MLM or another task we think might be useful. In that case our encoder will just
+        # be a link to a directory. If the encoder-name is not recognized as a pre-trianed model, special
+        # logic for ad hoc encoders follows:
+        if not is_pretrained_model(encoder_name):
+            # we are loading one of our own trained models as a starting point.
+            # we will load it as-is initially, then delete its classifier head, save the encoder
+            # as a temp file, and make that temp file
+            # the model file to be loaded down below the normal way. since that temp file
+            # doesn't have a stored classifier it will use the randomly-inited classifier head
+            # with the size of the supplied config (for the new task)
+            raise NotImplementedError('This functionality has not been restored yet')
+            config = AutoConfig.from_pretrained(
+                model_args.config_name if model_args.config_name else model_args.encoder_name,
+                cache_dir=model_args.cache_dir,
+            )
+            ## FIXME - think this won't load the right weights?
+            model = CnlpModelForClassification(
+                    model_path = model_args.encoder_name,
+                    config=config,
+                    cache_dir=model_args.cache_dir,
+                    tagger=tagger,
+                    relations=relations,
+                    class_weights=None if train_dataset is None else train_dataset.class_weights,
+                    final_task_weight=training_args.final_task_weight,
+                    use_prior_tasks=model_args.use_prior_tasks,
+                    argument_regularization=model_args.arg_reg)
+            delattr(model, 'classifiers')
+            delattr(model, 'feature_extractors')
+            if training_args.do_train:
+                tempmodel = tempfile.NamedTemporaryFile(dir=model_args.cache_dir)
+                torch.save(model.state_dict(), tempmodel)
+                model_name = tempmodel.name
+
+        encoder_name = model_args.config_name if model_args.config_name else model_args.encoder_name
+        config = CnlpConfig(encoder_name,
+                            data_args.task_name,
+                            num_labels,
+                            layer=model_args.layer,
+                            tokens=model_args.token,
+                            num_rel_attention_heads=model_args.num_rel_feats,
+                            rel_attention_head_dims=model_args.head_features,
+                            tagger=tagger,
+                            relations=relations,)
+                            #num_tokens=len(tokenizer))
+        config.vocab_size = len(tokenizer)
 
         pretrained = True
         model = CnlpModelForClassification(
-            model_path=model_name,
             config=config,
-            num_labels_list=num_labels,
-            cache_dir=model_args.cache_dir,
-            tagger=tagger,
-            relations=relations,
             class_weights=None if train_dataset is None else train_dataset.class_weights,
             final_task_weight=training_args.final_task_weight,
-            use_prior_tasks=model_args.use_prior_tasks,
-            argument_regularization=model_args.arg_reg)
+            freeze=training_args.freeze,
+            argument_regularization=training_args.arg_reg)
         
-        model.encoder.resize_token_embeddings(len(tokenizer))
+        ## TODO: Not sure this is the right place for this
+        AutoConfig.register("cnlpt", CnlpConfig)
+        AutoModel.register(CnlpConfig, CnlpModelForClassification)
 
     best_eval_results = None
     output_eval_file = os.path.join(
@@ -386,9 +414,6 @@ def main():
         eval_dataset=eval_dataset,
         compute_metrics=build_compute_metrics_fn(task_names, model),
     )
-
-    # from watchpoints import watch
-    # watch(trainer.control.should_save)
 
     # Training
     if training_args.do_train:
@@ -480,9 +505,6 @@ def main():
                     for index, item in enumerate(task_predictions):
                         item = test_dataset.get_labels()[task_ind][item]
                         writer.write("%s\n" % (item))
-
-    #with open(os.path.join(training_args.output_dir, 'model-summary.txt'), 'w') as model_writer:
-    #    model_writer.write(summary(model))
 
     return eval_results
 

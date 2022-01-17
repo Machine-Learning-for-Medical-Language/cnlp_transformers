@@ -104,7 +104,7 @@ def cnlp_compute_metrics(task_name, preds, labels):
     elif task_name == 'timecat':
         return acc_and_f1(preds, labels)
     elif task_name.startswith('i2b22008'):
-        return acc_and_f1(preds, labels)
+        return { 'f1': fix_np_types(f1_score(y_true=labels, y_pred=preds))} #acc_and_f1(preds, labels)
     elif task_name == 'timex' or task_name == 'event' or task_name == 'dphe':
         return tagging_metrics(task_name, preds, labels)
     elif task_name == 'tlink-sent':

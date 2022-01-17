@@ -1,5 +1,7 @@
-from transformers.models.auto import  AutoModel
+# from transformers.models.auto import  AutoModel, AutoConfig
+from transformers import AutoModel, AutoConfig
 from transformers.modeling_utils import PreTrainedModel
+from transformers.configuration_utils import PretrainedConfig
 
 import torch
 from torch import nn
@@ -88,30 +90,50 @@ class RepresentationProjectionLayer(nn.Module):
         x = torch.tanh(x)
         return x
 
+class CnlpConfig(PretrainedConfig):
+    model_type='cnlpt'
 
+    def __init__(self, encoder_name='roberta-base', finetuning_task=None, num_labels_list=[], layer=-1, tokens=False, num_rel_attention_heads=12, rel_attention_head_dims=64, tagger = [False], relations = [False], use_prior_tasks=False, num_tokens=-1,
+    **kwargs):
+        super().__init__(**kwargs)
+        # self.name_or_path='cnlpt'
+        self.finetuning_task = finetuning_task
+        self.num_labels_list = num_labels_list
+        self.layer = layer
+        self.tokens = tokens
+        self.num_rel_attention_heads = num_rel_attention_heads
+        self.rel_attention_head_dims = rel_attention_head_dims
+        self.tagger = tagger
+        self.relations = relations
+        self.use_prior_tasks = use_prior_tasks
+        self.encoder_name = encoder_name
+        self.encoder_config = AutoConfig.from_pretrained(encoder_name).to_dict()
+        self.hidden_dropout_prob = self.encoder_config['hidden_dropout_prob']
+        self.hidden_size = self.encoder_config['hidden_size']
+        self.num_tokens = num_tokens
 
 class CnlpModelForClassification(PreTrainedModel):
+    base_model_prefix='cnlpt'
+    config_class = CnlpConfig
 
     def __init__(self,
-                model_path,
-                cache_dir,
                 config,
-                num_labels_list=[],
-                tagger=[False],
-                relations=[False],
                 class_weights=None,
                 final_task_weight=1.0,
-                use_prior_tasks=False,
                 argument_regularization=-1,
+                freeze=False,
         ):
 
         super().__init__(config)
-        self.num_labels = num_labels_list
 
-        model = AutoModel.from_config(config)
-        self.encoder = model.from_pretrained(model_path)
+        encoder_config = AutoConfig.from_pretrained(config.encoder_name)
+        encoder_model = AutoModel.from_config(encoder_config)
+        self.encoder = encoder_model.from_pretrained(config.encoder_name)
+        self.encoder.resize_token_embeddings(encoder_config.vocab_size)
+
+        self.num_labels = config.num_labels_list
         
-        if config.freeze:
+        if freeze:
             for param in self.encoder.parameters():
                 param.requires_grad = False
         
@@ -119,11 +141,11 @@ class CnlpModelForClassification(PreTrainedModel):
         self.logit_projectors = nn.ModuleList()
         self.classifiers = nn.ModuleList()
         total_prev_task_labels = 0
-        for task_ind,task_num_labels in enumerate(num_labels_list):
-            self.feature_extractors.append(RepresentationProjectionLayer(config, layer=config.layer, tokens=config.tokens, tagger=tagger[task_ind], relations=relations[task_ind], num_attention_heads=config.num_rel_attention_heads, head_size=config.rel_attention_head_dims))
-            if relations[task_ind]:
+        for task_ind,task_num_labels in enumerate(self.num_labels):
+            self.feature_extractors.append(RepresentationProjectionLayer(config, layer=config.layer, tokens=config.tokens, tagger=config.tagger[task_ind], relations=config.relations[task_ind], num_attention_heads=config.num_rel_attention_heads, head_size=config.rel_attention_head_dims))
+            if config.relations[task_ind]:
                 hidden_size = config.num_rel_attention_heads
-                if use_prior_tasks:
+                if config.use_prior_tasks:
                     hidden_size += total_prev_task_labels
 
                 self.classifiers.append(ClassificationHead(config, task_num_labels, hidden_size=hidden_size))
@@ -132,8 +154,8 @@ class CnlpModelForClassification(PreTrainedModel):
             total_prev_task_labels += task_num_labels
 
         # Are we operating as a sequence classifier (1 label per input sequence) or a tagger (1 label per input token in the sequence)
-        self.tagger = tagger
-        self.relations = relations
+        self.tagger = config.tagger
+        self.relations = config.relations
 
         if class_weights is None:
             self.class_weights = [None] * len(self.classifiers)
@@ -141,7 +163,7 @@ class CnlpModelForClassification(PreTrainedModel):
             self.class_weights = class_weights
 
         self.final_task_weight = final_task_weight
-        self.use_prior_tasks = use_prior_tasks
+        self.use_prior_tasks = config.use_prior_tasks
         self.argument_regularization = argument_regularization
         self.reg_temperature = 1.0
 
