@@ -57,7 +57,7 @@ def relation_metrics(task_name, preds, labels):
     precision = precision_score(relevant_preds, relevant_labels, average=None)
     f1_report = f1_score(relevant_labels, relevant_preds, average=None)
 
-    return {'f1': f1_report, 'acc': acc, 'recall':recall, 'precision':precision }
+    return {'f1': fix_np_types(f1_report), 'acc': acc, 'recall':fix_np_types(recall), 'precision':fix_np_types(precision) }
 
 def fix_np_types(input_variable):
     ''' in the mtl classification setting, f1 is an array, and when the HF library
@@ -104,7 +104,7 @@ def cnlp_compute_metrics(task_name, preds, labels):
     elif task_name == 'timecat':
         return acc_and_f1(preds, labels)
     elif task_name.startswith('i2b22008'):
-        return { 'f1': fix_np_types(f1_score(y_true=labels, y_pred=preds))} #acc_and_f1(preds, labels)
+        return { 'f1': fix_np_types(f1_score(y_true=labels, y_pred=preds, average=None))} #acc_and_f1(preds, labels)
     elif task_name == 'timex' or task_name == 'event' or task_name == 'dphe':
         return tagging_metrics(task_name, preds, labels)
     elif task_name == 'tlink-sent':
