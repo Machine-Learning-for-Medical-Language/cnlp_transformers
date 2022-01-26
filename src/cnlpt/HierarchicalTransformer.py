@@ -11,8 +11,12 @@ from torch import nn
 import torch.nn.functional as F
 import torch
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+from torch.nn import CrossEntropyLoss, MSELoss
+
 from transformers.models.distilbert import DistilBertPreTrainedModel, DistilBertModel
 from transformers.optimization import AdamW, get_linear_schedule_with_warmup
+from transformers.modeling_outputs import SequenceClassifierOutput
+
 from sklearn.metrics import f1_score, roc_auc_score
 # import wandb
 
@@ -183,9 +187,18 @@ class HierarchicalTransformer(DistilBertPreTrainedModel):
         # weights
         self.init_weights()
 
-    def forward(self, token_ids, attention_masks, head_mask=None):
+    def forward(self,
+                token_ids,
+                attention_masks,
+                head_mask=None,
+                labels=None,
+                class_weight=None,
+                ):
         # BERT CLS outputs for each chunk
         logits = []
+
+        # Loss computation for Trainer
+        loss = None
 
         # for each sample in a batch (B, n_chunks, max_len)
         for token_id, attention_mask in zip(token_ids, attention_masks):
@@ -222,6 +235,18 @@ class HierarchicalTransformer(DistilBertPreTrainedModel):
 
             # predict
             logits.append(self.classifier(doc_rep))
+
+        if labels is not None:
+            loss_fct = torch.nn.CrossEntropyLoss(weight=class_weight)
+            breakpoint()
+
+            loss_ = loss_fct(logits, labels)
+
+            if loss is None:
+                loss = task_loss
+            else:
+                task_weight = 1.0 if task_ind + 1 < len(self.num_labels) else self.final_task_weight
+                loss += (task_weight * task_loss)
 
         # Batch outputs. (B, 2)
         logits = torch.stack(logits)  # batch predictions, forward pass
