@@ -267,64 +267,92 @@ def main():
     else:
         # by default cnlpt model, but need to check which encoder they want
         encoder_name = model_args.encoder_name
-        # sometimes we may want to use an encoder that has been had continued pre-training, either on
-        # in-domain MLM or another task we think might be useful. In that case our encoder will just
-        # be a link to a directory. If the encoder-name is not recognized as a pre-trianed model, special
-        # logic for ad hoc encoders follows:
+
+        # TODO check when download any pretrained lanugage model to local disk, if 
+        # the following condition "is_pretrained_model(encoder_name)" works or not.
         if not is_pretrained_model(encoder_name):
             # we are loading one of our own trained models as a starting point.
+            #
+            # 1) if training_args.do_train is true:
+            # sometimes we may want to use an encoder that has been had continued pre-training, either on
+            # in-domain MLM or another task we think might be useful. In that case our encoder will just
+            # be a link to a directory. If the encoder-name is not recognized as a pre-trianed model, special
+            # logic for ad hoc encoders follows:
             # we will load it as-is initially, then delete its classifier head, save the encoder
             # as a temp file, and make that temp file
             # the model file to be loaded down below the normal way. since that temp file
             # doesn't have a stored classifier it will use the randomly-inited classifier head
-            # with the size of the supplied config (for the new task)
-            raise NotImplementedError('This functionality has not been restored yet')
+            # with the size of the supplied config (for the new task).
+            # TODO This setting 1) is not tested yet.
+            # 2) if training_args.do_train is false:
+            # we evaluate or make predictions of our trained models. 
+            # Both two setting require the registeration of CnlpConfig, and use 
+            # AutoConfig.from_pretrained() to load the configuration file
+            AutoConfig.register("cnlpt", CnlpConfig)
+            AutoModel.register(CnlpConfig, CnlpModelForClassification)
+
+            
+            # Load the cnlp configuration using AutoConfig, this will not override 
+            # the arguments from trained cnlp models. While using CnlpConfig will override
+            # the model_type and model_name of the encoder.
             config = AutoConfig.from_pretrained(
                 model_args.config_name if model_args.config_name else model_args.encoder_name,
                 cache_dir=model_args.cache_dir,
             )
-            ## FIXME - think this won't load the right weights?
-            model = CnlpModelForClassification(
-                    model_path = model_args.encoder_name,
+
+            if training_args.do_train:
+                # Setting 1) only load weights from the encoder
+                raise NotImplementedError('This functionality has not been restored yet')
+                ## FIXME - think this won't load the right weights?
+                model = CnlpModelForClassification(
+                        model_path = model_args.encoder_name,
+                        config=config,
+                        cache_dir=model_args.cache_dir,
+                        tagger=tagger,
+                        relations=relations,
+                        class_weights=None if train_dataset is None else train_dataset.class_weights,
+                        final_task_weight=training_args.final_task_weight,
+                        use_prior_tasks=model_args.use_prior_tasks,
+                        argument_regularization=model_args.arg_reg)
+                delattr(model, 'classifiers')
+                delattr(model, 'feature_extractors')
+                if training_args.do_train:
+                    tempmodel = tempfile.NamedTemporaryFile(dir=model_args.cache_dir)
+                    torch.save(model.state_dict(), tempmodel)
+                    model_name = tempmodel.name
+            else:
+                # setting 2) evaluate or make predictions
+                model = CnlpModelForClassification.from_pretrained(
+                    model_args.encoder_name,
                     config=config,
-                    cache_dir=model_args.cache_dir,
-                    tagger=tagger,
-                    relations=relations,
                     class_weights=None if train_dataset is None else train_dataset.class_weights,
                     final_task_weight=training_args.final_task_weight,
-                    use_prior_tasks=model_args.use_prior_tasks,
-                    argument_regularization=model_args.arg_reg)
-            delattr(model, 'classifiers')
-            delattr(model, 'feature_extractors')
-            if training_args.do_train:
-                tempmodel = tempfile.NamedTemporaryFile(dir=model_args.cache_dir)
-                torch.save(model.state_dict(), tempmodel)
-                model_name = tempmodel.name
+                    freeze=training_args.freeze,
+                    argument_regularization=training_args.arg_reg)
 
-        encoder_name = model_args.config_name if model_args.config_name else model_args.encoder_name
-        config = CnlpConfig(encoder_name,
-                            data_args.task_name,
-                            num_labels,
-                            layer=model_args.layer,
-                            tokens=model_args.token,
-                            num_rel_attention_heads=model_args.num_rel_feats,
-                            rel_attention_head_dims=model_args.head_features,
-                            tagger=tagger,
-                            relations=relations,)
-                            #num_tokens=len(tokenizer))
-        config.vocab_size = len(tokenizer)
-
-        pretrained = True
-        model = CnlpModelForClassification(
-            config=config,
-            class_weights=None if train_dataset is None else train_dataset.class_weights,
-            final_task_weight=training_args.final_task_weight,
-            freeze=training_args.freeze,
-            argument_regularization=training_args.arg_reg)
-        
-        ## TODO: Not sure this is the right place for this
-        AutoConfig.register("cnlpt", CnlpConfig)
-        AutoModel.register(CnlpConfig, CnlpModelForClassification)
+        else:
+            # This only works when model_args.encoder_name is one of the 
+            # model card from https://huggingface.co/models
+            # By default, we use model card as the starting point to fine-tune
+            encoder_name = model_args.config_name if model_args.config_name else model_args.encoder_name
+            config = CnlpConfig(encoder_name,
+                                data_args.task_name,
+                                num_labels,
+                                layer=model_args.layer,
+                                tokens=model_args.token,
+                                num_rel_attention_heads=model_args.num_rel_feats,
+                                rel_attention_head_dims=model_args.head_features,
+                                tagger=tagger,
+                                relations=relations,)
+                                #num_tokens=len(tokenizer))
+            config.vocab_size = len(tokenizer)
+            pretrained = True
+            model = CnlpModelForClassification(
+                config=config,
+                class_weights=None if train_dataset is None else train_dataset.class_weights,
+                final_task_weight=training_args.final_task_weight,
+                freeze=training_args.freeze,
+                argument_regularization=training_args.arg_reg)
 
     best_eval_results = None
     output_eval_file = os.path.join(
@@ -344,6 +372,8 @@ def main():
             steps_per_epoch = int(total_steps // training_args.num_train_epochs)
             training_args.eval_steps = steps_per_epoch // training_args.evals_per_epoch
             training_args.evaluation_strategy = IntervalStrategy.STEPS
+            # This will save model per epoch
+            # training_args.save_strategy = IntervalStrategy.EPOCH
         elif training_args.do_eval:
             logger.info('Evaluation strategy not specified so evaluating every epoch')
             training_args.evaluation_strategy = IntervalStrategy.EPOCH
