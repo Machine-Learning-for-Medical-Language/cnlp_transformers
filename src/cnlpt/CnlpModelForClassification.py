@@ -127,6 +127,7 @@ class CnlpModelForClassification(PreTrainedModel):
         super().__init__(config)
 
         encoder_config = AutoConfig.from_pretrained(config.encoder_name)
+        encoder_config.vocab_size = config.vocab_size
         encoder_model = AutoModel.from_config(encoder_config)
         self.encoder = encoder_model.from_pretrained(config.encoder_name)
         self.encoder.resize_token_embeddings(encoder_config.vocab_size)
