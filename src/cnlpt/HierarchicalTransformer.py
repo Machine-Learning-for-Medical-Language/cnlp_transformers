@@ -1,3 +1,4 @@
+import logging
 import time
 import copy
 import tempfile
@@ -22,6 +23,9 @@ from sklearn.metrics import f1_score, roc_auc_score
 
 # from transformer import EncoderLayer
 # from utils import set_seed
+from src.cnlpt.CnlpModelForClassification import CnlpModelForClassification
+
+logger = logging.getLogger(__name__)
 
 
 def set_seed(seed, n_gpu):
@@ -155,18 +159,21 @@ class HierarchicalTransformerConfig(object):
         self.dropout = dropout
 
 
-class HierarchicalTransformer(DistilBertPreTrainedModel):
-
-    def __init__(self, distilbert_config, transformer_head_config):
-        # when calling the from_pretrained method, the distilbert config is not necessary.
-        super().__init__(config=distilbert_config)
-
-        # Set up number of classes
-        self.num_labels = distilbert_config.num_labels
-
-        # distilbert model.
-        self.distilbert = DistilBertModel(distilbert_config)
-
+class HierarchicalModel(CnlpModelForClassification):
+    def __init__(self,
+                 config,
+                 transformer_head_config,
+                 class_weights=None,
+                 final_task_weight=1.0,
+                 argument_regularization=-1,
+                 freeze=False,
+                 ):
+        super(HierarchicalModel, self).__init__(config,
+                                                class_weights=class_weights,
+                                                final_task_weight=final_task_weight,
+                                                argument_regularization=argument_regularization,
+                                                freeze=freeze,
+                                                )
         # Transformer layer
         transformer_layer = EncoderLayer(d_model=transformer_head_config.d_model,
                                          d_inner=transformer_head_config.d_inner,
@@ -178,37 +185,53 @@ class HierarchicalTransformer(DistilBertPreTrainedModel):
             [copy.deepcopy(transformer_layer) for _ in range(transformer_head_config.n_layers)]
         )
 
-        # document level
-        self.classifier = nn.Sequential(
-            nn.Linear(transformer_head_config.d_model,
-                      distilbert_config.num_labels),
+    def forward(
+        self,
+        input_ids=None,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        head_mask=None,
+        inputs_embeds=None,
+        labels=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        event_tokens=None,
+    ):
+        r"""
+                labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size,)`, `optional`, defaults to :obj:`None`):
+                    Labels for computing the sequence classification/regression loss.
+                    Indices should be in :obj:`[0, ..., config.num_labels - 1]`.
+                    If :obj:`config.num_labels == 1` a regression loss is computed (Mean-Square loss),
+                    If :obj:`config.num_labels > 1` a classification loss is computed (Cross-Entropy).
+                """
+
+        outputs = self.encoder(
+            input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
+            output_attentions=output_attentions,
+            output_hidden_states=True,
+            return_dict=True
         )
 
-        # weights
-        self.init_weights()
+        batch_size, seq_len = input_ids.shape
 
-    def forward(self,
-                token_ids,
-                attention_masks,
-                head_mask=None,
-                labels=None,
-                class_weight=None,
-                ):
-        # BERT CLS outputs for each chunk
         logits = []
 
-        # Loss computation for Trainer
-        loss = None
+        state = dict(
+            loss=None,
+            task_label_ind=0
+        )
 
-        # for each sample in a batch (B, n_chunks, max_len)
-        for token_id, attention_mask in zip(token_ids, attention_masks):
-            # Transform the word embeddings. (n_chunks, max_len)
-            distilbert_output = self.distilbert(input_ids=token_id,
-                                                attention_mask=attention_mask,
-                                                head_mask=None,
-                                                inputs_embeds=None)
-            # Transformed word embeddings. (n_chunks, max_len, hidden_size)
-            hidden_state = distilbert_output[0]
+        for task_ind, task_num_labels in enumerate(self.num_labels):
+            if self.use_prior_tasks:
+                logger.warning('use_prior_tasks is not defined for hierarchical model')
+                # Transformed word embeddings. (n_chunks, max_len, hidden_size)
+            hidden_state = outputs.last_hidden_state
 
             # Extract the first token, CLS, embedding as chunk rep. (n_chunk, hidden_size)
             chunks_reps = hidden_state[:, 0]
@@ -218,9 +241,10 @@ class HierarchicalTransformer(DistilBertPreTrainedModel):
 
             # Use pre-trained model's position embedding
             seq_length = chunks_reps.size(1)
-            position_ids = torch.arange(seq_length, dtype=torch.long, device=chunks_reps.device)  # (max_seq_length)
+            position_ids = torch.arange(seq_length, dtype=torch.long,
+                                        device=chunks_reps.device)  # (max_seq_length)
             position_ids = position_ids.unsqueeze(0).expand_as(chunks_reps[:, :, 0])  # (bs, max_seq_length)
-            position_embeddings = self.distilbert.embeddings.position_embeddings(position_ids)
+            position_embeddings = self.encoder.embeddings.position_embeddings(position_ids)
             chunks_reps += position_embeddings
 
             # document encoding
@@ -234,237 +258,67 @@ class HierarchicalTransformer(DistilBertPreTrainedModel):
             doc_rep = chunks_reps[0, :]
 
             # predict
-            logits.append(self.classifier(doc_rep))
+            task_logits = self.classifier(doc_rep)
+            logits.append(task_logits)
 
-        if labels is not None:
-            loss_fct = torch.nn.CrossEntropyLoss(weight=class_weight)
-            breakpoint()
+            if labels is not None:
+                self.compute_loss(
+                    task_logits,
+                    labels,
+                    task_ind,
+                    task_num_labels,
+                    batch_size,
+                    seq_len,
+                    state
+                )
 
-            loss_ = loss_fct(logits, labels)
+        if len(self.num_labels) == 3 and self.relations[-1] and self.argument_regularization > 0:
+            # standard e2e relation task -- two entity extractors and relation extractor.
+            prob_no_rel = F.softmax(logits[2], dim=3)[:, :, :, 0]
 
-            if loss is None:
-                loss = task_loss
-            else:
-                task_weight = 1.0 if task_ind + 1 < len(self.num_labels) else self.final_task_weight
-                loss += (task_weight * task_loss)
+            ## product gets us something like a joint probability over all relation categories.
+            # the downside is, we're penalizing the event "some relation being more likely than none"
+            # in the joint sense, but we never actually use that event anywhere, i.e., if no
+            # relation meets the threshold we will never create a relation.
+            # so maybe doing something like relu + sum makes more sense.
+            #
+            # prob_a1_norel = prob_no_rel.prod(dim=1)
+            # prob_a2_norel = prob_no_rel.prod(dim=2)
+            # prob_some_rel = relu ( 1 - (prob_a1_norel * prob_a2_norel) - 0.5)
+            # These values will be greater than 0 at position i if there is any relation that
+            # has i as arg1 or i as arg2.
+            prob_a1_rel = F.relu(0.5 - prob_no_rel).sum(dim=1)
+            prob_a2_rel = F.relu(0.5 - prob_no_rel).sum(dim=2)
+            prob_some_rel = prob_a1_rel + prob_a2_rel
 
-        # Batch outputs. (B, 2)
-        logits = torch.stack(logits)  # batch predictions, forward pass
+            # prob_no_e1_type = relu( softmax(logits[0], dim=2)[:,:,0] - 0.5)
+            # prob_no_e2_type = relu( softmax(logits[1], dim=2)[:,:,0] - 0.5)
+            probs_e1 = F.softmax(logits[0], dim=2)
+            probs_e2 = F.softmax(logits[1], dim=2)
 
-        outputs = (logits,)
+            # threshold: the penalty is possible if more than this number of probabilities are greater than the
+            # "no entity" threshold. we subtract 2 because we are removing the None category, and C-1 is the default
+            # case where there is no relation, only if more than that is an issue.
+            t1_threshold = self.num_labels[0] - 2
+            t2_threshold = self.num_labels[1] - 2
 
-        return outputs
+            # we take p(none) - p(other relations) inside the sign.
+            # then take the sign, if there are any -1s, the sum will be less than tx_threshold and the inner part will be < 0,
+            # and relu will be 0. If there are no -1, the sum will be > tx_threshold and the innter part will be 1, relu also 1.
+            prob_no_e1_type = F.relu(
+                torch.sign(probs_e1[:, :, 0].unsqueeze(2) - probs_e1[:, :, 1:]).sum(dim=2) - t1_threshold)
+            prob_no_e2_type = F.relu(
+                torch.sign(probs_e2[:, :, 0].unsqueeze(2) - probs_e2[:, :, 1:]).sum(dim=2) - t2_threshold)
 
+            prob_no_ent = prob_no_e1_type * prob_no_e2_type
 
-# Train function
-def train(model,
-          dataset_train,
-          return_best_model=False,
-          dataset_val=None,
-          per_gpu_train_batch_size=None,
-          per_gpu_eval_batch_size=None,
-          gradient_accumulation_steps=None,
-          epochs=None,
-          learning_rate=None,
-          class_weight=None,
-          seed=None,
-          early_stopping_patient=None,
-          early_stopping_delta=None,
-          metric=None,
-          labels_val=None,
-          warmup=None
-          ):
-    """
-    Default is using the first GPU to store model's parameters and all data.
-    The early stop is using validation performance to decide when to stop.
-    :returns best_model, train_loss,
-    """
-    # Metrics can be computed in the training.
-    implemented_metrics = {"macro_f1", "roc_auc"}
-    if metric is not None:
-        if metric not in implemented_metrics:
-            raise ValueError("The metric for validation is not implemented")
+            prob_rel_no_ent = prob_some_rel * prob_no_ent * attention_mask
 
-    n_gpus = torch.cuda.device_count()
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    if class_weight is not None:
-        class_weight = class_weight.to(device)
-    train_batch_size = per_gpu_train_batch_size * max(1, n_gpus)
-    train_sampler = RandomSampler(dataset_train)
-    train_dataloader = DataLoader(dataset_train, sampler=train_sampler, batch_size=train_batch_size)
-    epoch_steps = len(train_dataloader) // gradient_accumulation_steps
-    t_total = epoch_steps * epochs
-    no_decay = ['bias', 'LayerNorm.weight']
+            state['loss'] += self.argument_regularization * prob_rel_no_ent.sum()
 
-    optimizer_grouped_parameters = [
-        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
-         'weight_decay': 0.0},
-        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-    ]
-
-    num_warmup_steps = int(t_total * warmup) if warmup <= 1 else warmup
-    optimizer = AdamW(optimizer_grouped_parameters, lr=learning_rate, eps=1e-8)
-    scheduler = get_linear_schedule_with_warmup(optimizer,
-                                                num_warmup_steps=num_warmup_steps,
-                                                num_training_steps=t_total)
-    # wandb.run.summary["num_warmup_steps"] = num_warmup_steps
-    print(
-        "| samples {} | total epochs {} | batch {} | gradient_accum {} | total steps {} | num_warmup_steps {} |".format(
-            len(dataset_train), epochs, (train_batch_size * gradient_accumulation_steps),
-            gradient_accumulation_steps, t_total, num_warmup_steps
-        ))
-    print('=' * 80)
-
-    # ######################
-    # Training
-    # ######################
-
-    global_step = 0
-    tr_loss, epoch_loss = 0.0, 0.0
-    best_val_performance = float('-inf')
-    early_stop = False
-    early_stopping_counter = 0
-    best_epochs = None
-    best_model_dir = tempfile.mkdtemp()
-    train_start_time = time.time()
-    model.zero_grad()
-    set_seed(n_gpu=n_gpus, seed=seed)
-
-    for epochs_i in range(epochs):
-        new_best_loss_val = False
-        epoch_start_time = time.time()
-        for step, batch in enumerate(train_dataloader):
-            model.train()
-            batch = tuple(t.to(device) for t in batch)
-            inputs = {
-                "token_ids": batch[0],
-                "attention_masks": batch[2],
-            }
-            logits = model(**inputs)[0]
-            loss_fct = torch.nn.CrossEntropyLoss(weight=class_weight)
-            loss = loss_fct(logits, batch[4].view(-1))
-            if gradient_accumulation_steps > 1:
-                loss = loss / gradient_accumulation_steps
-            loss.backward()
-            tr_loss += loss.item()
-            if (step + 1) % gradient_accumulation_steps == 0:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                optimizer.step()
-                scheduler.step()
-                model.zero_grad()
-                global_step += 1
-        epoch_time = time.time() - epoch_start_time
-        loss_val = None
-        metric_val = None
-        if dataset_val is not None:
-            pred_probs_val, loss_val = predict(model, dataset_val, per_gpu_eval_batch_size,
-                                               class_weight=class_weight)
-            # Compute the metrics
-            if metric is not None and metric == "macro_f1":
-                metric_val = f1_score(y_true=labels_val, y_pred=np.argmax(pred_probs_val, axis=1), average="macro")
-            if metric is not None and metric == "roc_auc":
-                metric_val = roc_auc_score(y_true=labels_val,
-                                           y_score=pred_probs_val[:, 1])
-
-            # Test if the validation loss is the new best loss
-            if metric_val > best_val_performance + early_stopping_delta:
-                new_best_loss_val = True
-                best_val_performance = metric_val
-                early_stopping_counter = 0
-                best_epochs = epochs_i + 1  # the epochs_i start from 0, so add 1
-
-                # save the best model's checkpoint
-                with open(os.path.join(best_model_dir, "best_model.pkl"), "wb") as f:
-                    pickle.dump(model, f)
-            else:
-                early_stopping_counter += 1
-                if early_stopping_counter >= early_stopping_patient:
-                    early_stop = True
-        # wandb.log({"loss_train": ((tr_loss - epoch_loss) / epoch_steps)})
-        # if dataset_val is not None:
-            # wandb.log({'loss_val': loss_val})
-        if dataset_val is not None:
-            print(
-                "| epoch {}/{} | time {:.2f} s | train_loss {:.5f} | loss_val {:.5f} | {} {:.5f} |new_best_val {} |".format(
-                    (epochs_i + 1),
-                    epochs,
-                    epoch_time,
-                    ((tr_loss - epoch_loss) / epoch_steps),
-                    loss_val,
-                    metric,
-                    metric_val,
-                    new_best_loss_val
-                ))
+        if self.training:
+            return SequenceClassifierOutput(
+                loss=state['loss'], logits=logits, hidden_states=outputs.hidden_states, attentions=outputs.attentions,
+            )
         else:
-            print("| epoch {}/{} | time {:.2f} s | train_loss {:.5f} |".format(
-                    (epochs_i + 1),
-                    epochs,
-                    epoch_time,
-                    ((tr_loss - epoch_loss) / epoch_steps)))
-        epoch_loss = tr_loss
-        if early_stop:
-            break
-    if return_best_model:
-        with open(os.path.join(best_model_dir, "best_model.pkl"), "rb") as f:
-            model_to_return = pickle.load(f)
-            model_to_return = model_to_return.module if hasattr(model, 'module') else model
-        #shutil.rmtree(best_model_dir)  # clean up the cache dir
-    else:
-        model_to_return = model.module if hasattr(model, 'module') else model
-
-    train_time = time.time() - train_start_time
-
-    # print the summary of training.
-    print("-" * 80)
-    print("| epochs {} | time {:.2f} s| avg_train_loss {:.5f}".format(
-        best_epochs if best_epochs is not None else epochs,
-        train_time,
-        (tr_loss / global_step)
-    ))
-
-    return model_to_return, tr_loss / global_step, train_time, best_epochs if best_epochs is not None else epochs
-
-
-def predict(model,
-            dataset,
-            per_gpu_batch_size,
-            class_weight=None):
-    """
-      Default is using the first GPU to store model's parameters and all data.
-
-      returns logits_list, loss
-      """
-    n_gpus = torch.cuda.device_count()
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    batch_size = per_gpu_batch_size * max(1, n_gpus)
-
-    sampler = SequentialSampler(dataset)
-    dataloader = DataLoader(dataset, sampler=sampler, batch_size=batch_size)
-
-    loss = 0.0
-    steps = 0
-    logits_list = None
-    for batch in dataloader:
-        model.eval()
-        batch = tuple(t.to(device) for t in batch)
-
-        with torch.no_grad():
-            inputs = {
-                "token_ids": batch[0],
-                "attention_masks": batch[2],
-            }
-            # forward pass
-            logits = model(**inputs)[0]
-
-            # Compute the loss function
-            loss_fct = torch.nn.CrossEntropyLoss(weight=class_weight)
-            temp_loss = loss_fct(logits, batch[4].view(-1))
-            loss += temp_loss.mean().item()
-        steps += 1
-
-        if logits_list is None:
-            logits_list = logits.detach().cpu().numpy()
-        else:
-            logits_list = np.append(logits_list, logits.detach().cpu().numpy(), axis=0)
-
-    return logits_list, loss / steps
+            return SequenceClassifierOutput(loss=state['loss'], logits=logits)

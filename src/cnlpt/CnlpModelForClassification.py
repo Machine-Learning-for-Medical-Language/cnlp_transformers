@@ -1,4 +1,6 @@
 # from transformers.models.auto import  AutoModel, AutoConfig
+import copy
+
 from transformers import AutoModel, AutoConfig
 from transformers.modeling_utils import PreTrainedModel
 from transformers.configuration_utils import PretrainedConfig
@@ -190,6 +192,58 @@ class CnlpModelForClassification(PreTrainedModel):
 
         return features
 
+    def compute_loss(self,
+                     task_logits,
+                     labels,
+                     task_ind,
+                     task_num_labels,
+                     batch_size,
+                     seq_len,
+                     state: dict,
+                     ):
+        if task_num_labels == 1:
+            #  We are doing regression
+            loss_fct = MSELoss()
+            task_loss = loss_fct(task_logits.view(-1), labels.view(-1))
+        else:
+            if not self.class_weights[task_ind] is None:
+                class_weights = torch.FloatTensor(self.class_weights[task_ind]).to(self.device)
+            else:
+                class_weights = None
+            loss_fct = CrossEntropyLoss(weight=class_weights)
+
+            if self.relations[task_ind]:
+                task_labels = labels[:, 0, state['task_label_ind']:state['task_label_ind'] + seq_len, :]
+                state['task_label_ind'] += seq_len
+                task_loss = loss_fct(task_logits.permute(0, 3, 1, 2),
+                                     task_labels.type(torch.LongTensor).to(labels.device))
+            elif self.tagger[task_ind]:
+                # in cases where we are only given a single task the HF code will have one fewer dimension in the labels, so just add a dummy dimension to make our indexing work:
+                if labels.ndim == 3:
+                    labels = labels.unsqueeze(1)
+                task_labels = labels[:, 0, state['task_label_ind'], :]
+                state['task_label_ind'] += 1
+                task_loss = loss_fct(task_logits.view(-1, task_num_labels),
+                                     task_labels.reshape([batch_size * seq_len, ]).type(torch.LongTensor).to(
+                                         labels.device))
+            else:
+                if labels.ndim == 2:
+                    task_labels = labels[:, 0]
+                elif labels.ndim == 3:
+                    task_labels = labels[:, 0, task_ind]
+                else:
+                    raise NotImplementedError(
+                        'Have not implemented the case where a classification task is part of an MTL setup with relations and sequence tagging')
+
+                state['task_label_ind'] += 1
+                task_loss = loss_fct(task_logits, task_labels.type(torch.LongTensor).to(labels.device))
+
+        if state['loss'] is None:
+            state['loss'] = task_loss
+        else:
+            task_weight = 1.0 if task_ind + 1 < len(self.num_labels) else self.final_task_weight
+            state['loss'] += (task_weight * task_loss)
+
     def forward(
         self,
         input_ids=None,
@@ -227,8 +281,10 @@ class CnlpModelForClassification(PreTrainedModel):
 
         logits = []
 
-        loss = None
-        task_label_ind = 0
+        state = dict(
+            loss=None,
+            task_label_ind=0
+        )
 
         for task_ind,task_num_labels in enumerate(self.num_labels):
             features = self.feature_extractors[task_ind](outputs.hidden_states, event_tokens)
@@ -240,46 +296,15 @@ class CnlpModelForClassification(PreTrainedModel):
             logits.append(task_logits)
 
             if labels is not None:
-
-                if task_num_labels == 1:
-                    #  We are doing regression
-                    loss_fct = MSELoss()
-                    task_loss = loss_fct(task_logits.view(-1), labels.view(-1))
-                else:
-                    if not self.class_weights[task_ind] is None:
-                        class_weights = torch.FloatTensor(self.class_weights[task_ind]).to(self.device)
-                    else:
-                        class_weights = None
-                    loss_fct = CrossEntropyLoss(weight=class_weights)
-                    
-                    if self.relations[task_ind]:
-                        task_labels = labels[:,0,task_label_ind:task_label_ind+seq_len, :]
-                        task_label_ind += seq_len
-                        task_loss = loss_fct(task_logits.permute(0, 3, 1, 2), task_labels.type(torch.LongTensor).to(labels.device))
-                    elif self.tagger[task_ind]:
-                        # in cases where we are only given a single task the HF code will have one fewer dimension in the labels, so just add a dummy dimension to make our indexing work:
-                        if labels.ndim == 3:
-                            labels = labels.unsqueeze(1)
-                        task_labels = labels[:,0, task_label_ind,:]
-                        task_label_ind += 1
-                        task_loss = loss_fct(task_logits.view(-1, task_num_labels), task_labels.reshape([batch_size*seq_len,]).type(torch.LongTensor).to(labels.device))
-                    else:
-                        if labels.ndim == 2:
-                            task_labels = labels[:,0]
-                        elif labels.ndim == 3:
-                            task_labels = labels[:,0,task_ind]
-                        else:
-                            raise NotImplementedError('Have not implemented the case where a classification task is part of an MTL setup with relations and sequence tagging')
-                        
-                        task_label_ind += 1
-                        task_loss = loss_fct(task_logits, task_labels.type(torch.LongTensor).to(labels.device))
-
-
-                if loss is None:
-                    loss = task_loss
-                else:
-                    task_weight = 1.0 if task_ind+1 < len(self.num_labels) else self.final_task_weight
-                    loss += (task_weight * task_loss)
+                self.compute_loss(
+                    task_logits,
+                    labels,
+                    task_ind,
+                    task_num_labels,
+                    batch_size,
+                    seq_len,
+                    state
+                )
 
         if len(self.num_labels) == 3 and self.relations[-1] and self.argument_regularization > 0:
             # standard e2e relation task -- two entity extractors and relation extractor.
@@ -321,12 +346,11 @@ class CnlpModelForClassification(PreTrainedModel):
 
             prob_rel_no_ent = prob_some_rel * prob_no_ent * attention_mask
                    
-            loss += self.argument_regularization * prob_rel_no_ent.sum()
-            
+            state['loss'] += self.argument_regularization * prob_rel_no_ent.sum()
 
         if self.training:
             return SequenceClassifierOutput(
-                loss=loss, logits=logits, hidden_states=outputs.hidden_states, attentions=outputs.attentions,
+                loss=state['loss'], logits=logits, hidden_states=outputs.hidden_states, attentions=outputs.attentions,
             )
         else:
-            return SequenceClassifierOutput(loss=loss, logits=logits)
+            return SequenceClassifierOutput(loss=state['loss'], logits=logits)
