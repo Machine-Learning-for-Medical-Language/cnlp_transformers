@@ -2,6 +2,7 @@ import os
 from os.path import basename, dirname
 import time
 import logging
+import json
 
 from filelock import FileLock
 from typing import Callable, Dict, Optional, List, Union, Tuple
@@ -11,7 +12,7 @@ import torch
 from torch.utils.data.dataset import Dataset
 from transformers.data.processors.utils import DataProcessor, InputExample
 from transformers.tokenization_utils import PreTrainedTokenizer
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from enum import Enum
 
 from .cnlp_processors import cnlp_processors, cnlp_output_modes, classification, tagging, relex, mtl
@@ -53,7 +54,7 @@ class InputFeatures:
 
     def to_json_string(self):
         """Serializes this instance to a JSON string."""
-        return json.dumps(dataclasses.asdict(self)) + "\n"
+        return json.dumps(asdict(self)) + "\n"
     
 def cnlp_convert_examples_to_features(
     examples: List[InputExample],
