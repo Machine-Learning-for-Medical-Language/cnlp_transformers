@@ -282,7 +282,7 @@ def cnlp_convert_features_to_hierarchical(
         # use_special_token=True,
 ) -> List[HierarchicalInputFeatures]:
     features_out = []
-    for sample in features:
+    for sample_no, sample in enumerate(features):
         # Get feature variables
         input_ids_, attention_mask_, token_type_ids_, event_tokens_, label_ = astuple(sample)
 
@@ -335,6 +335,8 @@ def cnlp_convert_features_to_hierarchical(
         if chunks_event_tokens is not None:
             chunks_event_tokens = chunks_event_tokens[:num_chunks]
 
+        if sample_no == 2:
+            breakpoint()
         # Add empty lists to list of chunks, if the number of chunks less than max number.
         while len(chunks) < num_chunks:
             chunks.append(pad_chunk())
@@ -346,8 +348,6 @@ def cnlp_convert_features_to_hierarchical(
                 chunks_event_tokens.append([0]*chunk_len)
 
         features_out.append(HierarchicalInputFeatures(chunks, chunks_attention_mask, chunks_token_type_ids, event_tokens_, label_))
-        if len(features_out[-1].input_ids) != num_chunks:
-            breakpoint()
 
     return features_out
 
