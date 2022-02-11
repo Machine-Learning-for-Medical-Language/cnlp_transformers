@@ -255,7 +255,7 @@ class HierarchicalModel(CnlpModelForClassification):
                                         device=chunks_reps.device)  # (n_chunk)
             position_ids = position_ids.unsqueeze(0).expand_as(chunks_reps[:, :, 0])  # (B, n_chunk)
             position_embeddings = self.encoder.embeddings.position_embeddings(position_ids)
-            chunks_reps += position_embeddings
+            chunks_reps = chunks_reps + position_embeddings
 
             # document encoding (B, n_chunk, hidden_size)
             for layer_module in self.transformer:
