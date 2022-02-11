@@ -223,7 +223,7 @@ class HierarchicalModel(CnlpModelForClassification):
             return_dict=True
         )
 
-        batch_size, num_chunks, seq_len = input_ids.shape
+        batch_size, num_chunks, chunk_len = input_ids.shape
 
         logits = []
 
@@ -243,12 +243,13 @@ class HierarchicalModel(CnlpModelForClassification):
             if self.config.relations[task_ind]:
                 raise NotImplementedError('relations projection is not defined for hierarchical model')
 
+            # outputs.last_hidden_state.shape: (B * n_chunks, chunk_len, hidden_size)
+
             # (B, n_chunk, hidden_size)
             chunks_reps = self.feature_extractors[task_ind](outputs.hidden_states, event_tokens).reshape(*input_ids.shape[:2], -1)
 
             # Use pre-trained model's position embedding
-            seq_length = chunks_reps.shape[2]
-            position_ids = torch.arange(seq_length, dtype=torch.long,
+            position_ids = torch.arange(num_chunks, dtype=torch.long,
                                         device=chunks_reps.device)  # (n_chunk)
             position_ids = position_ids.unsqueeze(0).expand_as(chunks_reps[:, :, 0])  # (B, n_chunk)
             position_embeddings = self.encoder.embeddings.position_embeddings(position_ids)
@@ -272,7 +273,7 @@ class HierarchicalModel(CnlpModelForClassification):
                     task_ind,
                     task_num_labels,
                     batch_size,
-                    seq_len,
+                    -1,  # only used for relation adn tagger
                     state
                 )
 
