@@ -209,7 +209,9 @@ class HierarchicalModel(CnlpModelForClassification):
                     If :obj:`config.num_labels == 1` a regression loss is computed (Mean-Square loss),
                     If :obj:`config.num_labels > 1` a classification loss is computed (Cross-Entropy).
                 """
-        flat_shape = (input_ids.shape[0] * input_ids.shape[1], -1)
+        batch_size, num_chunks, chunk_len = input_ids.shape
+
+        flat_shape = (batch_size * num_chunks, chunk_len)
 
         outputs = self.encoder(
             input_ids.reshape(flat_shape),
@@ -223,8 +225,6 @@ class HierarchicalModel(CnlpModelForClassification):
             return_dict=True
         )
 
-        batch_size, num_chunks, chunk_len = input_ids.shape
-
         logits = []
 
         state = dict(
@@ -233,7 +233,6 @@ class HierarchicalModel(CnlpModelForClassification):
         )
 
         for task_ind, task_num_labels in enumerate(self.num_labels):
-            # TODO: use feature extractors?
             if self.use_prior_tasks:
                 raise NotImplementedError('use_prior_tasks is not defined for hierarchical model')
             if self.config.tokens:
@@ -245,8 +244,11 @@ class HierarchicalModel(CnlpModelForClassification):
 
             # outputs.last_hidden_state.shape: (B * n_chunks, chunk_len, hidden_size)
 
+            # (B * n_chunk, hidden_size)
+            chunks_reps = self.feature_extractors[task_ind](outputs.hidden_states, event_tokens)
+
             # (B, n_chunk, hidden_size)
-            chunks_reps = self.feature_extractors[task_ind](outputs.hidden_states, event_tokens).reshape(*input_ids.shape[:2], -1)
+            chunks_reps = chunks_reps.reshape(batch_size, num_chunks, chunks_reps.shape[-1])
 
             # Use pre-trained model's position embedding
             position_ids = torch.arange(num_chunks, dtype=torch.long,
