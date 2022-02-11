@@ -1,5 +1,6 @@
 # from transformers.models.auto import  AutoModel, AutoConfig
 import copy
+from typing import Optional, List
 
 from transformers import AutoModel, AutoConfig
 from transformers.modeling_utils import PreTrainedModel
@@ -15,6 +16,7 @@ import math
 
 logger = logging.getLogger(__name__)
 
+
 class ClassificationHead(nn.Module):
     def __init__(self, config, num_labels, hidden_size=-1):
         super().__init__()
@@ -25,6 +27,7 @@ class ClassificationHead(nn.Module):
         x = self.dropout(features)
         x = self.out_proj(x)
         return x
+
 
 class RepresentationProjectionLayer(nn.Module):
     def __init__(self, config, layer=10, tokens=False, tagger=False, relations=False, num_attention_heads=-1, head_size=64):
@@ -85,12 +88,13 @@ class RepresentationProjectionLayer(nn.Module):
 
         else:
             # take <s> token (equiv. to [CLS])
-            x = features[self.layer_to_use][:, 0, :]
+            x = features[self.layer_to_use][..., 0, :]
 
         x = self.dropout(x)
         x = self.dense(x)
         x = torch.tanh(x)
         return x
+
 
 class CnlpConfig(PretrainedConfig):
     model_type='cnlpt'
@@ -114,15 +118,17 @@ class CnlpConfig(PretrainedConfig):
         self.hidden_size = self.encoder_config['hidden_size']
         self.num_tokens = num_tokens
 
+
 class CnlpModelForClassification(PreTrainedModel):
-    base_model_prefix='cnlpt'
+    base_model_prefix = 'cnlpt'
     config_class = CnlpConfig
 
     def __init__(self,
-                config,
-                class_weights=None,
-                final_task_weight=1.0,
-                argument_regularization=-1,
+                config: config_class,
+                 *,
+                class_weights: Optional[List[float]] = None,
+                final_task_weight: float = 1.0,
+                argument_regularization: int =-1,
                 freeze=False,
         ):
 

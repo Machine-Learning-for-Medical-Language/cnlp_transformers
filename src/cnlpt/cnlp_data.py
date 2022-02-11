@@ -12,7 +12,7 @@ import torch
 from torch.utils.data.dataset import Dataset
 from transformers.data.processors.utils import DataProcessor, InputExample
 from transformers.tokenization_utils import PreTrainedTokenizer
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, astuple
 from enum import Enum
 
 from .cnlp_processors import cnlp_processors, cnlp_output_modes, classification, tagging, relex, mtl
@@ -55,7 +55,35 @@ class InputFeatures:
     def to_json_string(self):
         """Serializes this instance to a JSON string."""
         return json.dumps(asdict(self)) + "\n"
-    
+
+
+@dataclass(frozen=True)
+class HierarchicalInputFeatures:
+    """
+    A single set of features of data.
+    Property names are the same names as the corresponding inputs to a model.
+
+    Args:
+        input_ids: Indices of input sequence tokens in the vocabulary.
+        attention_mask: Mask to avoid performing attention on padding token indices.
+            Mask values selected in ``[0, 1]``:
+            Usually  ``1`` for tokens that are NOT MASKED, ``0`` for MASKED (padded) tokens.
+        token_type_ids: (Optional) Segment token indices to indicate first and second
+            portions of the inputs. Only some models use them.
+        label: (Optional) Label corresponding to the input. Int for classification problems,
+            float for regression problems.
+    """
+
+    input_ids: List[torch.LongTensor]
+    attention_mask: Optional[List[torch.LongTensor]] = None
+    token_type_ids: Optional[List[torch.LongTensor]] = None
+    label: List[Optional[Union[int, float, List[int], List[Tuple[int]]]]] = None
+
+    def to_json_string(self):
+        """Serializes this instance to a JSON string."""
+        return json.dumps(asdict(self)) + "\n"
+
+
 def cnlp_convert_examples_to_features(
     examples: List[InputExample],
     tokenizer: PreTrainedTokenizer,
@@ -235,6 +263,92 @@ def cnlp_convert_examples_to_features(
     return features
 
 
+def cnlp_convert_features_to_hierarchical(
+        features: List[InputFeatures],
+        chunk_len,
+        num_chunks,
+        cls_id,
+        sep_id,
+        pad_id,
+        # cls_token="[CLS]",
+        # cls_token_at_end=False,
+        # sep_token="[SEP]",
+        # pad_token=0,
+        # sequence_a_segment_id=0,
+        # cls_token_segment_id=0,
+        # pad_token_segment_id=0,
+        insert_empty_chunk_at_beginning=False,
+        # use_special_token=True,
+) -> List[HierarchicalInputFeatures]:
+    features_out = []
+    for sample in features:
+        # Get feature variables
+        input_ids_, attention_mask_, token_type_ids_, event_tokens_, label_ = astuple(sample)
+
+        assert len(input_ids_) == len(attention_mask_) == len(event_tokens_)
+
+        # Split the sample's tokens into several chunk lists.
+        chunks = []
+        if attention_mask_ is not None:
+            chunks_attention_mask = []
+        else:
+            chunks_attention_mask = None
+        if token_type_ids_ is not None:
+            chunks_token_type_ids = []
+        else:
+            chunks_token_type_ids = None
+        if event_tokens_ is not None:
+            chunks_event_tokens = []
+        else:
+            chunks_event_tokens = None
+        for i in range(0, len(input_ids_), chunk_len):
+            chunks.append(input_ids_[i : i + chunk_len])
+            if chunks_attention_mask is not None:
+                chunks_attention_mask.append(attention_mask_[i : i + chunk_len])
+            if chunks_token_type_ids is not None:
+                chunks_token_type_ids.append(token_type_ids_[i : i + chunk_len])
+            if chunks_event_tokens is not None:
+                chunks_event_tokens.append(event_tokens_[i : i + chunk_len])
+
+        def pad_chunk(cls_type=cls_id, sep_type=sep_id, pad_type=pad_id):
+            return [cls_type] + [sep_type] + [pad_type] * (chunk_len - 2)
+
+        # Insert an empty chunk at the beginning.
+        if insert_empty_chunk_at_beginning:
+            chunks.insert(0, pad_chunk())
+            if chunks_attention_mask is not None:
+                chunks_attention_mask.insert(0, pad_chunk(1, 1, 0))
+            if chunks_token_type_ids is not None:
+                # TODO: do we want special TTIDs?
+                chunks_token_type_ids.insert(0, pad_chunk(0, 0, 0))
+            if chunks_event_tokens is not None:
+                # TODO: do we want special ETs?
+                chunks_event_tokens.insert(0, pad_chunk(1, 1, 0))
+
+        # Truncate the chunks and add attention masks
+        chunks = chunks[:num_chunks]
+        if chunks_attention_mask is not None:
+            chunks_attention_mask = chunks_attention_mask[:num_chunks]
+        if chunks_token_type_ids is not None:
+            chunks_token_type_ids = chunks_token_type_ids[:num_chunks]
+        if chunks_event_tokens is not None:
+            chunks_event_tokens = chunks_event_tokens[:num_chunks]
+
+        # Add empty lists to list of chunks, if the number of chunks less than max number.
+        while len(chunks) < num_chunks:
+            chunks.append(pad_chunk())
+            if chunks_attention_mask is not None:
+                chunks_attention_mask.append([0]*chunk_len)
+            if chunks_token_type_ids is not None:
+                chunks_token_type_ids.append([0]*chunk_len)
+            if chunks_event_tokens is not None:
+                chunks_event_tokens.append([0]*chunk_len)
+
+        features_out.append(HierarchicalInputFeatures(chunks, chunks_attention_mask, chunks_token_type_ids, event_tokens_, label_))
+
+    return features_out
+
+
 @dataclass
 class DataTrainingArguments:
     """
@@ -246,10 +360,14 @@ class DataTrainingArguments:
     """
 
     data_dir: List[str] = field(
-        metadata={"help": "The input data dirs. A space-separated list of directories that should contain the .tsv files (or other data files) for the task. Should be presented in the same order as the task names."}
+        metadata={"help": "The input data dirs. A space-separated list of directories that "
+                          "should contain the .tsv files (or other data files) for the task. "
+                          "Should be presented in the same order as the task names."}
     )
 
-    task_name: List[str] = field(default_factory=lambda: None, metadata={"help": "A space-separated list of tasks to train on: " + ", ".join(cnlp_processors.keys())})
+    task_name: List[str] = field(default_factory=lambda: None, metadata={
+        "help": "A space-separated list of tasks to train on: " + ", ".join(cnlp_processors.keys())
+    })
     # field(
         
     #     metadata={"help": "A space-separated list of tasks to train on: " + ", ".join(cnlp_processors.keys())})
@@ -258,7 +376,7 @@ class DataTrainingArguments:
         default=128,
         metadata={
             "help": "The maximum total input sequence length after tokenization. Sequences longer "
-            "than this will be truncated, sequences shorter will be padded."
+                    "than this will be truncated, sequences shorter will be padded."
         },
     )
     overwrite_cache: bool = field(
@@ -266,8 +384,21 @@ class DataTrainingArguments:
     )
 
     weight_classes: bool = field(
-        default=False, metadata={"help": "A flag that indicates whether class-specific loss should be used. This can be useful in cases with severe class imbalance. The formula for a weight of a class is the count of that class divided the count of the rarest class."}
+        default=False, metadata={"help": "A flag that indicates whether class-specific loss should be used. "
+                                         "This can be useful in cases with severe class imbalance. The formula "
+                                         "for a weight of a class is the count of that class divided the count "
+                                         "of the rarest class."}
     )
+
+    hierarchical: bool = field(default=False, metadata={"help": "Whether the data is for a hierarchical model"}),
+
+    chunk_len: Optional[int] = field(default=None, metadata={"help": "Chunk length for hierarchical model"}),
+
+    num_chunks: Optional[int] = field(default=None, metadata={"help": "Max chunk count for hierarchical model"}),
+
+    insert_empty_chunk_at_beginning: bool = field(default=False, metadata={
+        "help": "Whether to insert an empty chunk for hierarchical model"
+    }),
 
 
 class ClinicalNlpDataset(Dataset):
@@ -353,6 +484,16 @@ class ClinicalNlpDataset(Dataset):
                         output_mode=self.output_mode[task_ind],
                         inference=mode == Split.test,
                     )
+                    if self.args.hierarchical:
+                        features = cnlp_convert_features_to_hierarchical(
+                            features,
+                            chunk_len=self.args.chunk_len,
+                            num_chunks=self.args.num_chunks,
+                            cls_id=tokenizer.cls_token_id,
+                            sep_id=tokenizer.sep_token_id,
+                            pad_id=tokenizer.pad_token_id,
+                            insert_empty_chunk_at_beginning=self.args.insert_empty_chunk_at_beginning,
+                        )
                     start = time.time()
                     torch.save(features, cached_features_file)
                     # ^ This seems to take a lot of time so I want to investigate why and how we can improve.
@@ -371,10 +512,11 @@ class ClinicalNlpDataset(Dataset):
 
                     self.class_weights[task_ind] = min(class_counts) / class_counts
 
-                   
+
                 if self.features is None:
                     self.features = features
                 else:
+                    # FIXME: self.features is set to None earlier in this __init__ method; this is unreachable
                     assert len(features) == len(self.features)
                     if self.features[0].label is None:
                         assert features[0].label is None, 'Some of the tasks have None labels and others do not, they should be consistent!'

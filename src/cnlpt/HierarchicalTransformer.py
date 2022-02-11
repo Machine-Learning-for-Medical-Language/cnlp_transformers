@@ -141,6 +141,7 @@ class EncoderLayer(nn.Module):
         enc_output = self.pos_ffn(enc_output)
         return enc_output, enc_slf_attn
 
+
 class HierarchicalTransformerConfig(object):
     def __init__(self,
                  n_layers,
@@ -160,9 +161,12 @@ class HierarchicalTransformerConfig(object):
 
 
 class HierarchicalModel(CnlpModelForClassification):
+    base_model_prefix = 'hier'
+
     def __init__(self,
                  config,
                  transformer_head_config,
+                 *,
                  class_weights=None,
                  final_task_weight=1.0,
                  argument_regularization=-1,
@@ -228,37 +232,36 @@ class HierarchicalModel(CnlpModelForClassification):
         )
 
         for task_ind, task_num_labels in enumerate(self.num_labels):
+            # TODO: use feature extractors?
             if self.use_prior_tasks:
-                logger.warning('use_prior_tasks is not defined for hierarchical model')
-                # Transformed word embeddings. (n_chunks, max_len, hidden_size)
-            hidden_state = outputs.last_hidden_state
+                raise NotImplementedError('use_prior_tasks is not defined for hierarchical model')
+            if self.config.tokens:
+                raise NotImplementedError('tokens projection is not defined for hierarchical model')
+            if self.config.tagger[task_ind]:
+                raise NotImplementedError('tagger projection is not defined for hierarchical model')
+            if self.config.relations[task_ind]:
+                raise NotImplementedError('relations projection is not defined for hierarchical model')
 
-            # Extract the first token, CLS, embedding as chunk rep. (n_chunk, hidden_size)
-            chunks_reps = hidden_state[:, 0]
-
-            # Add addition dim. (1, n_chunk, hidden_size)
-            chunks_reps = chunks_reps[None, :, :]
+            # (B, n_chunk, hidden_size)
+            chunks_reps = self.feature_extractors[task_ind](outputs.hidden_states, event_tokens)
 
             # Use pre-trained model's position embedding
-            seq_length = chunks_reps.size(1)
+            seq_length = chunks_reps.shape[2]
             position_ids = torch.arange(seq_length, dtype=torch.long,
-                                        device=chunks_reps.device)  # (max_seq_length)
-            position_ids = position_ids.unsqueeze(0).expand_as(chunks_reps[:, :, 0])  # (bs, max_seq_length)
+                                        device=chunks_reps.device)  # (n_chunk)
+            position_ids = position_ids.unsqueeze(0).expand_as(chunks_reps[:, :, 0])  # (B, n_chunk)
             position_embeddings = self.encoder.embeddings.position_embeddings(position_ids)
             chunks_reps += position_embeddings
 
-            # document encoding
+            # document encoding (B, n_chunk, hidden_size)
             for layer_module in self.transformer:
                 chunks_reps, _ = layer_module(chunks_reps)
 
-            # Remove the first dim. (n_chunk, hidden_size)
-            chunks_reps = chunks_reps.squeeze()
+            # extract first Documents as rep. (B, hidden_size)
+            doc_rep = chunks_reps[:, 0, :]
 
-            # extract first Documents as rep. (hidden_size)
-            doc_rep = chunks_reps[0, :]
-
-            # predict
-            task_logits = self.classifier(doc_rep)
+            # predict (B, 5)
+            task_logits = self.classifiers[task_ind](doc_rep)
             logits.append(task_logits)
 
             if labels is not None:
