@@ -74,9 +74,10 @@ class HierarchicalInputFeatures:
             float for regression problems.
     """
 
-    input_ids: List[torch.LongTensor]
-    attention_mask: Optional[List[torch.LongTensor]] = None
-    token_type_ids: Optional[List[torch.LongTensor]] = None
+    input_ids: List[List[int]]
+    attention_mask: Optional[List[List[int]]] = None
+    token_type_ids: Optional[List[List[int]]] = None
+    event_tokens: Optional[List[List[int]]] = None
     label: List[Optional[Union[int, float, List[int], List[Tuple[int]]]]] = None
 
     def to_json_string(self):
@@ -345,6 +346,8 @@ def cnlp_convert_features_to_hierarchical(
                 chunks_event_tokens.append([0]*chunk_len)
 
         features_out.append(HierarchicalInputFeatures(chunks, chunks_attention_mask, chunks_token_type_ids, event_tokens_, label_))
+        if len(features_out[-1].input_ids) != num_chunks:
+            breakpoint()
 
     return features_out
 
