@@ -191,7 +191,7 @@ class HierarchicalModel(CnlpModelForClassification):
 
     def forward(
         self,
-        input_ids=None,
+        input_ids: torch.Tensor =None,
         attention_mask=None,
         token_type_ids=None,
         position_ids=None,
@@ -209,18 +209,21 @@ class HierarchicalModel(CnlpModelForClassification):
                     If :obj:`config.num_labels == 1` a regression loss is computed (Mean-Square loss),
                     If :obj:`config.num_labels > 1` a classification loss is computed (Cross-Entropy).
                 """
+        flat_shape = (input_ids.shape[0] * input_ids.shape[1], -1)
 
         outputs = self.encoder(
-            input_ids,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
-            position_ids=position_ids,
+            input_ids.reshape(flat_shape),
+            attention_mask=attention_mask.reshape(flat_shape) if attention_mask is not None else None,
+            token_type_ids=token_type_ids.reshape(flat_shape) if token_type_ids is not None else None,
+            position_ids=position_ids.reshape(flat_shape) if position_ids is not None else None,
             head_mask=head_mask,
             inputs_embeds=inputs_embeds,
             output_attentions=output_attentions,
             output_hidden_states=True,
             return_dict=True
         )
+
+
 
         batch_size, seq_len = input_ids.shape
 
@@ -243,7 +246,7 @@ class HierarchicalModel(CnlpModelForClassification):
                 raise NotImplementedError('relations projection is not defined for hierarchical model')
 
             # (B, n_chunk, hidden_size)
-            chunks_reps = self.feature_extractors[task_ind](outputs.hidden_states, event_tokens)
+            chunks_reps = self.feature_extractors[task_ind](outputs.hidden_states, event_tokens).reshape(*input_ids.shape[:2], -1)
 
             # Use pre-trained model's position embedding
             seq_length = chunks_reps.shape[2]
