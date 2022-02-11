@@ -223,9 +223,7 @@ class HierarchicalModel(CnlpModelForClassification):
             return_dict=True
         )
 
-
-
-        batch_size, seq_len = input_ids.shape
+        batch_size, num_chunks, seq_len = input_ids.shape
 
         logits = []
 
