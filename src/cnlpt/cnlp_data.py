@@ -302,29 +302,33 @@ def cnlp_convert_features_to_hierarchical(
             chunks_event_tokens = []
         else:
             chunks_event_tokens = None
-        for i in range(0, len(input_ids_), chunk_len):
-            chunks.append(input_ids_[i : i + chunk_len])
-            if chunks_attention_mask is not None:
-                chunks_attention_mask.append(attention_mask_[i : i + chunk_len])
-            if chunks_token_type_ids is not None:
-                chunks_token_type_ids.append(token_type_ids_[i : i + chunk_len])
-            if chunks_event_tokens is not None:
-                chunks_event_tokens.append(event_tokens_[i : i + chunk_len])
 
-        def pad_chunk(cls_type=cls_id, sep_type=sep_id, pad_type=pad_id):
-            return [cls_type] + [sep_type] + [pad_type] * (chunk_len - 2)
+        def pad_chunk(chunk, pad_type=pad_id):
+            return chunk + [pad_type] * (chunk_len - len(chunk))
+
+        for i in range(0, len(input_ids_), chunk_len):
+            chunks.append(pad_chunk(input_ids_[i : i + chunk_len]))
+            if chunks_attention_mask is not None:
+                chunks_attention_mask.append(pad_chunk(attention_mask_[i : i + chunk_len]))
+            if chunks_token_type_ids is not None:
+                chunks_token_type_ids.append(pad_chunk(token_type_ids_[i : i + chunk_len]))
+            if chunks_event_tokens is not None:
+                chunks_event_tokens.append(pad_chunk(event_tokens_[i : i + chunk_len]))
+
+        def create_pad_chunk(cls_type=cls_id, sep_type=sep_id, pad_type=pad_id):
+            return pad_chunk([cls_type] + [sep_type])
 
         # Insert an empty chunk at the beginning.
         if insert_empty_chunk_at_beginning:
-            chunks.insert(0, pad_chunk())
+            chunks.insert(0, create_pad_chunk())
             if chunks_attention_mask is not None:
-                chunks_attention_mask.insert(0, pad_chunk(1, 1, 0))
+                chunks_attention_mask.insert(0, create_pad_chunk(1, 1, 0))
             if chunks_token_type_ids is not None:
                 # TODO: do we want special TTIDs?
-                chunks_token_type_ids.insert(0, pad_chunk(0, 0, 0))
+                chunks_token_type_ids.insert(0, create_pad_chunk(0, 0, 0))
             if chunks_event_tokens is not None:
                 # TODO: do we want special ETs?
-                chunks_event_tokens.insert(0, pad_chunk(1, 1, 0))
+                chunks_event_tokens.insert(0, create_pad_chunk(1, 1, 0))
 
         # Truncate the chunks and add attention masks
         chunks = chunks[:num_chunks]
@@ -335,11 +339,9 @@ def cnlp_convert_features_to_hierarchical(
         if chunks_event_tokens is not None:
             chunks_event_tokens = chunks_event_tokens[:num_chunks]
 
-        if sample_no == 2:
-            breakpoint()
         # Add empty lists to list of chunks, if the number of chunks less than max number.
         while len(chunks) < num_chunks:
-            chunks.append(pad_chunk())
+            chunks.append(create_pad_chunk())
             if chunks_attention_mask is not None:
                 chunks_attention_mask.append([0]*chunk_len)
             if chunks_token_type_ids is not None:
