@@ -1,34 +1,27 @@
 import logging
-import time
 import copy
-import tempfile
-import pickle
-import shutil
-import os
 import random
+from typing import Optional, List
 
 import numpy as np
 from torch import nn
 import torch.nn.functional as F
 import torch
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from torch.nn import CrossEntropyLoss, MSELoss
-
-from transformers.models.distilbert import DistilBertPreTrainedModel, DistilBertModel
-from transformers.optimization import AdamW, get_linear_schedule_with_warmup
 from transformers.modeling_outputs import SequenceClassifierOutput
 
-from sklearn.metrics import f1_score, roc_auc_score
-# import wandb
-
-# from transformer import EncoderLayer
-# from utils import set_seed
-from src.cnlpt.CnlpModelForClassification import CnlpModelForClassification
+from src.cnlpt.CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
 
 logger = logging.getLogger(__name__)
 
 
 def set_seed(seed, n_gpu):
+    """
+    Set the random seeds for ``random``, numpy, and pytorch to a specific value.
+
+    Args:
+        seed: the seed to use
+        n_gpu: the number of GPUs being used
+    """
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -37,7 +30,17 @@ def set_seed(seed, n_gpu):
 
 
 class MultiHeadAttention(nn.Module):
-    ''' Multi-Head Attention module '''
+    """
+    Multi-Head Attention module
+
+    Author: Xin Su (https://github.com/xinsu626/DocTransformer)
+
+    Args:
+        n_head: the number of attention heads
+        d_model: the dimensionality of the input and output of the encoder
+        d_k: the size of the query and key vectors
+        d_v: the size of the value vector
+    """
 
     def __init__(self, n_head, d_model, d_k, d_v, dropout=0.1):
         super().__init__()
@@ -51,7 +54,7 @@ class MultiHeadAttention(nn.Module):
         self.w_vs = nn.Linear(d_model, n_head * d_v, bias=False)
         self.fc = nn.Linear(n_head * d_v, d_model, bias=False)
 
-        self.attention = ScaledDotProductAttention(temperature=d_k ** 0.5)
+        self.attention = ScaledDotProductAttention(temperature=d_k**0.5)
 
         self.dropout = nn.Dropout(dropout)
         self.layer_norm = nn.LayerNorm(d_model, eps=1e-6)
@@ -87,7 +90,16 @@ class MultiHeadAttention(nn.Module):
 
 
 class PositionwiseFeedForward(nn.Module):
-    ''' A two-feed-forward-layer module '''
+    """
+    A two-feed-forward-layer module
+
+    Author: Xin Su (https://github.com/xinsu626/DocTransformer)
+
+    Args:
+        d_in: the dimensionality of the input and output of the encoder
+        d_hid: the inner hidden size of the positionwise FFN in the encoder
+        dropout: the amount of dropout to use in training (default 0.1)
+    """
 
     def __init__(self, d_in, d_hid, dropout=0.1):
         super().__init__()
@@ -108,7 +120,17 @@ class PositionwiseFeedForward(nn.Module):
 
 
 class ScaledDotProductAttention(nn.Module):
-    ''' Scaled Dot-Product Attention '''
+    """
+    Scaled Dot-Product Attention
+
+    Author: Xin Su (https://github.com/xinsu626/DocTransformer)
+
+    Args:
+        temperature: the temperature for scaled dot product attention
+        attn_dropout: the amount of dropout to use in training
+          for scaled dot product attention (default 0.1, not
+          tuned in the rest of the code)
+    """
 
     def __init__(self, temperature, attn_dropout=0.1):
         super().__init__()
@@ -128,8 +150,20 @@ class ScaledDotProductAttention(nn.Module):
 
 
 class EncoderLayer(nn.Module):
-    ''' Compose with two layers '''
+    """
+    Compose with two layers
 
+    Author: Xin Su (https://github.com/xinsu626/DocTransformer)
+
+    Args:
+        d_model: the dimensionality of the input and output of the encoder
+        d_inner: the inner hidden size of the positionwise FFN in the encoder
+        n_head: the number of attention heads
+        d_k: the size of the query and key vectors
+        d_v: the size of the value vector
+        dropout: the amount of dropout to use in training in both the
+          attention and FFN steps (default 0.1)
+    """
     def __init__(self, d_model, d_inner, n_head, d_k, d_v, dropout=0.1):
         super(EncoderLayer, self).__init__()
         self.slf_attn = MultiHeadAttention(n_head, d_model, d_k, d_v, dropout=dropout)
@@ -137,20 +171,29 @@ class EncoderLayer(nn.Module):
 
     def forward(self, enc_input, slf_attn_mask=None):
         enc_output, enc_slf_attn = self.slf_attn(
-            enc_input, enc_input, enc_input, mask=slf_attn_mask)
+            enc_input, enc_input, enc_input, mask=slf_attn_mask
+        )
         enc_output = self.pos_ffn(enc_output)
         return enc_output, enc_slf_attn
 
 
 class HierarchicalTransformerConfig(object):
-    def __init__(self,
-                 n_layers,
-                 d_model,
-                 d_inner,
-                 n_head,
-                 d_k,
-                 d_v,
-                 dropout=0.1):
+    """
+    Config object for hierarchical transformer's document-level encoder layers
+
+    Author: Xin Su (https://github.com/xinsu626/DocTransformer)
+
+    Args:
+        n_layers: number of encoder layers
+        d_model: the dimensionality of the input and output of the encoder
+        d_inner: the inner hidden size of the positionwise FFN in the encoder
+        n_head: the number of attention heads
+        d_k: the size of the query and key vectors
+        d_v: the size of the value vector
+        dropout: the amount of dropout to use in training in both the
+          attention and FFN steps (default 0.1)
+    """
+    def __init__(self, n_layers, d_model, d_inner, n_head, d_k, d_v, dropout=0.1):
         self.n_layers = n_layers
         self.d_model = d_model
         self.d_inner = d_inner
@@ -161,37 +204,60 @@ class HierarchicalTransformerConfig(object):
 
 
 class HierarchicalModel(CnlpModelForClassification):
-    base_model_prefix = 'hier'
+    """
+    Hierarchical Transformer model (https://arxiv.org/abs/2105.06752)
 
-    def __init__(self,
-                 config,
-                 transformer_head_config,
-                 *,
-                 class_weights=None,
-                 final_task_weight=1.0,
-                 argument_regularization=-1,
-                 freeze=False,
-                 ):
-        super(HierarchicalModel, self).__init__(config,
-                                                class_weights=class_weights,
-                                                final_task_weight=final_task_weight,
-                                                argument_regularization=argument_regularization,
-                                                freeze=freeze,
-                                                )
-        # Transformer layer
-        transformer_layer = EncoderLayer(d_model=transformer_head_config.d_model,
-                                         d_inner=transformer_head_config.d_inner,
-                                         n_head=transformer_head_config.n_head,
-                                         d_k=transformer_head_config.d_k,
-                                         d_v=transformer_head_config.d_v,
-                                         dropout=transformer_head_config.dropout)
+    Adapted from Xin Su's implementation (https://github.com/xinsu626/DocTransformer)
+
+    Args:
+        config:
+        transformer_head_config,
+        class_weights=None,
+        final_task_weight=1.0,
+        argument_regularization=-1,
+        freeze=False,
+    """
+    base_model_prefix = "hier"
+    config_class = CnlpConfig
+
+    def __init__(
+        self,
+        config: config_class,
+        transformer_head_config: HierarchicalTransformerConfig,
+        *,
+        class_weights: Optional[List[float]] = None,
+        final_task_weight: float = 1.0,
+        argument_regularization: int = -1,
+        freeze: bool = False,
+    ):
+        # Initialize common components
+        super(HierarchicalModel, self).__init__(
+            config,
+            class_weights=class_weights,
+            final_task_weight=final_task_weight,
+            argument_regularization=argument_regularization,
+            freeze=freeze,
+        )
+
+        # Document-level transformer layer
+        transformer_layer = EncoderLayer(
+            d_model=transformer_head_config.d_model,
+            d_inner=transformer_head_config.d_inner,
+            n_head=transformer_head_config.n_head,
+            d_k=transformer_head_config.d_k,
+            d_v=transformer_head_config.d_v,
+            dropout=transformer_head_config.dropout,
+        )
         self.transformer = nn.ModuleList(
-            [copy.deepcopy(transformer_layer) for _ in range(transformer_head_config.n_layers)]
+            [
+                copy.deepcopy(transformer_layer)
+                for _ in range(transformer_head_config.n_layers)
+            ]
         )
 
     def forward(
         self,
-        input_ids: torch.Tensor =None,
+        input_ids=None,
         attention_mask=None,
         token_type_ids=None,
         position_ids=None,
@@ -202,59 +268,107 @@ class HierarchicalModel(CnlpModelForClassification):
         output_hidden_states=None,
         event_tokens=None,
     ):
-        r"""
-                labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size,)`, `optional`, defaults to :obj:`None`):
-                    Labels for computing the sequence classification/regression loss.
-                    Indices should be in :obj:`[0, ..., config.num_labels - 1]`.
-                    If :obj:`config.num_labels == 1` a regression loss is computed (Mean-Square loss),
-                    If :obj:`config.num_labels > 1` a classification loss is computed (Cross-Entropy).
-                """
-        batch_size, num_chunks, chunk_len = input_ids.shape
+        """
+        Forward method.
 
-        flat_shape = (batch_size * num_chunks, chunk_len)
+        Args:
+            input_ids (`torch.LongTensor` of shape `(batch_size, num_chunks, chunk_len)`, *optional*):
+                A batch of chunked documents as tokenizer indices.
+            attention_mask (`torch.LongTensor` of shape `(batch_size, num_chunks, chunk_len)`, *optional*):
+                Attention masks for the batch.
+            token_type_ids (`torch.LongTensor` of shape `(batch_size, num_chunks, chunk_len)`, *optional*):
+                Token type IDs for the batch.
+            position_ids: (`torch.LongTensor` of shape `(batch_size, num_chunks, chunk_len)`, *optional*):
+                Position IDs for the batch.
+            head_mask (`torch.LongTensor` of shape `(num_heads,)` or `(num_layers, num_heads)`, *optional*):
+                Token encoder head mask.
+            inputs_embeds (`torch.FloatTensor` of shape `(batch_size, num_chunks, chunk_len, hidden_size)`, *optional*):
+                A batch of chunked documents as token embeddings.
+            labels (`torch.LongTensor` of shape `(batch_size, num_tasks)`, *optional*):
+                Labels for computing the sequence classification/regression loss.
+                Indices should be in `[0, ..., self.num_labels[task_ind] - 1]`.
+                If `self.num_labels[task_ind] == 1` a regression loss is computed (Mean-Square loss),
+                If `self.num_labels[task_ind] > 1` a classification loss is computed (Cross-Entropy).
+            output_attentions (`bool`, *optional*): Whether or not to return the attentions tensors of all attention layers.
+            output_hidden_states: not used.
+            event_tokens: not currently used (only relevant for token classification)
+
+        Returns:
+
+        """
+        if input_ids is not None:
+            batch_size, num_chunks, chunk_len = input_ids.shape
+            flat_shape = (batch_size * num_chunks, chunk_len)
+        else:  # inputs_embeds is not None
+            batch_size, num_chunks, chunk_len, embed_dim = inputs_embeds.shape
+            flat_shape = (batch_size * num_chunks, chunk_len, embed_dim)
 
         outputs = self.encoder(
-            input_ids.reshape(flat_shape),
-            attention_mask=attention_mask.reshape(flat_shape) if attention_mask is not None else None,
-            token_type_ids=token_type_ids.reshape(flat_shape) if token_type_ids is not None else None,
-            position_ids=position_ids.reshape(flat_shape) if position_ids is not None else None,
+            input_ids.reshape(flat_shape[:3])
+            if input_ids is not None
+            else None,
+            attention_mask=attention_mask.reshape(flat_shape[:3])
+            if attention_mask is not None
+            else None,
+            token_type_ids=token_type_ids.reshape(flat_shape[:3])
+            if token_type_ids is not None
+            else None,
+            position_ids=position_ids.reshape(flat_shape[:3])
+            if position_ids is not None
+            else None,
             head_mask=head_mask,
-            inputs_embeds=inputs_embeds,
+            inputs_embeds=inputs_embeds.reshape(flat_shape)
+            if inputs_embeds is not None
+            else None,
             output_attentions=output_attentions,
             output_hidden_states=True,
-            return_dict=True
+            return_dict=True,
         )
 
         logits = []
 
-        state = dict(
-            loss=None,
-            task_label_ind=0
-        )
+        state = dict(loss=None, task_label_ind=0)
 
         for task_ind, task_num_labels in enumerate(self.num_labels):
             if self.use_prior_tasks:
-                raise NotImplementedError('use_prior_tasks is not defined for hierarchical model')
+                raise NotImplementedError(
+                    "use_prior_tasks is not defined for hierarchical model"
+                )
             if self.config.tokens:
-                raise NotImplementedError('tokens projection is not defined for hierarchical model')
+                raise NotImplementedError(
+                    "tokens projection is not defined for hierarchical model"
+                )
             if self.config.tagger[task_ind]:
-                raise NotImplementedError('tagger projection is not defined for hierarchical model')
+                raise NotImplementedError(
+                    "tagger projection is not defined for hierarchical model"
+                )
             if self.config.relations[task_ind]:
-                raise NotImplementedError('relations projection is not defined for hierarchical model')
+                raise NotImplementedError(
+                    "relations projection is not defined for hierarchical model"
+                )
 
             # outputs.last_hidden_state.shape: (B * n_chunks, chunk_len, hidden_size)
 
             # (B * n_chunk, hidden_size)
-            chunks_reps = self.feature_extractors[task_ind](outputs.hidden_states, event_tokens)
+            chunks_reps = self.feature_extractors[task_ind](
+                outputs.hidden_states, event_tokens
+            )
 
             # (B, n_chunk, hidden_size)
-            chunks_reps = chunks_reps.reshape(batch_size, num_chunks, chunks_reps.shape[-1])
+            chunks_reps = chunks_reps.reshape(
+                batch_size, num_chunks, chunks_reps.shape[-1]
+            )
 
             # Use pre-trained model's position embedding
-            position_ids = torch.arange(num_chunks, dtype=torch.long,
-                                        device=chunks_reps.device)  # (n_chunk)
-            position_ids = position_ids.unsqueeze(0).expand_as(chunks_reps[:, :, 0])  # (B, n_chunk)
-            position_embeddings = self.encoder.embeddings.position_embeddings(position_ids)
+            position_ids = torch.arange(
+                num_chunks, dtype=torch.long, device=chunks_reps.device
+            )  # (n_chunk)
+            position_ids = position_ids.unsqueeze(0).expand_as(
+                chunks_reps[:, :, 0]
+            )  # (B, n_chunk)
+            position_embeddings = self.encoder.embeddings.position_embeddings(
+                position_ids
+            )
             chunks_reps = chunks_reps + position_embeddings
 
             # document encoding (B, n_chunk, hidden_size)
@@ -276,56 +390,25 @@ class HierarchicalModel(CnlpModelForClassification):
                     task_num_labels,
                     batch_size,
                     -1,  # only used for relation adn tagger
-                    state
+                    state,
                 )
 
-        if len(self.num_labels) == 3 and self.relations[-1] and self.argument_regularization > 0:
-            # standard e2e relation task -- two entity extractors and relation extractor.
-            prob_no_rel = F.softmax(logits[2], dim=3)[:, :, :, 0]
-
-            ## product gets us something like a joint probability over all relation categories.
-            # the downside is, we're penalizing the event "some relation being more likely than none"
-            # in the joint sense, but we never actually use that event anywhere, i.e., if no
-            # relation meets the threshold we will never create a relation.
-            # so maybe doing something like relu + sum makes more sense.
-            #
-            # prob_a1_norel = prob_no_rel.prod(dim=1)
-            # prob_a2_norel = prob_no_rel.prod(dim=2)
-            # prob_some_rel = relu ( 1 - (prob_a1_norel * prob_a2_norel) - 0.5)
-            # These values will be greater than 0 at position i if there is any relation that
-            # has i as arg1 or i as arg2.
-            prob_a1_rel = F.relu(0.5 - prob_no_rel).sum(dim=1)
-            prob_a2_rel = F.relu(0.5 - prob_no_rel).sum(dim=2)
-            prob_some_rel = prob_a1_rel + prob_a2_rel
-
-            # prob_no_e1_type = relu( softmax(logits[0], dim=2)[:,:,0] - 0.5)
-            # prob_no_e2_type = relu( softmax(logits[1], dim=2)[:,:,0] - 0.5)
-            probs_e1 = F.softmax(logits[0], dim=2)
-            probs_e2 = F.softmax(logits[1], dim=2)
-
-            # threshold: the penalty is possible if more than this number of probabilities are greater than the
-            # "no entity" threshold. we subtract 2 because we are removing the None category, and C-1 is the default
-            # case where there is no relation, only if more than that is an issue.
-            t1_threshold = self.num_labels[0] - 2
-            t2_threshold = self.num_labels[1] - 2
-
-            # we take p(none) - p(other relations) inside the sign.
-            # then take the sign, if there are any -1s, the sum will be less than tx_threshold and the inner part will be < 0,
-            # and relu will be 0. If there are no -1, the sum will be > tx_threshold and the innter part will be 1, relu also 1.
-            prob_no_e1_type = F.relu(
-                torch.sign(probs_e1[:, :, 0].unsqueeze(2) - probs_e1[:, :, 1:]).sum(dim=2) - t1_threshold)
-            prob_no_e2_type = F.relu(
-                torch.sign(probs_e2[:, :, 0].unsqueeze(2) - probs_e2[:, :, 1:]).sum(dim=2) - t2_threshold)
-
-            prob_no_ent = prob_no_e1_type * prob_no_e2_type
-
-            prob_rel_no_ent = prob_some_rel * prob_no_ent * attention_mask
-
-            state['loss'] += self.argument_regularization * prob_rel_no_ent.sum()
+        if (
+            len(self.num_labels) == 3
+            and self.relations[-1]
+            and self.argument_regularization > 0
+        ):
+            # TODO: is the attention_mask in the right shape for this?
+            logger.warning("Attention mask may not be in the right shape for "
+                           "argument regularization with the hierarchical model.")
+            self.apply_arg_reg(logits, attention_mask, state)
 
         if self.training:
             return SequenceClassifierOutput(
-                loss=state['loss'], logits=logits, hidden_states=outputs.hidden_states, attentions=outputs.attentions,
+                loss=state["loss"],
+                logits=logits,
+                hidden_states=outputs.hidden_states,
+                attentions=outputs.attentions,
             )
         else:
-            return SequenceClassifierOutput(loss=state['loss'], logits=logits)
+            return SequenceClassifierOutput(loss=state["loss"], logits=logits)

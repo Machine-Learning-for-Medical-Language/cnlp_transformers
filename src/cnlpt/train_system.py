@@ -212,18 +212,21 @@ def main():
         add_prefix_space=True,
         additional_special_tokens=['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>', '<neg>']
     )
-    
+
+    model_name = model_args.model
+    hierarchical = model_name == 'hier'
+
     # Get datasets
     train_dataset = (
-        ClinicalNlpDataset(data_args, tokenizer=tokenizer, cache_dir=model_args.cache_dir) if training_args.do_train else None
+        ClinicalNlpDataset(data_args, tokenizer=tokenizer, cache_dir=model_args.cache_dir, hierarchical=hierarchical) if training_args.do_train else None
     )
     eval_dataset = (
-        ClinicalNlpDataset(data_args, tokenizer=tokenizer, mode="dev", cache_dir=model_args.cache_dir)
+        ClinicalNlpDataset(data_args, tokenizer=tokenizer, mode="dev", cache_dir=model_args.cache_dir, hierarchical=hierarchical)
         if training_args.do_eval
         else None
     )
     test_dataset = (
-        ClinicalNlpDataset(data_args, tokenizer=tokenizer, mode="test", cache_dir=model_args.cache_dir)
+        ClinicalNlpDataset(data_args, tokenizer=tokenizer, mode="test", cache_dir=model_args.cache_dir, hierarchical=hierarchical)
         if training_args.do_predict
         else None
     )
@@ -234,9 +237,7 @@ def main():
     # The .from_pretrained methods guarantee that only one local process can concurrently
     # download model & vocab.
 
-    model_name = model_args.model
     pretrained = False
-    hierarchical = False
 
     if model_name == 'cnn':
         model = CnnSentenceClassifier(len(tokenizer), num_labels_list=num_labels)
@@ -259,7 +260,6 @@ def main():
         )
 
         pretrained = True
-        hierarchical = True
 
         encoder_name = model_args.config_name if model_args.config_name else model_args.encoder_name
         config = CnlpConfig(

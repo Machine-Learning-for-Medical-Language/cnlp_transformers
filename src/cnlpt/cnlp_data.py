@@ -60,7 +60,7 @@ class InputFeatures:
 @dataclass(frozen=True)
 class HierarchicalInputFeatures:
     """
-    A single set of features of data.
+    A single set of features of data for the hierarchical model.
     Property names are the same names as the corresponding inputs to a model.
 
     Args:
@@ -85,6 +85,106 @@ class HierarchicalInputFeatures:
         return json.dumps(asdict(self)) + "\n"
 
 
+def cnlp_convert_features_to_hierarchical(
+        features: InputFeatures,
+        chunk_len: int,
+        num_chunks: int,
+        cls_id: int,
+        sep_id: int,
+        pad_id: int,
+        insert_empty_chunk_at_beginning: bool = False,
+        # cls_token_at_end=False,
+        # sequence_a_segment_id=0,
+        # cls_token_segment_id=0,
+        # pad_token_segment_id=0,
+        # use_special_token=True,
+) -> HierarchicalInputFeatures:
+    """
+    Chunk an instance of InputFeatures into an instance of HierarchicalInputFeatures
+    for the hierarchical model.
+
+    Args:
+        features: the old instance
+        chunk_len: the maximum length of a chunk
+        num_chunks: the maximum number of chunks in the instance
+        cls_id: the tokenizer's ID representing the CLS token
+        sep_id: the tokenizer's ID representing the SEP token
+        pad_id: the tokenizer's ID representing the PAD token
+        insert_empty_chunk_at_beginning: whether to insert an
+            empty chunk at the beginning of the instance
+
+    Returns:
+        an instance of `HierarchicalInputFeatures` containing the chunked instance
+    """
+    # Get feature variables
+    input_ids_, attention_mask_, token_type_ids_, event_tokens_, label_ = astuple(features)
+
+    assert len(input_ids_) == len(attention_mask_) == len(event_tokens_)
+
+    # Split the sample's tokens into several chunk lists.
+    chunks = []
+    if attention_mask_ is not None:
+        chunks_attention_mask = []
+    else:
+        chunks_attention_mask = None
+    if token_type_ids_ is not None:
+        chunks_token_type_ids = []
+    else:
+        chunks_token_type_ids = None
+    if event_tokens_ is not None:
+        chunks_event_tokens = []
+    else:
+        chunks_event_tokens = None
+
+    def pad_chunk(chunk, pad_type=pad_id):
+        return chunk + [pad_type] * (chunk_len - len(chunk))
+
+    for i in range(0, len(input_ids_), chunk_len):
+        chunks.append(pad_chunk(input_ids_[i : i + chunk_len]))
+        if chunks_attention_mask is not None:
+            chunks_attention_mask.append(pad_chunk(attention_mask_[i : i + chunk_len]))
+        if chunks_token_type_ids is not None:
+            chunks_token_type_ids.append(pad_chunk(token_type_ids_[i : i + chunk_len]))
+        if chunks_event_tokens is not None:
+            chunks_event_tokens.append(pad_chunk(event_tokens_[i : i + chunk_len]))
+
+    def create_pad_chunk(cls_type=cls_id, sep_type=sep_id, pad_type=pad_id):
+        return pad_chunk([cls_type] + [sep_type])
+
+    # Insert an empty chunk at the beginning.
+    if insert_empty_chunk_at_beginning:
+        chunks.insert(0, create_pad_chunk())
+        if chunks_attention_mask is not None:
+            chunks_attention_mask.insert(0, create_pad_chunk(1, 1, 0))
+        if chunks_token_type_ids is not None:
+            # TODO: do we want special TTIDs?
+            chunks_token_type_ids.insert(0, create_pad_chunk(0, 0, 0))
+        if chunks_event_tokens is not None:
+            # TODO: do we want special ETs?
+            chunks_event_tokens.insert(0, create_pad_chunk(1, 1, 0))
+
+    # Truncate the chunks and add attention masks
+    chunks = chunks[:num_chunks]
+    if chunks_attention_mask is not None:
+        chunks_attention_mask = chunks_attention_mask[:num_chunks]
+    if chunks_token_type_ids is not None:
+        chunks_token_type_ids = chunks_token_type_ids[:num_chunks]
+    if chunks_event_tokens is not None:
+        chunks_event_tokens = chunks_event_tokens[:num_chunks]
+
+    # Add empty lists to list of chunks, if the number of chunks less than max number.
+    while len(chunks) < num_chunks:
+        chunks.append(create_pad_chunk())
+        if chunks_attention_mask is not None:
+            chunks_attention_mask.append([0]*chunk_len)
+        if chunks_token_type_ids is not None:
+            chunks_token_type_ids.append([0]*chunk_len)
+        if chunks_event_tokens is not None:
+            chunks_event_tokens.append([0]*chunk_len)
+
+    return HierarchicalInputFeatures(chunks, chunks_attention_mask, chunks_token_type_ids, event_tokens_, label_)
+
+
 def cnlp_convert_examples_to_features(
     examples: List[InputExample],
     tokenizer: PreTrainedTokenizer,
@@ -94,7 +194,14 @@ def cnlp_convert_examples_to_features(
     output_mode=None,
     token_classify=False,
     inference=False,
-):
+    hierarchical=False,
+    chunk_len: int = -1,
+    num_chunks: int = -1,
+    cls_id: int = -1,
+    sep_id: int = -1,
+    pad_id: int = -1,
+    insert_empty_chunk_at_beginning: bool = False,
+) -> Union[List[InputFeatures], List[HierarchicalInputFeatures]]:
     event_start_ind = tokenizer.convert_tokens_to_ids('<e>')
     event_end_ind = tokenizer.convert_tokens_to_ids('</e>')
     
@@ -254,6 +361,16 @@ def cnlp_convert_examples_to_features(
         else:
             label = [labels[i]]
         feature = InputFeatures(**inputs, label=label)
+        if hierarchical:
+            feature = cnlp_convert_features_to_hierarchical(
+                feature,
+                chunk_len=chunk_len,
+                num_chunks=num_chunks,
+                cls_id=cls_id,
+                sep_id=sep_id,
+                pad_id=pad_id,
+                insert_empty_chunk_at_beginning=insert_empty_chunk_at_beginning,
+            )
         features.append(feature)
 
     for i, example in enumerate(examples[:5]):
@@ -262,96 +379,6 @@ def cnlp_convert_examples_to_features(
         logger.info("features: %s" % features[i])
 
     return features
-
-
-def cnlp_convert_features_to_hierarchical(
-        features: List[InputFeatures],
-        chunk_len,
-        num_chunks,
-        cls_id,
-        sep_id,
-        pad_id,
-        # cls_token="[CLS]",
-        # cls_token_at_end=False,
-        # sep_token="[SEP]",
-        # pad_token=0,
-        # sequence_a_segment_id=0,
-        # cls_token_segment_id=0,
-        # pad_token_segment_id=0,
-        insert_empty_chunk_at_beginning=False,
-        # use_special_token=True,
-) -> List[HierarchicalInputFeatures]:
-    features_out = []
-    for sample_no, sample in enumerate(features):
-        # Get feature variables
-        input_ids_, attention_mask_, token_type_ids_, event_tokens_, label_ = astuple(sample)
-
-        assert len(input_ids_) == len(attention_mask_) == len(event_tokens_)
-
-        # Split the sample's tokens into several chunk lists.
-        chunks = []
-        if attention_mask_ is not None:
-            chunks_attention_mask = []
-        else:
-            chunks_attention_mask = None
-        if token_type_ids_ is not None:
-            chunks_token_type_ids = []
-        else:
-            chunks_token_type_ids = None
-        if event_tokens_ is not None:
-            chunks_event_tokens = []
-        else:
-            chunks_event_tokens = None
-
-        def pad_chunk(chunk, pad_type=pad_id):
-            return chunk + [pad_type] * (chunk_len - len(chunk))
-
-        for i in range(0, len(input_ids_), chunk_len):
-            chunks.append(pad_chunk(input_ids_[i : i + chunk_len]))
-            if chunks_attention_mask is not None:
-                chunks_attention_mask.append(pad_chunk(attention_mask_[i : i + chunk_len]))
-            if chunks_token_type_ids is not None:
-                chunks_token_type_ids.append(pad_chunk(token_type_ids_[i : i + chunk_len]))
-            if chunks_event_tokens is not None:
-                chunks_event_tokens.append(pad_chunk(event_tokens_[i : i + chunk_len]))
-
-        def create_pad_chunk(cls_type=cls_id, sep_type=sep_id, pad_type=pad_id):
-            return pad_chunk([cls_type] + [sep_type])
-
-        # Insert an empty chunk at the beginning.
-        if insert_empty_chunk_at_beginning:
-            chunks.insert(0, create_pad_chunk())
-            if chunks_attention_mask is not None:
-                chunks_attention_mask.insert(0, create_pad_chunk(1, 1, 0))
-            if chunks_token_type_ids is not None:
-                # TODO: do we want special TTIDs?
-                chunks_token_type_ids.insert(0, create_pad_chunk(0, 0, 0))
-            if chunks_event_tokens is not None:
-                # TODO: do we want special ETs?
-                chunks_event_tokens.insert(0, create_pad_chunk(1, 1, 0))
-
-        # Truncate the chunks and add attention masks
-        chunks = chunks[:num_chunks]
-        if chunks_attention_mask is not None:
-            chunks_attention_mask = chunks_attention_mask[:num_chunks]
-        if chunks_token_type_ids is not None:
-            chunks_token_type_ids = chunks_token_type_ids[:num_chunks]
-        if chunks_event_tokens is not None:
-            chunks_event_tokens = chunks_event_tokens[:num_chunks]
-
-        # Add empty lists to list of chunks, if the number of chunks less than max number.
-        while len(chunks) < num_chunks:
-            chunks.append(create_pad_chunk())
-            if chunks_attention_mask is not None:
-                chunks_attention_mask.append([0]*chunk_len)
-            if chunks_token_type_ids is not None:
-                chunks_token_type_ids.append([0]*chunk_len)
-            if chunks_event_tokens is not None:
-                chunks_event_tokens.append([0]*chunk_len)
-
-        features_out.append(HierarchicalInputFeatures(chunks, chunks_attention_mask, chunks_token_type_ids, event_tokens_, label_))
-
-    return features_out
 
 
 @dataclass
@@ -395,15 +422,13 @@ class DataTrainingArguments:
                                          "of the rarest class."}
     )
 
-    hierarchical: bool = field(default=False, metadata={"help": "Whether the data is for a hierarchical model"}),
+    chunk_len: Optional[int] = field(default=None, metadata={"help": "Chunk length for hierarchical model"})
 
-    chunk_len: Optional[int] = field(default=None, metadata={"help": "Chunk length for hierarchical model"}),
-
-    num_chunks: Optional[int] = field(default=None, metadata={"help": "Max chunk count for hierarchical model"}),
+    num_chunks: Optional[int] = field(default=None, metadata={"help": "Max chunk count for hierarchical model"})
 
     insert_empty_chunk_at_beginning: bool = field(default=False, metadata={
         "help": "Whether to insert an empty chunk for hierarchical model"
-    }),
+    })
 
 
 class ClinicalNlpDataset(Dataset):
@@ -421,11 +446,13 @@ class ClinicalNlpDataset(Dataset):
         limit_length: Optional[int] = None,
         mode: Union[str, Split] = Split.train,
         cache_dir: Optional[str] = None,
+        hierarchical: bool = False,
     ):
         self.args = args
         self.processors = []
         self.output_mode = []
         self.class_weights = []
+        self.hierarchical = hierarchical
 
         for task in args.task_name:
             self.processors.append(cnlp_processors[task]())
@@ -488,17 +515,14 @@ class ClinicalNlpDataset(Dataset):
                         label_list=self.label_lists[task_ind],
                         output_mode=self.output_mode[task_ind],
                         inference=mode == Split.test,
+                        hierarchical=self.hierarchical,
+                        chunk_len=self.args.chunk_len,
+                        num_chunks=self.args.num_chunks,
+                        cls_id=tokenizer.cls_token_id,
+                        sep_id=tokenizer.sep_token_id,
+                        pad_id=tokenizer.pad_token_id,
+                        insert_empty_chunk_at_beginning=self.args.insert_empty_chunk_at_beginning,
                     )
-                    if self.args.hierarchical:
-                        features = cnlp_convert_features_to_hierarchical(
-                            features,
-                            chunk_len=self.args.chunk_len,
-                            num_chunks=self.args.num_chunks,
-                            cls_id=tokenizer.cls_token_id,
-                            sep_id=tokenizer.sep_token_id,
-                            pad_id=tokenizer.pad_token_id,
-                            insert_empty_chunk_at_beginning=self.args.insert_empty_chunk_at_beginning,
-                        )
                     start = time.time()
                     torch.save(features, cached_features_file)
                     # ^ This seems to take a lot of time so I want to investigate why and how we can improve.

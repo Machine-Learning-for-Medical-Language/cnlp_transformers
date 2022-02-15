@@ -124,13 +124,13 @@ class CnlpModelForClassification(PreTrainedModel):
     config_class = CnlpConfig
 
     def __init__(self,
-                config: config_class,
+                 config: config_class,
                  *,
-                class_weights: Optional[List[float]] = None,
-                final_task_weight: float = 1.0,
-                argument_regularization: int =-1,
-                freeze=False,
-        ):
+                 class_weights: Optional[List[float]] = None,
+                 final_task_weight: float = 1.0,
+                 argument_regularization: int = -1,
+                 freeze=False,
+                 ):
 
         super().__init__(config)
 
@@ -199,14 +199,26 @@ class CnlpModelForClassification(PreTrainedModel):
         return features
 
     def compute_loss(self,
-                     task_logits,
-                     labels,
+                     task_logits: torch.FloatTensor,
+                     labels: torch.LongTensor,
                      task_ind,
                      task_num_labels,
                      batch_size,
                      seq_len,
                      state: dict,
-                     ):
+                     ) -> None:
+        """
+        Computes the loss for a single batch and a single task.
+
+        Args:
+            task_logits:
+            labels:
+            task_ind:
+            task_num_labels:
+            batch_size:
+            seq_len:
+            state:
+        """
         if task_num_labels == 1:
             #  We are doing regression
             loss_fct = MSELoss()
@@ -239,7 +251,8 @@ class CnlpModelForClassification(PreTrainedModel):
                     task_labels = labels[:, 0, task_ind]
                 else:
                     raise NotImplementedError(
-                        'Have not implemented the case where a classification task is part of an MTL setup with relations and sequence tagging')
+                        'Have not implemented the case where a classification task '
+                        'is part of an MTL setup with relations and sequence tagging')
 
                 state['task_label_ind'] += 1
                 task_loss = loss_fct(task_logits, task_labels.type(torch.LongTensor).to(labels.device))
@@ -249,6 +262,61 @@ class CnlpModelForClassification(PreTrainedModel):
         else:
             task_weight = 1.0 if task_ind + 1 < len(self.num_labels) else self.final_task_weight
             state['loss'] += (task_weight * task_loss)
+
+    def apply_arg_reg(self,
+                      logits: List[torch.FloatTensor],
+                      attention_mask: torch.LongTensor,
+                      state: dict) -> None:
+        """
+        Applies argument regularization to the logits for a single batch on all tasks.
+
+        Args:
+            logits (`List[torch.FloatTensor]`): the computed logits of the batch.
+            attention_mask (`torch.LongTensor`): the attention mask for the batch.
+            state: the state dict containing the loss for the batch.
+        """
+        # standard e2e relation task -- two entity extractors and relation extractor.
+        prob_no_rel = softmax(logits[2], dim=3)[:, :, :, 0]
+
+        ## product gets us something like a joint probability over all relation categories.
+        # the downside is, we're penalizing the event "some relation being more likely than none"
+        # in the joint sense, but we never actually use that event anywhere, i.e., if no
+        # relation meets the threshold we will never create a relation.
+        # so maybe doing something like relu + sum makes more sense.
+        #
+        # prob_a1_norel = prob_no_rel.prod(dim=1)
+        # prob_a2_norel = prob_no_rel.prod(dim=2)
+        # prob_some_rel = relu ( 1 - (prob_a1_norel * prob_a2_norel) - 0.5)
+        # These values will be greater than 0 at position i if there is any relation that
+        # has i as arg1 or i as arg2.
+        prob_a1_rel = relu(0.5 - prob_no_rel).sum(dim=1)
+        prob_a2_rel = relu(0.5 - prob_no_rel).sum(dim=2)
+        prob_some_rel = prob_a1_rel + prob_a2_rel
+
+        # prob_no_e1_type = relu( softmax(logits[0], dim=2)[:,:,0] - 0.5)
+        # prob_no_e2_type = relu( softmax(logits[1], dim=2)[:,:,0] - 0.5)
+        probs_e1 = softmax(logits[0], dim=2)
+        probs_e2 = softmax(logits[1], dim=2)
+
+        # threshold: the penalty is possible if more than this number of probabilities are greater than the
+        # "no entity" threshold. we subtract 2 because we are removing the None category, and C-1 is the default
+        # case where there is no relation, only if more than that is an issue.
+        t1_threshold = self.num_labels[0] - 2
+        t2_threshold = self.num_labels[1] - 2
+
+        # we take p(none) - p(other relations) inside the sign.
+        # then take the sign, if there are any -1s, the sum will be less than tx_threshold and the inner part will be < 0,
+        # and relu will be 0. If there are no -1, the sum will be > tx_threshold and the innter part will be 1, relu also 1.
+        prob_no_e1_type = relu(
+            torch.sign(probs_e1[:, :, 0].unsqueeze(2) - probs_e1[:, :, 1:]).sum(dim=2) - t1_threshold)
+        prob_no_e2_type = relu(
+            torch.sign(probs_e2[:, :, 0].unsqueeze(2) - probs_e2[:, :, 1:]).sum(dim=2) - t2_threshold)
+
+        prob_no_ent = prob_no_e1_type * prob_no_e2_type
+
+        prob_rel_no_ent = prob_some_rel * prob_no_ent * attention_mask
+
+        state["loss"] += self.argument_regularization * prob_rel_no_ent.sum()
 
     def forward(
         self,
@@ -313,46 +381,7 @@ class CnlpModelForClassification(PreTrainedModel):
                 )
 
         if len(self.num_labels) == 3 and self.relations[-1] and self.argument_regularization > 0:
-            # standard e2e relation task -- two entity extractors and relation extractor.
-            prob_no_rel = softmax(logits[2], dim=3)[:,:,:,0]
-            
-            ## product gets us something like a joint probability over all relation categories.
-            # the downside is, we're penalizing the event "some relation being more likely than none"
-            # in the joint sense, but we never actually use that event anywhere, i.e., if no
-            # relation meets the threshold we will never create a relation. 
-            # so maybe doing something like relu + sum makes more sense.
-            #
-            #prob_a1_norel = prob_no_rel.prod(dim=1)
-            #prob_a2_norel = prob_no_rel.prod(dim=2)
-            #prob_some_rel = relu ( 1 - (prob_a1_norel * prob_a2_norel) - 0.5)
-            # These values will be greater than 0 at position i if there is any relation that
-            # has i as arg1 or i as arg2.
-            prob_a1_rel = relu(0.5 - prob_no_rel).sum(dim=1)
-            prob_a2_rel = relu(0.5 - prob_no_rel).sum(dim=2)
-            prob_some_rel = prob_a1_rel + prob_a2_rel
-
-            #prob_no_e1_type = relu( softmax(logits[0], dim=2)[:,:,0] - 0.5)
-            #prob_no_e2_type = relu( softmax(logits[1], dim=2)[:,:,0] - 0.5)
-            probs_e1 = softmax(logits[0], dim=2)
-            probs_e2 = softmax(logits[1], dim=2)
-
-            # threshold: the penalty is possible if more than this number of probabilities are greater than the 
-            # "no entity" threshold. we subtract 2 because we are removing the None category, and C-1 is the default
-            # case where there is no relation, only if more than that is an issue.
-            t1_threshold = self.num_labels[0] - 2
-            t2_threshold = self.num_labels[1] - 2
-
-            # we take p(none) - p(other relations) inside the sign.
-            # then take the sign, if there are any -1s, the sum will be less than tx_threshold and the inner part will be < 0,
-            # and relu will be 0. If there are no -1, the sum will be > tx_threshold and the innter part will be 1, relu also 1.
-            prob_no_e1_type = relu(torch.sign(probs_e1[:,:,0].unsqueeze(2) - probs_e1[:,:,1:]).sum(dim=2) - t1_threshold)
-            prob_no_e2_type = relu(torch.sign(probs_e2[:,:,0].unsqueeze(2) - probs_e2[:,:,1:]).sum(dim=2) - t2_threshold)
-
-            prob_no_ent = prob_no_e1_type * prob_no_e2_type
-
-            prob_rel_no_ent = prob_some_rel * prob_no_ent * attention_mask
-                   
-            state['loss'] += self.argument_regularization * prob_rel_no_ent.sum()
+            self.apply_arg_reg(logits, attention_mask, state)
 
         if self.training:
             return SequenceClassifierOutput(
