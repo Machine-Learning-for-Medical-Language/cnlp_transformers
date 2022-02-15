@@ -51,7 +51,7 @@ from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
 
 from .CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
 from .BaselineModels import CnnSentenceClassifier, LstmSentenceClassifier
-from .HierarchicalTransformer import HierarchicalTransformer, HierarchicalTransformerConfig
+from .HierarchicalTransformer import HierarchicalModel, HierarchicalTransformerConfig
 
 import requests
 
@@ -212,18 +212,21 @@ def main():
         add_prefix_space=True,
         additional_special_tokens=['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>', '<neg>']
     )
-    
+
+    model_name = model_args.model
+    hierarchical = model_name == 'hier'
+
     # Get datasets
     train_dataset = (
-        ClinicalNlpDataset(data_args, tokenizer=tokenizer, cache_dir=model_args.cache_dir) if training_args.do_train else None
+        ClinicalNlpDataset(data_args, tokenizer=tokenizer, cache_dir=model_args.cache_dir, hierarchical=hierarchical) if training_args.do_train else None
     )
     eval_dataset = (
-        ClinicalNlpDataset(data_args, tokenizer=tokenizer, mode="dev", cache_dir=model_args.cache_dir)
+        ClinicalNlpDataset(data_args, tokenizer=tokenizer, mode="dev", cache_dir=model_args.cache_dir, hierarchical=hierarchical)
         if training_args.do_eval
         else None
     )
     test_dataset = (
-        ClinicalNlpDataset(data_args, tokenizer=tokenizer, mode="test", cache_dir=model_args.cache_dir)
+        ClinicalNlpDataset(data_args, tokenizer=tokenizer, mode="test", cache_dir=model_args.cache_dir, hierarchical=hierarchical)
         if training_args.do_predict
         else None
     )
@@ -234,7 +237,6 @@ def main():
     # The .from_pretrained methods guarantee that only one local process can concurrently
     # download model & vocab.
 
-    model_name = model_args.model
     pretrained = False
 
     if model_name == 'cnn':
@@ -242,28 +244,60 @@ def main():
     elif model_name == 'lstm':
         model = LstmSentenceClassifier(len(tokenizer), num_labels_list=num_labels)
     elif model_name == 'hier':
-        encoder_config = AutoConfig.from_pretrained(
-            model_args.config_name if model_args.config_name else model_args.encoder_name,
-            finetuning_task=data_args.task_name,
+        # encoder_config = AutoConfig.from_pretrained(
+        #     model_args.config_name if model_args.config_name else model_args.encoder_name,
+        #     finetuning_task=data_args.task_name,
+        # )
+
+        pretrained = True
+
+        encoder_name = model_args.config_name if model_args.config_name else model_args.encoder_name
+        config = CnlpConfig(
+            encoder_name,
+            data_args.task_name,
+            num_labels,
+            layer=model_args.layer,
+            tokens=model_args.token,
+            num_rel_attention_heads=model_args.num_rel_feats,
+            rel_attention_head_dims=model_args.head_features,
+            tagger=tagger,
+            relations=relations,
         )
-        ## TODO make these cli model params
+        # num_tokens=len(tokenizer))
+        config.vocab_size = len(tokenizer)
+
+        # TODO we should be able to infer this during model initialization
+        encoder_dim = AutoConfig.from_pretrained(encoder_name, cache_dir=model_args.cache_dir).hidden_size
+
+        # TODO make these cli model params
         args_tuneable = dict(
             # transformer head
             n_layers=2,
-            d_model=768,
+            d_model=encoder_dim,
             d_inner=2048,
             n_head=8,
             d_k=8,
             d_v=96,
         )
 
-        transformer_head_config = HierarchicalTransformerConfig(n_layers=args_tuneable['n_layers'],
-                                            d_model=args_tuneable['d_model'],
-                                            n_head=args_tuneable['n_head'],
-                                            d_v=args_tuneable['d_v'],
-                                            d_k=args_tuneable['d_k'],
-                                            d_inner=args_tuneable['d_inner'])
-        model = HierarchicalTransformer(encoder_config, transformer_head_config)
+        transformer_head_config = HierarchicalTransformerConfig(
+            n_layers=args_tuneable['n_layers'],
+            d_model=args_tuneable['d_model'],
+            n_head=args_tuneable['n_head'],
+            d_v=args_tuneable['d_v'],
+            d_k=args_tuneable['d_k'],
+            d_inner=args_tuneable['d_inner'],
+        )
+
+        model = HierarchicalModel(
+            config=config,
+            transformer_head_config=transformer_head_config,
+            class_weights=None if train_dataset is None else train_dataset.class_weights,
+            final_task_weight=training_args.final_task_weight,
+            freeze=training_args.freeze,
+            argument_regularization=training_args.arg_reg,
+        )
+
     else:
         # by default cnlpt model, but need to check which encoder they want
         encoder_name = model_args.encoder_name

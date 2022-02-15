@@ -1,32 +1,169 @@
-import time
+import logging
 import copy
-import tempfile
-import pickle
-import shutil
-import os
+import random
+from typing import Optional, List
 
 import numpy as np
 from torch import nn
+import torch.nn.functional as F
 import torch
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from transformers.models.distilbert import DistilBertPreTrainedModel, DistilBertModel
-from transformers.optimization import AdamW, get_linear_schedule_with_warmup
-from sklearn.metrics import f1_score, roc_auc_score
-# import wandb
+from transformers.modeling_outputs import SequenceClassifierOutput
 
-# from transformer import EncoderLayer
-# from utils import set_seed
+from src.cnlpt.CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
+
+logger = logging.getLogger(__name__)
+
 
 def set_seed(seed, n_gpu):
+    """
+    Set the random seeds for ``random``, numpy, and pytorch to a specific value.
+
+    Args:
+        seed: the seed to use
+        n_gpu: the number of GPUs being used
+    """
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     if n_gpu > 0:
         torch.cuda.manual_seed_all(seed)
 
-class EncoderLayer(nn.Module):
-    ''' Compose with two layers '''
 
+class MultiHeadAttention(nn.Module):
+    """
+    Multi-Head Attention module
+
+    Author: Xin Su (https://github.com/xinsu626/DocTransformer)
+
+    Args:
+        n_head: the number of attention heads
+        d_model: the dimensionality of the input and output of the encoder
+        d_k: the size of the query and key vectors
+        d_v: the size of the value vector
+    """
+
+    def __init__(self, n_head, d_model, d_k, d_v, dropout=0.1):
+        super().__init__()
+
+        self.n_head = n_head
+        self.d_k = d_k
+        self.d_v = d_v
+
+        self.w_qs = nn.Linear(d_model, n_head * d_k, bias=False)
+        self.w_ks = nn.Linear(d_model, n_head * d_k, bias=False)
+        self.w_vs = nn.Linear(d_model, n_head * d_v, bias=False)
+        self.fc = nn.Linear(n_head * d_v, d_model, bias=False)
+
+        self.attention = ScaledDotProductAttention(temperature=d_k**0.5)
+
+        self.dropout = nn.Dropout(dropout)
+        self.layer_norm = nn.LayerNorm(d_model, eps=1e-6)
+
+    def forward(self, q, k, v, mask=None):
+        d_k, d_v, n_head = self.d_k, self.d_v, self.n_head
+        sz_b, len_q, len_k, len_v = q.size(0), q.size(1), k.size(1), v.size(1)
+
+        residual = q
+        q = self.layer_norm(q)
+
+        # Pass through the pre-attention projection: b x lq x (n*dv)
+        # Separate different heads: b x lq x n x dv
+        q = self.w_qs(q).view(sz_b, len_q, n_head, d_k)
+        k = self.w_ks(k).view(sz_b, len_k, n_head, d_k)
+        v = self.w_vs(v).view(sz_b, len_v, n_head, d_v)
+
+        # Transpose for attention dot product: b x n x lq x dv
+        q, k, v = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
+
+        if mask is not None:
+            mask = mask.unsqueeze(1)  # For head axis broadcasting.
+
+        output, attn = self.attention(q, k, v, mask=mask)
+
+        # Transpose to move the head dimension back: b x lq x n x dv
+        # Combine the last two dimensions to concatenate all the heads together: b x lq x (n*dv)
+        output = output.transpose(1, 2).contiguous().view(sz_b, len_q, -1)
+        output = self.dropout(self.fc(output))
+        output += residual
+
+        return output, attn
+
+
+class PositionwiseFeedForward(nn.Module):
+    """
+    A two-feed-forward-layer module
+
+    Author: Xin Su (https://github.com/xinsu626/DocTransformer)
+
+    Args:
+        d_in: the dimensionality of the input and output of the encoder
+        d_hid: the inner hidden size of the positionwise FFN in the encoder
+        dropout: the amount of dropout to use in training (default 0.1)
+    """
+
+    def __init__(self, d_in, d_hid, dropout=0.1):
+        super().__init__()
+        self.w_1 = nn.Linear(d_in, d_hid)  # position-wise
+        self.w_2 = nn.Linear(d_hid, d_in)  # position-wise
+        self.layer_norm = nn.LayerNorm(d_in, eps=1e-6)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+        residual = x
+        x = self.layer_norm(x)
+
+        output = self.w_2(F.relu(self.w_1(x)))
+        output = self.dropout(output)
+        output += residual
+
+        return output
+
+
+class ScaledDotProductAttention(nn.Module):
+    """
+    Scaled Dot-Product Attention
+
+    Author: Xin Su (https://github.com/xinsu626/DocTransformer)
+
+    Args:
+        temperature: the temperature for scaled dot product attention
+        attn_dropout: the amount of dropout to use in training
+          for scaled dot product attention (default 0.1, not
+          tuned in the rest of the code)
+    """
+
+    def __init__(self, temperature, attn_dropout=0.1):
+        super().__init__()
+        self.temperature = temperature
+        self.dropout = nn.Dropout(attn_dropout)
+
+    def forward(self, q, k, v, mask=None):
+        attn = torch.matmul(q / self.temperature, k.transpose(2, 3))
+
+        if mask is not None:
+            attn = attn.masked_fill(mask == 0, -1e9)
+
+        attn = self.dropout(F.softmax(attn, dim=-1))
+        output = torch.matmul(attn, v)
+
+        return output, attn
+
+
+class EncoderLayer(nn.Module):
+    """
+    Compose with two layers
+
+    Author: Xin Su (https://github.com/xinsu626/DocTransformer)
+
+    Args:
+        d_model: the dimensionality of the input and output of the encoder
+        d_inner: the inner hidden size of the positionwise FFN in the encoder
+        n_head: the number of attention heads
+        d_k: the size of the query and key vectors
+        d_v: the size of the value vector
+        dropout: the amount of dropout to use in training in both the
+          attention and FFN steps (default 0.1)
+    """
     def __init__(self, d_model, d_inner, n_head, d_k, d_v, dropout=0.1):
         super(EncoderLayer, self).__init__()
         self.slf_attn = MultiHeadAttention(n_head, d_model, d_k, d_v, dropout=dropout)
@@ -34,19 +171,29 @@ class EncoderLayer(nn.Module):
 
     def forward(self, enc_input, slf_attn_mask=None):
         enc_output, enc_slf_attn = self.slf_attn(
-            enc_input, enc_input, enc_input, mask=slf_attn_mask)
+            enc_input, enc_input, enc_input, mask=slf_attn_mask
+        )
         enc_output = self.pos_ffn(enc_output)
         return enc_output, enc_slf_attn
 
+
 class HierarchicalTransformerConfig(object):
-    def __init__(self,
-                 n_layers,
-                 d_model,
-                 d_inner,
-                 n_head,
-                 d_k,
-                 d_v,
-                 dropout=0.1):
+    """
+    Config object for hierarchical transformer's document-level encoder layers
+
+    Author: Xin Su (https://github.com/xinsu626/DocTransformer)
+
+    Args:
+        n_layers: number of encoder layers
+        d_model: the dimensionality of the input and output of the encoder
+        d_inner: the inner hidden size of the positionwise FFN in the encoder
+        n_head: the number of attention heads
+        d_k: the size of the query and key vectors
+        d_v: the size of the value vector
+        dropout: the amount of dropout to use in training in both the
+          attention and FFN steps (default 0.1)
+    """
+    def __init__(self, n_layers, d_model, d_inner, n_head, d_k, d_v, dropout=0.1):
         self.n_layers = n_layers
         self.d_model = d_model
         self.d_inner = d_inner
@@ -56,295 +203,212 @@ class HierarchicalTransformerConfig(object):
         self.dropout = dropout
 
 
-class HierarchicalTransformer(DistilBertPreTrainedModel):
+class HierarchicalModel(CnlpModelForClassification):
+    """
+    Hierarchical Transformer model (https://arxiv.org/abs/2105.06752)
 
-    def __init__(self, distilbert_config, transformer_head_config):
-        # when calling the from_pretrained method, the distilbert config is not necessary.
-        super().__init__(config=distilbert_config)
+    Adapted from Xin Su's implementation (https://github.com/xinsu626/DocTransformer)
 
-        # Set up number of classes
-        self.num_labels = distilbert_config.num_labels
+    Args:
+        config:
+        transformer_head_config,
+        class_weights=None,
+        final_task_weight=1.0,
+        argument_regularization=-1,
+        freeze=False,
+    """
+    base_model_prefix = "hier"
+    config_class = CnlpConfig
 
-        # distilbert model.
-        self.distilbert = DistilBertModel(distilbert_config)
+    def __init__(
+        self,
+        config: config_class,
+        transformer_head_config: HierarchicalTransformerConfig,
+        *,
+        class_weights: Optional[List[float]] = None,
+        final_task_weight: float = 1.0,
+        argument_regularization: int = -1,
+        freeze: bool = False,
+    ):
+        # Initialize common components
+        super(HierarchicalModel, self).__init__(
+            config,
+            class_weights=class_weights,
+            final_task_weight=final_task_weight,
+            argument_regularization=argument_regularization,
+            freeze=freeze,
+        )
 
-        # Transformer layer
-        transformer_layer = EncoderLayer(d_model=transformer_head_config.d_model,
-                                         d_inner=transformer_head_config.d_inner,
-                                         n_head=transformer_head_config.n_head,
-                                         d_k=transformer_head_config.d_k,
-                                         d_v=transformer_head_config.d_v,
-                                         dropout=transformer_head_config.dropout)
+        # Document-level transformer layer
+        transformer_layer = EncoderLayer(
+            d_model=transformer_head_config.d_model,
+            d_inner=transformer_head_config.d_inner,
+            n_head=transformer_head_config.n_head,
+            d_k=transformer_head_config.d_k,
+            d_v=transformer_head_config.d_v,
+            dropout=transformer_head_config.dropout,
+        )
         self.transformer = nn.ModuleList(
-            [copy.deepcopy(transformer_layer) for _ in range(transformer_head_config.n_layers)]
+            [
+                copy.deepcopy(transformer_layer)
+                for _ in range(transformer_head_config.n_layers)
+            ]
         )
 
-        # document level
-        self.classifier = nn.Sequential(
-            nn.Linear(transformer_head_config.d_model,
-                      distilbert_config.num_labels),
+    def forward(
+        self,
+        input_ids=None,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        head_mask=None,
+        inputs_embeds=None,
+        labels=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        event_tokens=None,
+    ):
+        """
+        Forward method.
+
+        Args:
+            input_ids (`torch.LongTensor` of shape `(batch_size, num_chunks, chunk_len)`, *optional*):
+                A batch of chunked documents as tokenizer indices.
+            attention_mask (`torch.LongTensor` of shape `(batch_size, num_chunks, chunk_len)`, *optional*):
+                Attention masks for the batch.
+            token_type_ids (`torch.LongTensor` of shape `(batch_size, num_chunks, chunk_len)`, *optional*):
+                Token type IDs for the batch.
+            position_ids: (`torch.LongTensor` of shape `(batch_size, num_chunks, chunk_len)`, *optional*):
+                Position IDs for the batch.
+            head_mask (`torch.LongTensor` of shape `(num_heads,)` or `(num_layers, num_heads)`, *optional*):
+                Token encoder head mask.
+            inputs_embeds (`torch.FloatTensor` of shape `(batch_size, num_chunks, chunk_len, hidden_size)`, *optional*):
+                A batch of chunked documents as token embeddings.
+            labels (`torch.LongTensor` of shape `(batch_size, num_tasks)`, *optional*):
+                Labels for computing the sequence classification/regression loss.
+                Indices should be in `[0, ..., self.num_labels[task_ind] - 1]`.
+                If `self.num_labels[task_ind] == 1` a regression loss is computed (Mean-Square loss),
+                If `self.num_labels[task_ind] > 1` a classification loss is computed (Cross-Entropy).
+            output_attentions (`bool`, *optional*): Whether or not to return the attentions tensors of all attention layers.
+            output_hidden_states: not used.
+            event_tokens: not currently used (only relevant for token classification)
+
+        Returns:
+
+        """
+        if input_ids is not None:
+            batch_size, num_chunks, chunk_len = input_ids.shape
+            flat_shape = (batch_size * num_chunks, chunk_len)
+        else:  # inputs_embeds is not None
+            batch_size, num_chunks, chunk_len, embed_dim = inputs_embeds.shape
+            flat_shape = (batch_size * num_chunks, chunk_len, embed_dim)
+
+        outputs = self.encoder(
+            input_ids.reshape(flat_shape[:3])
+            if input_ids is not None
+            else None,
+            attention_mask=attention_mask.reshape(flat_shape[:3])
+            if attention_mask is not None
+            else None,
+            token_type_ids=token_type_ids.reshape(flat_shape[:3])
+            if token_type_ids is not None
+            else None,
+            position_ids=position_ids.reshape(flat_shape[:3])
+            if position_ids is not None
+            else None,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds.reshape(flat_shape)
+            if inputs_embeds is not None
+            else None,
+            output_attentions=output_attentions,
+            output_hidden_states=True,
+            return_dict=True,
         )
 
-        # weights
-        self.init_weights()
-
-    def forward(self, token_ids, attention_masks, head_mask=None):
-        # BERT CLS outputs for each chunk
         logits = []
 
-        # for each sample in a batch (B, n_chunks, max_len)
-        for token_id, attention_mask in zip(token_ids, attention_masks):
-            # Transform the word embeddings. (n_chunks, max_len)
-            distilbert_output = self.distilbert(input_ids=token_id,
-                                                attention_mask=attention_mask,
-                                                head_mask=None,
-                                                inputs_embeds=None)
-            # Transformed word embeddings. (n_chunks, max_len, hidden_size)
-            hidden_state = distilbert_output[0]
+        state = dict(loss=None, task_label_ind=0)
 
-            # Extract the first token, CLS, embedding as chunk rep. (n_chunk, hidden_size)
-            chunks_reps = hidden_state[:, 0]
+        for task_ind, task_num_labels in enumerate(self.num_labels):
+            if self.use_prior_tasks:
+                raise NotImplementedError(
+                    "use_prior_tasks is not defined for hierarchical model"
+                )
+            if self.config.tokens:
+                raise NotImplementedError(
+                    "tokens projection is not defined for hierarchical model"
+                )
+            if self.config.tagger[task_ind]:
+                raise NotImplementedError(
+                    "tagger projection is not defined for hierarchical model"
+                )
+            if self.config.relations[task_ind]:
+                raise NotImplementedError(
+                    "relations projection is not defined for hierarchical model"
+                )
 
-            # Add addition dim. (1, n_chunk, hidden_size)
-            chunks_reps = chunks_reps[None, :, :]
+            # outputs.last_hidden_state.shape: (B * n_chunks, chunk_len, hidden_size)
+
+            # (B * n_chunk, hidden_size)
+            chunks_reps = self.feature_extractors[task_ind](
+                outputs.hidden_states, event_tokens
+            )
+
+            # (B, n_chunk, hidden_size)
+            chunks_reps = chunks_reps.reshape(
+                batch_size, num_chunks, chunks_reps.shape[-1]
+            )
 
             # Use pre-trained model's position embedding
-            seq_length = chunks_reps.size(1)
-            position_ids = torch.arange(seq_length, dtype=torch.long, device=chunks_reps.device)  # (max_seq_length)
-            position_ids = position_ids.unsqueeze(0).expand_as(chunks_reps[:, :, 0])  # (bs, max_seq_length)
-            position_embeddings = self.distilbert.embeddings.position_embeddings(position_ids)
-            chunks_reps += position_embeddings
+            position_ids = torch.arange(
+                num_chunks, dtype=torch.long, device=chunks_reps.device
+            )  # (n_chunk)
+            position_ids = position_ids.unsqueeze(0).expand_as(
+                chunks_reps[:, :, 0]
+            )  # (B, n_chunk)
+            position_embeddings = self.encoder.embeddings.position_embeddings(
+                position_ids
+            )
+            chunks_reps = chunks_reps + position_embeddings
 
-            # document encoding
+            # document encoding (B, n_chunk, hidden_size)
             for layer_module in self.transformer:
                 chunks_reps, _ = layer_module(chunks_reps)
 
-            # Remove the first dim. (n_chunk, hidden_size)
-            chunks_reps = chunks_reps.squeeze()
+            # extract first Documents as rep. (B, hidden_size)
+            doc_rep = chunks_reps[:, 0, :]
 
-            # extract first Documents as rep. (hidden_size)
-            doc_rep = chunks_reps[0, :]
+            # predict (B, 5)
+            task_logits = self.classifiers[task_ind](doc_rep)
+            logits.append(task_logits)
 
-            # predict
-            logits.append(self.classifier(doc_rep))
+            if labels is not None:
+                self.compute_loss(
+                    task_logits,
+                    labels,
+                    task_ind,
+                    task_num_labels,
+                    batch_size,
+                    -1,  # only used for relation adn tagger
+                    state,
+                )
 
-        # Batch outputs. (B, 2)
-        logits = torch.stack(logits)  # batch predictions, forward pass
+        if (
+            len(self.num_labels) == 3
+            and self.relations[-1]
+            and self.argument_regularization > 0
+        ):
+            # TODO: is the attention_mask in the right shape for this?
+            logger.warning("Attention mask may not be in the right shape for "
+                           "argument regularization with the hierarchical model.")
+            self.apply_arg_reg(logits, attention_mask, state)
 
-        outputs = (logits,)
-
-        return outputs
-
-
-# Train function
-def train(model,
-          dataset_train,
-          return_best_model=False,
-          dataset_val=None,
-          per_gpu_train_batch_size=None,
-          per_gpu_eval_batch_size=None,
-          gradient_accumulation_steps=None,
-          epochs=None,
-          learning_rate=None,
-          class_weight=None,
-          seed=None,
-          early_stopping_patient=None,
-          early_stopping_delta=None,
-          metric=None,
-          labels_val=None,
-          warmup=None
-          ):
-    """
-    Default is using the first GPU to store model's parameters and all data.
-    The early stop is using validation performance to decide when to stop.
-    :returns best_model, train_loss,
-    """
-    # Metrics can be computed in the training.
-    implemented_metrics = {"macro_f1", "roc_auc"}
-    if metric is not None:
-        if metric not in implemented_metrics:
-            raise ValueError("The metric for validation is not implemented")
-
-    n_gpus = torch.cuda.device_count()
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    if class_weight is not None:
-        class_weight = class_weight.to(device)
-    train_batch_size = per_gpu_train_batch_size * max(1, n_gpus)
-    train_sampler = RandomSampler(dataset_train)
-    train_dataloader = DataLoader(dataset_train, sampler=train_sampler, batch_size=train_batch_size)
-    epoch_steps = len(train_dataloader) // gradient_accumulation_steps
-    t_total = epoch_steps * epochs
-    no_decay = ['bias', 'LayerNorm.weight']
-
-    optimizer_grouped_parameters = [
-        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
-         'weight_decay': 0.0},
-        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-    ]
-
-    num_warmup_steps = int(t_total * warmup) if warmup <= 1 else warmup
-    optimizer = AdamW(optimizer_grouped_parameters, lr=learning_rate, eps=1e-8)
-    scheduler = get_linear_schedule_with_warmup(optimizer,
-                                                num_warmup_steps=num_warmup_steps,
-                                                num_training_steps=t_total)
-    # wandb.run.summary["num_warmup_steps"] = num_warmup_steps
-    print(
-        "| samples {} | total epochs {} | batch {} | gradient_accum {} | total steps {} | num_warmup_steps {} |".format(
-            len(dataset_train), epochs, (train_batch_size * gradient_accumulation_steps),
-            gradient_accumulation_steps, t_total, num_warmup_steps
-        ))
-    print('=' * 80)
-
-    # ######################
-    # Training
-    # ######################
-
-    global_step = 0
-    tr_loss, epoch_loss = 0.0, 0.0
-    best_val_performance = float('-inf')
-    early_stop = False
-    early_stopping_counter = 0
-    best_epochs = None
-    best_model_dir = tempfile.mkdtemp()
-    train_start_time = time.time()
-    model.zero_grad()
-    set_seed(n_gpu=n_gpus, seed=seed)
-
-    for epochs_i in range(epochs):
-        new_best_loss_val = False
-        epoch_start_time = time.time()
-        for step, batch in enumerate(train_dataloader):
-            model.train()
-            batch = tuple(t.to(device) for t in batch)
-            inputs = {
-                "token_ids": batch[0],
-                "attention_masks": batch[2],
-            }
-            logits = model(**inputs)[0]
-            loss_fct = torch.nn.CrossEntropyLoss(weight=class_weight)
-            loss = loss_fct(logits, batch[4].view(-1))
-            if gradient_accumulation_steps > 1:
-                loss = loss / gradient_accumulation_steps
-            loss.backward()
-            tr_loss += loss.item()
-            if (step + 1) % gradient_accumulation_steps == 0:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                optimizer.step()
-                scheduler.step()
-                model.zero_grad()
-                global_step += 1
-        epoch_time = time.time() - epoch_start_time
-        loss_val = None
-        metric_val = None
-        if dataset_val is not None:
-            pred_probs_val, loss_val = predict(model, dataset_val, per_gpu_eval_batch_size,
-                                               class_weight=class_weight)
-            # Compute the metrics
-            if metric is not None and metric == "macro_f1":
-                metric_val = f1_score(y_true=labels_val, y_pred=np.argmax(pred_probs_val, axis=1), average="macro")
-            if metric is not None and metric == "roc_auc":
-                metric_val = roc_auc_score(y_true=labels_val,
-                                           y_score=pred_probs_val[:, 1])
-
-            # Test if the validation loss is the new best loss
-            if metric_val > best_val_performance + early_stopping_delta:
-                new_best_loss_val = True
-                best_val_performance = metric_val
-                early_stopping_counter = 0
-                best_epochs = epochs_i + 1  # the epochs_i start from 0, so add 1
-
-                # save the best model's checkpoint
-                with open(os.path.join(best_model_dir, "best_model.pkl"), "wb") as f:
-                    pickle.dump(model, f)
-            else:
-                early_stopping_counter += 1
-                if early_stopping_counter >= early_stopping_patient:
-                    early_stop = True
-        # wandb.log({"loss_train": ((tr_loss - epoch_loss) / epoch_steps)})
-        # if dataset_val is not None:
-            # wandb.log({'loss_val': loss_val})
-        if dataset_val is not None:
-            print(
-                "| epoch {}/{} | time {:.2f} s | train_loss {:.5f} | loss_val {:.5f} | {} {:.5f} |new_best_val {} |".format(
-                    (epochs_i + 1),
-                    epochs,
-                    epoch_time,
-                    ((tr_loss - epoch_loss) / epoch_steps),
-                    loss_val,
-                    metric,
-                    metric_val,
-                    new_best_loss_val
-                ))
+        if self.training:
+            return SequenceClassifierOutput(
+                loss=state["loss"],
+                logits=logits,
+                hidden_states=outputs.hidden_states,
+                attentions=outputs.attentions,
+            )
         else:
-            print("| epoch {}/{} | time {:.2f} s | train_loss {:.5f} |".format(
-                    (epochs_i + 1),
-                    epochs,
-                    epoch_time,
-                    ((tr_loss - epoch_loss) / epoch_steps)))
-        epoch_loss = tr_loss
-        if early_stop:
-            break
-    if return_best_model:
-        with open(os.path.join(best_model_dir, "best_model.pkl"), "rb") as f:
-            model_to_return = pickle.load(f)
-            model_to_return = model_to_return.module if hasattr(model, 'module') else model
-        #shutil.rmtree(best_model_dir)  # clean up the cache dir
-    else:
-        model_to_return = model.module if hasattr(model, 'module') else model
-
-    train_time = time.time() - train_start_time
-
-    # print the summary of training.
-    print("-" * 80)
-    print("| epochs {} | time {:.2f} s| avg_train_loss {:.5f}".format(
-        best_epochs if best_epochs is not None else epochs,
-        train_time,
-        (tr_loss / global_step)
-    ))
-
-    return model_to_return, tr_loss / global_step, train_time, best_epochs if best_epochs is not None else epochs
-
-
-def predict(model,
-            dataset,
-            per_gpu_batch_size,
-            class_weight=None):
-    """
-      Default is using the first GPU to store model's parameters and all data.
-
-      returns logits_list, loss
-      """
-    n_gpus = torch.cuda.device_count()
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    batch_size = per_gpu_batch_size * max(1, n_gpus)
-
-    sampler = SequentialSampler(dataset)
-    dataloader = DataLoader(dataset, sampler=sampler, batch_size=batch_size)
-
-    loss = 0.0
-    steps = 0
-    logits_list = None
-    for batch in dataloader:
-        model.eval()
-        batch = tuple(t.to(device) for t in batch)
-
-        with torch.no_grad():
-            inputs = {
-                "token_ids": batch[0],
-                "attention_masks": batch[2],
-            }
-            # forward pass
-            logits = model(**inputs)[0]
-
-            # Compute the loss function
-            loss_fct = torch.nn.CrossEntropyLoss(weight=class_weight)
-            temp_loss = loss_fct(logits, batch[4].view(-1))
-            loss += temp_loss.mean().item()
-        steps += 1
-
-        if logits_list is None:
-            logits_list = logits.detach().cpu().numpy()
-        else:
-            logits_list = np.append(logits_list, logits.detach().cpu().numpy(), axis=0)
-
-    return logits_list, loss / steps
+            return SequenceClassifierOutput(loss=state["loss"], logits=logits)
