@@ -201,6 +201,7 @@ def cnlp_convert_examples_to_features(
     sep_id: int = -1,
     pad_id: int = -1,
     insert_empty_chunk_at_beginning: bool = False,
+    truncate_examples: bool = True,
 ) -> Union[List[InputFeatures], List[HierarchicalInputFeatures]]:
     event_start_ind = tokenizer.convert_tokens_to_ids('<e>')
     event_end_ind = tokenizer.convert_tokens_to_ids('</e>')
@@ -376,9 +377,42 @@ def cnlp_convert_examples_to_features(
     for i, example in enumerate(examples[:5]):
         logger.info("*** Example ***")
         logger.info("guid: %s" % (example.guid))
-        logger.info("features: %s" % features[i])
+        logger.info("features: %s" % truncate_features(features[i]) if truncate_examples else features[i])
 
     return features
+
+
+def truncate_features(feature: Union[InputFeatures, HierarchicalInputFeatures]):
+    return (
+        f"{feature.__class__.__name__}"
+        "("
+        f"{summarize(feature.input_ids)}, "
+        f"{summarize(feature.attention_mask)}, "
+        f"{summarize(feature.token_type_ids)}, "
+        f"{summarize(feature.event_tokens)}, "
+        f"{summarize(feature.label)}"
+        ")"
+    )
+
+
+def summarize(li):
+    if li is None:
+        return 'None'
+    return str(truncate_list_of_lists(li)).replace('"', '').replace("'", '')
+
+
+def truncate_list_of_lists(li: Union[list, str]) -> Union[list, str]:
+    if isinstance(li, str):
+        return li
+    if li:
+        if len(li) > 3:
+            li = [li[0], f"({len(li) - 2} more)", li[-1]]
+        if isinstance(li[0], list):
+            return [truncate_list_of_lists(item) for item in li]
+        else:
+            return li
+    else:
+        return li
 
 
 @dataclass
@@ -428,6 +462,10 @@ class DataTrainingArguments:
 
     insert_empty_chunk_at_beginning: bool = field(default=False, metadata={
         "help": "Whether to insert an empty chunk for hierarchical model"
+    })
+
+    truncate_examples: bool = field(default=False, metadata={
+        "help": "Whether to truncate input examples when displaying them in the log"
     })
 
 
@@ -522,6 +560,7 @@ class ClinicalNlpDataset(Dataset):
                         sep_id=tokenizer.sep_token_id,
                         pad_id=tokenizer.pad_token_id,
                         insert_empty_chunk_at_beginning=self.args.insert_empty_chunk_at_beginning,
+                        truncate_examples=self.args.truncate_examples,
                     )
                     start = time.time()
                     torch.save(features, cached_features_file)
