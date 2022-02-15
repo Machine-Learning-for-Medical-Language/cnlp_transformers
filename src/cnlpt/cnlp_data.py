@@ -386,11 +386,11 @@ def truncate_features(feature: Union[InputFeatures, HierarchicalInputFeatures]):
     return (
         f"{feature.__class__.__name__}"
         "("
-        f"{summarize(feature.input_ids)}, "
-        f"{summarize(feature.attention_mask)}, "
-        f"{summarize(feature.token_type_ids)}, "
-        f"{summarize(feature.event_tokens)}, "
-        f"{summarize(feature.label)}"
+        f"input_ids={summarize(feature.input_ids)}, "
+        f"attention_mask={summarize(feature.attention_mask)}, "
+        f"token_type_ids={summarize(feature.token_type_ids)}, "
+        f"event_tokens={summarize(feature.event_tokens)}, "
+        f"label={summarize(feature.label)}"
         ")"
     )
 
