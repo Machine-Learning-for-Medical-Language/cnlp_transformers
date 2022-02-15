@@ -182,7 +182,7 @@ def cnlp_convert_features_to_hierarchical(
         if chunks_event_tokens is not None:
             chunks_event_tokens.append([0]*chunk_len)
 
-    return HierarchicalInputFeatures(chunks, chunks_attention_mask, chunks_token_type_ids, event_tokens_, label_)
+    return HierarchicalInputFeatures(chunks, chunks_attention_mask, chunks_token_type_ids, chunks_event_tokens, label_)
 
 
 def cnlp_convert_examples_to_features(
