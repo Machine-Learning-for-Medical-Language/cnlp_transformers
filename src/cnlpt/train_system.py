@@ -248,16 +248,6 @@ def main():
         #     model_args.config_name if model_args.config_name else model_args.encoder_name,
         #     finetuning_task=data_args.task_name,
         # )
-        # TODO make these cli model params
-        args_tuneable = dict(
-            # transformer head
-            n_layers=2,
-            d_model=768,
-            d_inner=2048,
-            n_head=8,
-            d_k=8,
-            d_v=96,
-        )
 
         pretrained = True
 
@@ -275,6 +265,20 @@ def main():
         )
         # num_tokens=len(tokenizer))
         config.vocab_size = len(tokenizer)
+
+        # TODO we should be able to infer this during model initialization
+        encoder_dim = AutoConfig.from_pretrained(encoder_name, cache_dir=model_args.cache_dir).hidden_size
+
+        # TODO make these cli model params
+        args_tuneable = dict(
+            # transformer head
+            n_layers=2,
+            d_model=encoder_dim,
+            d_inner=2048,
+            n_head=8,
+            d_k=8,
+            d_v=96,
+        )
 
         transformer_head_config = HierarchicalTransformerConfig(
             n_layers=args_tuneable['n_layers'],
