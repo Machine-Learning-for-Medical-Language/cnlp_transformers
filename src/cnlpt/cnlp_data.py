@@ -201,7 +201,7 @@ def cnlp_convert_examples_to_features(
     sep_id: int = -1,
     pad_id: int = -1,
     insert_empty_chunk_at_beginning: bool = False,
-    truncate_examples: bool = True,
+    truncate_examples: bool = False,
 ) -> Union[List[InputFeatures], List[HierarchicalInputFeatures]]:
     event_start_ind = tokenizer.convert_tokens_to_ids('<e>')
     event_end_ind = tokenizer.convert_tokens_to_ids('</e>')
