@@ -9,7 +9,7 @@ import torch.nn.functional as F
 import torch
 from transformers.modeling_outputs import SequenceClassifierOutput
 
-from src.cnlpt.CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
+from .CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
 
 logger = logging.getLogger(__name__)
 
