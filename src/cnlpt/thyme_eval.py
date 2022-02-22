@@ -4,7 +4,7 @@ import sys
 import anafora
 from anafora import AnaforaData, AnaforaEntity, AnaforaRelation
 import requests
-from api.temporal_rest import TokenizedSentenceDocument
+from .api.temporal_rest import TokenizedSentenceDocument
 
 # sentence and token splitters:
 from PyRuSH import RuSH
