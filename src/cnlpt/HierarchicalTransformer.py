@@ -33,7 +33,7 @@ class MultiHeadAttention(nn.Module):
     """
     Multi-Head Attention module
 
-    Author: Xin Su (https://github.com/xinsu626/DocTransformer)
+    Original author: Yu-Hsiang Huang (https://github.com/jadore801120/attention-is-all-you-need-pytorch)
 
     Args:
         n_head: the number of attention heads
@@ -93,7 +93,7 @@ class PositionwiseFeedForward(nn.Module):
     """
     A two-feed-forward-layer module
 
-    Author: Xin Su (https://github.com/xinsu626/DocTransformer)
+    Original author: Yu-Hsiang Huang (https://github.com/jadore801120/attention-is-all-you-need-pytorch)
 
     Args:
         d_in: the dimensionality of the input and output of the encoder
@@ -123,7 +123,7 @@ class ScaledDotProductAttention(nn.Module):
     """
     Scaled Dot-Product Attention
 
-    Author: Xin Su (https://github.com/xinsu626/DocTransformer)
+    Original author: Yu-Hsiang Huang (https://github.com/jadore801120/attention-is-all-you-need-pytorch)
 
     Args:
         temperature: the temperature for scaled dot product attention
@@ -153,7 +153,7 @@ class EncoderLayer(nn.Module):
     """
     Compose with two layers
 
-    Author: Xin Su (https://github.com/xinsu626/DocTransformer)
+    Original author: Yu-Hsiang Huang (https://github.com/jadore801120/attention-is-all-you-need-pytorch)
 
     Args:
         d_model: the dimensionality of the input and output of the encoder
@@ -181,7 +181,7 @@ class HierarchicalTransformerConfig(object):
     """
     Config object for hierarchical transformer's document-level encoder layers
 
-    Author: Xin Su (https://github.com/xinsu626/DocTransformer)
+    Original author: Xin Su (https://github.com/xinsu626/DocTransformer)
 
     Args:
         n_layers: number of encoder layers
