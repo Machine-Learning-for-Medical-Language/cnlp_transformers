@@ -73,3 +73,9 @@ Then, upload to PyPI with `twine`:
 ```sh
 $ python -m twine upload dist/*
 ```
+
+### Building the documentation
+
+Run `build_docs.sh`.
+
+More instructions coming soon.

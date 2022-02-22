@@ -1,0 +1,6 @@
+# Sphinx inventory version 2
+# Project: Hugging Face Transformers
+# Version: 4.16.2
+# The remainder of this file is compressed using zlib.
+transformers.HfArgumentParser py:class 1 internal/trainer_utils#$ -
+transformers.TrainingArguments py:class 1 main_classes/trainer#$ -
