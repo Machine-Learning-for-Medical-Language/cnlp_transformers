@@ -128,7 +128,7 @@ class CnlpModelForClassification(PreTrainedModel):
                  *,
                  class_weights: Optional[List[float]] = None,
                  final_task_weight: float = 1.0,
-                 argument_regularization: int = -1,
+                 argument_regularization: float = -1,
                  freeze=False,
                  ):
 

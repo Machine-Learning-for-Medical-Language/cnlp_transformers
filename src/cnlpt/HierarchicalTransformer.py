@@ -211,11 +211,11 @@ class HierarchicalModel(CnlpModelForClassification):
 
     Args:
         config:
-        transformer_head_config,
-        class_weights=None,
-        final_task_weight=1.0,
-        argument_regularization=-1,
-        freeze=False,
+        transformer_head_config:
+        class_weights:
+        final_task_weight:
+        argument_regularization:
+        freeze:
     """
     base_model_prefix = "hier"
     config_class = CnlpConfig
@@ -227,7 +227,7 @@ class HierarchicalModel(CnlpModelForClassification):
         *,
         class_weights: Optional[List[float]] = None,
         final_task_weight: float = 1.0,
-        argument_regularization: int = -1,
+        argument_regularization: float = -1,
         freeze: bool = False,
     ):
         # Initialize common components
