@@ -30,7 +30,7 @@ from transformers.data.processors.utils import InputFeatures, InputExample
 from torch.utils.data.dataset import Dataset
 from ..cnlp_data import cnlp_convert_examples_to_features
 import numpy as np
-from ..CnlpRobertaForClassification import CnlpRobertaForClassification
+from ..CnlpModelForClassification import CnlpModelForClassification
 from seqeval.metrics.sequence_labeling import get_entities
 import logging
 from time import time
@@ -130,7 +130,7 @@ async def initialize():
     config = AutoConfig.from_pretrained(model_name)
     app.tokenizer = AutoTokenizer.from_pretrained(model_name,
                                                   config=config)
-    model = CnlpRobertaForClassification.from_pretrained(model_name, config=config, tagger=[True,True, False], relations=[False,False,True], num_labels_list=[17, 9, 2], num_attention_heads=256)
+    model = CnlpModelForClassification.from_pretrained(model_name, config=config, tagger=[True,True, False], relations=[False,False,True], num_labels_list=[17, 9, 2], num_attention_heads=256)
     model.to('cuda')
 
     app.trainer = Trainer(
