@@ -69,11 +69,11 @@ instance/
 .scrapy
 
 # Sphinx documentation
-docs/_build/
-docs/cnlpt.rst
-docs/cnlpt.api.rst
-docs/modules.rst
-docs/transformer_objects.inv
+docs/build/
+docs/source/cnlpt.rst
+docs/source/cnlpt.api.rst
+docs/source/modules.rst
+docs/source/transformer_objects.inv
 
 # PyBuilder
 .pybuilder/
