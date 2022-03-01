@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
-yes | sphobjinv convert zlib docs/transformer_objects.txt &&
-sphinx-apidoc -f -o docs src/cnlpt &&
-sphinx-build -a -b html docs/source docs/build
+find docs -maxdepth 2 ! -name 'index.rst' -name '*.rst' -type f -exec rm -f {} +
+rm -rf docs/build
+rm -f transformer_objects.inv
+yes | sphobjinv convert zlib docs/source/transformer_objects.txt &&
+sphinx-apidoc -feT -o docs/source src/cnlpt &&
+cd docs &&
+O=-a make html

@@ -70,9 +70,8 @@ instance/
 
 # Sphinx documentation
 docs/build/
-docs/source/cnlpt.rst
-docs/source/cnlpt.api.rst
-docs/source/modules.rst
+docs/source/*.rst
+!docs/source/index.rst
 docs/source/transformer_objects.inv
 
 # PyBuilder
