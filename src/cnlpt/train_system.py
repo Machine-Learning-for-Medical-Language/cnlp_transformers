@@ -312,8 +312,7 @@ def main():
         # num_tokens=len(tokenizer))
         config.vocab_size = len(tokenizer)
 
-        # TODO we should be able to infer this during model initialization
-        encoder_dim = AutoConfig.from_pretrained(encoder_name, cache_dir=model_args.cache_dir).hidden_size
+        encoder_dim = config.hidden_size
 
         transformer_head_config = HierarchicalTransformerConfig(
             n_layers=model_args.hier_num_layers,
