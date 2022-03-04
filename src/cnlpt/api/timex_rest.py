@@ -62,7 +62,7 @@ async def initialize():
     config = AutoConfig.from_pretrained(model_name)
     app.state.tokenizer = AutoTokenizer.from_pretrained(model_name,
                                                   config=config)
-    model = CnlpModelForClassification.from_pretrained(model_name, config=config, tagger=[True], relations=[False], num_labels_list=[17])
+    model = CnlpModelForClassification(model_name, config=config, tagger=[True], relations=[False], num_labels_list=[17])
     model.to('cuda')
 
     app.state.trainer = Trainer(
