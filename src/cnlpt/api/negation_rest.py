@@ -107,8 +107,7 @@ async def initialize():
     config = AutoConfig.from_pretrained(model_name)
     app.tokenizer = AutoTokenizer.from_pretrained(model_name,
                                               config=config)
-    model = AutoModelForSequenceClassification.from_pretrained(model_name,
-                                                               config=config)
+    model = CnlpModelForClassification.from_pretrained(model_name, config=config)
     model.to('cuda')
 
     app.trainer = Trainer(

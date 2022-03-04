@@ -515,7 +515,7 @@ def main():
                 predictions = trainer.predict(test_dataset=eval_dataset).predictions
                 dataset_labels = eval_dataset.get_labels()
                 for task_ind, task_name in enumerate(task_names):
-                    if output_mode[task_ind] == 'classification':
+                    if output_mode[task_ind] == classification:
                         task_predictions = np.argmax(predictions[task_ind], axis=1)
                         for index, item in enumerate(task_predictions):
                             if len(task_names) > len(dataset_labels):
@@ -524,7 +524,7 @@ def main():
                                 subtask_ind = task_ind
                             item = dataset_labels[subtask_ind][item]
                             writer.write("Task %d (%s) - Index %d - %s\n" % (task_ind, task_name, index, item))
-                    elif output_mode[task_ind] == 'tagging':
+                    elif output_mode[task_ind] == tagging:
                         task_predictions = np.argmax(predictions[task_ind], axis=2)
                         task_labels = dataset_labels[task_ind]
                         for index, pred_seq in enumerate(task_predictions):
@@ -541,7 +541,19 @@ def main():
 
                             entities = get_entities(chunk_labels)
                             writer.write('Task %d (%s) - Index %d: %s\n' % (task_ind, task_name, index, str(entities)))
-
+                    elif output_mode[task_ind] == relex:
+                        task_predictions = np.argmax(predictions[task_ind], axis=3)
+                        task_labels = dataset_labels[task_ind]
+                        assert task_labels[0] == 'None', 'The first labeled relation category should always be "None" but for task %s it is %s' % (task_names[task_ind], task_labels[0])
+                        
+                        for inst_ind in range(task_predictions.shape[0]):
+                            inst_preds = task_predictions[inst_ind]
+                            a1s, a2s = np.where(inst_preds > 0)
+                            for arg_ind in range(len(a1s)):
+                                a1_ind = a1s[arg_ind]
+                                a2_ind = a2s[arg_ind]
+                                cat = task_labels[ inst_preds[a1_ind][a2_ind] ]
+                                writer.write("Task %d (%s) - Index %d - %s(%d, %d)\n" % (task_ind, task_name, inst_ind, cat, a1_ind, a2_ind))
                     else:
                         raise NotImplementedError('Writing predictions is not implemented for this output_mode!')
 

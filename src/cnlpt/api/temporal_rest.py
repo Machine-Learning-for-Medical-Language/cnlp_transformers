@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import os
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List, Tuple, Dict
@@ -30,7 +31,7 @@ from transformers.data.processors.utils import InputFeatures, InputExample
 from torch.utils.data.dataset import Dataset
 from ..cnlp_data import cnlp_convert_examples_to_features
 import numpy as np
-from ..CnlpRobertaForClassification import CnlpRobertaForClassification
+from ..CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
 from seqeval.metrics.sequence_labeling import get_entities
 import logging
 from time import time
@@ -112,7 +113,7 @@ def create_instance_string(tokens: List[str]):
 
 @app.on_event("startup")
 async def startup_event():
-    args = ['--output_dir', 'save_run/', '--per_device_eval_batch_size', '8', '--do_predict']
+    args = ['--output_dir', 'save_run/', '--per_device_eval_batch_size', '8', '--do_predict', '--report_to', 'none']
     # training_args = parserTrainingArguments('save_run/')
     parser = HfArgumentParser((TrainingArguments,))
     training_args, = parser.parse_args_into_dataclasses(args=args)
@@ -127,10 +128,14 @@ async def initialize():
     ''' Load the model from disk and move to the device'''
     #import pdb; pdb.set_trace()
 
+    AutoConfig.register("cnlpt", CnlpConfig)
+    AutoModel.register(CnlpConfig, CnlpModelForClassification)
+
     config = AutoConfig.from_pretrained(model_name)
     app.tokenizer = AutoTokenizer.from_pretrained(model_name,
                                                   config=config)
-    model = CnlpRobertaForClassification.from_pretrained(model_name, config=config, tagger=[True,True, False], relations=[False,False,True], num_labels_list=[17, 9, 2], num_attention_heads=256)
+    model = CnlpModelForClassification.from_pretrained(model_name, cache_dir=os.getenv('HF_CACHE'), config=config)
+    
     model.to('cuda')
 
     app.trainer = Trainer(

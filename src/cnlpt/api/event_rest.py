@@ -30,7 +30,7 @@ from transformers.data.processors.utils import InputFeatures, InputExample
 from torch.utils.data.dataset import Dataset
 from transformers.data.processors.glue import glue_convert_examples_to_features
 import numpy as np
-from ..CnlpRobertaForClassification import CnlpRobertaForClassification
+from ..CnlpModelForClassification import CnlpModelForClassification
 from seqeval.metrics.sequence_labeling import get_entities
 import logging
 from time import time
@@ -63,7 +63,7 @@ async def initialize():
     config = AutoConfig.from_pretrained(model_name)
     app.tokenizer = AutoTokenizer.from_pretrained(model_name,
                                                   config=config)
-    model = CnlpRobertaForClassification.from_pretrained(model_name, config=config, tagger=[True], relations=[False], num_labels_list=[9])
+    model = CnlpModelForClassification(model_name, config=config, tagger=[True], relations=[False], num_labels_list=[9])
     model.to('cuda')
 
     app.trainer = Trainer(
@@ -142,3 +142,18 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
 @app.post("/temporal/collection_process_complete")
 async def collection_process_complete():
     app.trainer = None
+
+def rest():
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Run the http server for temporal event extraction')
+    parser.add_argument('-p', '--port', type=int, help='The port number to run the server on', default=8000)
+
+    args = parser.parse_args()
+
+    import uvicorn
+    uvicorn.run("cnlpt.api.event_rest:app", host='0.0.0.0', port=args.port, reload=True)
+
+
+if __name__ == '__main__':
+    rest()
