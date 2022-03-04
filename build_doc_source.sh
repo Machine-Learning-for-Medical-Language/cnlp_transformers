@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+find docs -maxdepth 1 ! -name 'index.rst' ! -name 'cnlpt.rst' -name '*.rst' -type f -exec rm -f {} +
+rm -f transformer_objects.inv
+yes | sphobjinv convert zlib docs/transformer_objects.txt &&
+sphinx-apidoc -feT -o docs src/cnlpt &&
+echo "   :noindex:" >> docs/cnlpt.rst
