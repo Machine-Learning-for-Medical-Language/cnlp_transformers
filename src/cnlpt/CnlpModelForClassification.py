@@ -2,7 +2,7 @@
 import copy
 from typing import Optional, List
 
-from transformers import AutoModel, AutoConfig
+from transformers import AutoModel, AutoConfig, DistilBertConfig, BertConfig
 from transformers.modeling_utils import PreTrainedModel
 from transformers.configuration_utils import PretrainedConfig
 
@@ -113,9 +113,17 @@ class CnlpConfig(PretrainedConfig):
         self.relations = relations
         self.use_prior_tasks = use_prior_tasks
         self.encoder_name = encoder_name
-        self.encoder_config = AutoConfig.from_pretrained(encoder_name).to_dict()
-        self.hidden_dropout_prob = self.encoder_config['hidden_dropout_prob']
-        self.hidden_size = self.encoder_config['hidden_size']
+        encoder_config_obj = AutoConfig.from_pretrained(encoder_name)
+        self.encoder_config = encoder_config_obj.to_dict()
+        if isinstance(encoder_config_obj, BertConfig):
+            self.hidden_dropout_prob = self.encoder_config['hidden_dropout_prob']
+            self.hidden_size = self.encoder_config['hidden_size']
+        elif isinstance(encoder_config_obj, DistilBertConfig):
+            self.hidden_dropout_prob = self.encoder_config['dropout']
+            self.hidden_size = self.encoder_config['dim']
+        else:
+            raise ValueError(f"need to add dropout and hidden size logic"
+                             f" for {encoder_config_obj.__class__.__name__}")
         self.num_tokens = num_tokens
 
 
