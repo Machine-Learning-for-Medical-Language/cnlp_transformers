@@ -340,6 +340,15 @@ class MTLClassifierProcessor(DataProcessor):
     def __init__(self):
         pass
 
+    def get_classifiers(self) -> List[str]:
+        pass
+
+    def get_default_label(self) -> str:
+        return NotImplemented
+
+    def get_classifier_id(self) -> str:
+        return NotImplemented
+
     def get_train_examples(self, data_dir):
         return self.get_json_examples(os.path.join(data_dir, 'training.json'), 'train')
 
@@ -367,9 +376,21 @@ class MTLClassifierProcessor(DataProcessor):
 
 
 class i2b22008Processor(MTLClassifierProcessor):
+    def __init__(self, subset=None):
+        super().__init__()
+        self.subset = set(subset) if subset is not None else set()
+
     def get_classifiers(self):
-        return ['Asthma', 'CAD', 'CHF', 'Depression', 'Diabetes', 'Gallstones', 'GERD', 'Gout', 'Hypertension',
+        classifiers = ['Asthma', 'CAD', 'CHF', 'Depression', 'Diabetes', 'Gallstones', 'GERD', 'Gout', 'Hypertension',
                 'Hypertriglyceridemia', 'Hypercholesterolemia', 'OA', 'Obesity', 'OSA', 'PVD', 'Venous Insufficiency']
+        if self.subset:
+            if (bad_clfs := self.subset - set(classifiers)):
+                logger.warning(f"Supplied {', '.join(bad_clfs)} which "
+                               f"{'is' if len(bad_clfs) == 1 else 'are'} "
+                               f"not in the list of classifiers")
+            subset_classifiers = [clf for clf in classifiers if clf in self.subset]
+            return subset_classifiers
+        return classifiers
 
     def get_labels(self):
         # return [ ["Unlabeled", "Y", "N", "Q", "U"] for x in range(len(self.get_classifiers()))]

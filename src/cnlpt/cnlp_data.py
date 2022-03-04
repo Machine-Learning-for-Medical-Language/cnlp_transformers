@@ -438,6 +438,13 @@ class DataTrainingArguments:
         
     #     metadata={"help": "A space-separated list of tasks to train on: " + ", ".join(cnlp_processors.keys())})
 
+    multitask_subsets: Optional[str] = field(default=None, metadata={
+        "help": "Optionally, a JSON object string specifying subsets of "
+                "classifiers for tasks in the multitask setting.\n"
+                "Format example: "
+                "--multitask_subsets '{\"i2b22008\": [\"CAD\", \"Obesity\", \"PVD\"]}'"
+    })
+
     max_seq_length: int = field(
         default=128,
         metadata={

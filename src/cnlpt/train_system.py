@@ -17,6 +17,7 @@
 
 
 import dataclasses
+import json
 import logging
 import os
 from os.path import basename, dirname
@@ -46,7 +47,8 @@ from transformers.optimization import AdamW, get_scheduler
 from transformers.trainer_pt_utils import get_parameter_names
 from transformers.file_utils import hf_bucket_url, CONFIG_NAME
 
-from .cnlp_processors import cnlp_processors, cnlp_output_modes, cnlp_compute_metrics, tagging, relex, classification
+from .cnlp_processors import cnlp_processors, cnlp_output_modes, cnlp_compute_metrics, \
+    tagging, relex, classification, i2b22008Processor, mtl
 from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
 
 from .CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
@@ -192,6 +194,17 @@ def main():
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
+    multitask_subsets = json.loads(data_args.multitask_subsets)
+
+    for task_ind, task_name in enumerate(data_args.task_name):
+        if task_name in multitask_subsets:
+            this_task_subset: Optional[List[str]] = multitask_subsets.get(task_name)
+            # TODO: generalize
+            task_name = f'{task_name}_{this_task_subset[0]}'
+            cnlp_processors[task_name] = lambda: i2b22008Processor(this_task_subset)
+            cnlp_output_modes[task_name] = mtl
+            data_args.task_name[task_ind] = task_name
+
     if (
         os.path.exists(training_args.output_dir)
         and os.listdir(training_args.output_dir)
@@ -233,7 +246,9 @@ def main():
         relations = []
         for task_name in data_args.task_name:
             processor = cnlp_processors[task_name]()
-            if processor.get_num_tasks() > 1:
+            if processor.get_num_tasks() > 1 or isinstance(processor, i2b22008Processor):
+                # if a subset of processors was specified for this task, retrieve it;
+                #  otherwise, pass subset=None for all processors
                 for subtask_num in range(processor.get_num_tasks()):
                     task_names.append(task_name + "-" + processor.get_classifiers()[subtask_num])
                     num_labels.append(len(processor.get_labels()))
