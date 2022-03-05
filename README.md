@@ -88,9 +88,9 @@ should return ```200```
 >>> r = requests.post(process_url, json=doc)
 >>> r.json()
 ```
-Output: {'statuses': [-1, -1, -1, 1]}
+Output: {'statuses': [-1, -1, 1, 1]}
 
-The model thinks only one of the entities is negated (anosmia). It missed "nausea" for some reason.
+The model correctly classifies both nausea and anosmia as negated.
 
 ### Temporal API (End-to-end temporal information extraction)
 To demo the temporal API:

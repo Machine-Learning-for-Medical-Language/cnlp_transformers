@@ -336,7 +336,7 @@ def main():
         # by default cnlpt model, but need to check which encoder they want
         encoder_name = model_args.encoder_name
 
-        # TODO check when download any pretrained lanugage model to local disk, if 
+        # TODO check when download any pretrained language model to local disk, if 
         # the following condition "is_pretrained_model(encoder_name)" works or not.
         if not is_pretrained_model(encoder_name):
             # we are loading one of our own trained models as a starting point.
@@ -371,7 +371,6 @@ def main():
             if training_args.do_train:
                 # Setting 1) only load weights from the encoder
                 raise NotImplementedError('This functionality has not been restored yet')
-                ## FIXME - think this won't load the right weights?
                 model = CnlpModelForClassification(
                         model_path = model_args.encoder_name,
                         config=config,

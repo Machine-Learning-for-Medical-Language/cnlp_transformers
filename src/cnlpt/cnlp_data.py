@@ -584,7 +584,6 @@ class ClinicalNlpDataset(Dataset):
                 if self.features is None:
                     self.features = features
                 else:
-                    # FIXME: self.features is set to None earlier in this __init__ method; this is unreachable
                     assert len(features) == len(self.features)
                     if self.features[0].label is None:
                         assert features[0].label is None, 'Some of the tasks have None labels and others do not, they should be consistent!'
