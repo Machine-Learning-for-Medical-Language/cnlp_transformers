@@ -4,6 +4,12 @@ Transformers for Clinical NLP
 This library was created to add abstractions on top of the Huggingface Transformers library for many clinical NLP research use cases.
 Primary use cases include 1) simplifying multiple tasks related to fine-tuning of transformers for building models for clinical NLP, and 2) creating inference APIs that will allow downstream researchers easier access to clinical NLP outputs.
 ## Install
+When installing the library's dependencies, `pip` will probably install 
+PyTorch with CUDA 10.2 support by default. If you would like to run the 
+library in CPU-only mode or with a newer version of CUDA, [install PyTorch 
+to your desired specifications](https://pytorch.org/get-started/locally/) 
+in your virtual environment first before installing `cnlp-transformers`.
+
 If you are installing just to run the REST APIs, you can just install without cloning with:
 ```pip install cnlp_transformers```
 
