@@ -76,6 +76,17 @@ $ python -m twine upload dist/*
 
 ### Building the documentation
 
-Run `build_docs.sh`.
+To rebuild the autodoc toctrees and the `transformers` Intersphinx 
+mappings, run `build_doc_source.sh`.
 
-More instructions coming soon.
+To build the docs locally for testing documentation changes before 
+uploading to readthedocs:
+
+```sh
+$ cd docs
+$ make html
+```
+
+This will write the docs to `docs/build/html`; simply open 
+`docs/build/html/index.html` in your browser of choice to view the 
+built documentation.
