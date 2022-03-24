@@ -37,7 +37,7 @@ def tagging_metrics(task_name, preds, labels):
     acc = num_correct / len(preds)
     f1 = f1_score(labels, preds, average=None)
 
-    return {'acc': acc, 'token_f1': f1, 'f1': seq_f1([pred_seq], [label_seq]), 'report':'\n'+seq_cls([pred_seq], [label_seq])}
+    return {'acc': acc, 'token_f1': fix_np_types(f1), 'f1': fix_np_types(seq_f1([label_seq], [pred_seq]), 'report':'\n'+seq_cls([label_seq], [pred_seq])}
 
 def relation_metrics(task_name, preds, labels):
 
