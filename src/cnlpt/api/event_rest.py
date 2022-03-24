@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import os
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List, Tuple, Dict
@@ -30,7 +31,7 @@ from transformers.data.processors.utils import InputFeatures, InputExample
 from torch.utils.data.dataset import Dataset
 from transformers.data.processors.glue import glue_convert_examples_to_features
 import numpy as np
-from ..CnlpModelForClassification import CnlpModelForClassification
+from ..CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
 from seqeval.metrics.sequence_labeling import get_entities
 import logging
 from time import time
@@ -60,10 +61,13 @@ async def startup_event():
 @app.post("/temporal/initialize")
 async def initialize():
     ''' Load the model from disk and move to the device'''
+    AutoConfig.register("cnlpt", CnlpConfig)
+    AutoModel.register(CnlpConfig, CnlpModelForClassification)
+
     config = AutoConfig.from_pretrained(model_name)
     app.state.tokenizer = AutoTokenizer.from_pretrained(model_name,
                                                   config=config)
-    model = CnlpModelForClassification(model_name, config=config, tagger=[True], relations=[False], num_labels_list=[9])
+    model = CnlpModelForClassification.from_pretrained(model_name, cache_dir=os.getenv('HF_CACHE'), config=config)
     model.to('cuda')
 
     app.state.trainer = Trainer(
