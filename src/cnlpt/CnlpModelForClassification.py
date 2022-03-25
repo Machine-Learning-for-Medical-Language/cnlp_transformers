@@ -138,6 +138,7 @@ class CnlpModelForClassification(PreTrainedModel):
                  final_task_weight: float = 1.0,
                  argument_regularization: float = -1,
                  freeze=False,
+                 bias_fit=False,
                  ):
 
         super().__init__(config)
@@ -155,6 +156,11 @@ class CnlpModelForClassification(PreTrainedModel):
             for param in self.encoder.parameters():
                 param.requires_grad = False
         
+        if bias_fit:
+            for name, param in self.encoder.named_parameters():
+                if not 'bias' in name:
+                    param.requires_grad = False
+
         self.feature_extractors = nn.ModuleList()
         self.logit_projectors = nn.ModuleList()
         self.classifiers = nn.ModuleList()

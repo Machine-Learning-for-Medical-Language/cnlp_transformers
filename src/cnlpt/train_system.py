@@ -83,6 +83,9 @@ class CnlpTrainingArguments(TrainingArguments):
     arg_reg: Optional[float] = field(
         default=-1, metadata={"help": "Weight to use on argument regularization term (penalizes end-to-end system if a discovered relation has low probability of being any entity type). Value < 0 (default) turns off this penalty."}
     )
+    bias_fit: bool = field(
+        default=False, metadata={"help": "Only optimize the bias parameters of the encoder (and the weights of the classifier heads), as proposed in the BitFit paper by Ben Zaken et al. 2021 (https://arxiv.org/abs/2106.10199)"}
+    )
 
 @dataclass
 class ModelArguments:
@@ -395,6 +398,7 @@ def main():
                     class_weights=None if train_dataset is None else train_dataset.class_weights,
                     final_task_weight=training_args.final_task_weight,
                     freeze=training_args.freeze,
+                    bias_fit=training_args.bias_fit,
                     argument_regularization=training_args.arg_reg)
 
         else:
@@ -419,6 +423,7 @@ def main():
                 class_weights=None if train_dataset is None else train_dataset.class_weights,
                 final_task_weight=training_args.final_task_weight,
                 freeze=training_args.freeze,
+                bias_fit=training_args.bias_fit,
                 argument_regularization=training_args.arg_reg)
 
     best_eval_results = None
