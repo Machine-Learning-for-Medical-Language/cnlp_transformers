@@ -301,13 +301,11 @@ def cnlp_convert_examples_to_features(
                 wpi_to_tokeni = {}
                 tokeni_to_wpi = {}
                 sent_labels = np.zeros( (max_length, max_length)) - 100
-                wps = batch_encoding[sent_ind].tokens
-                sent_len = len(wps)
                 
                 ## align word-piece tokens to the tokenization we got as input and only assign labels to input tokens
                 previous_word_idx = None
                 for word_pos_idx, word_idx in enumerate(word_ids):
-                    if word_idx != previous_word_idx or word_idx is None:
+                    if word_idx != previous_word_idx and word_idx is not None:
                         key = word_pos_idx
                         val = len(wpi_to_tokeni)
 
@@ -584,7 +582,6 @@ class ClinicalNlpDataset(Dataset):
                 if self.features is None:
                     self.features = features
                 else:
-                    # FIXME: self.features is set to None earlier in this __init__ method; this is unreachable
                     assert len(features) == len(self.features)
                     if self.features[0].label is None:
                         assert features[0].label is None, 'Some of the tasks have None labels and others do not, they should be consistent!'

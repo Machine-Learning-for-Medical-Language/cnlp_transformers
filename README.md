@@ -2,8 +2,19 @@
 Transformers for Clinical NLP
 
 This library was created to add abstractions on top of the Huggingface Transformers library for many clinical NLP research use cases.
-Primary use cases include 1) simplifying multiple tasks related to fine-tuning of transformers for building models for clinical NLP, and 2) creating inference APIs that will allow downstream researchers easier access to clinical NLP outputs.
+Primary use cases include 
+ 1) simplifying multiple tasks related to fine-tuning of transformers for building models for clinical NLP research, and 
+ 2) creating inference APIs that will allow downstream researchers easier access to clinical NLP outputs. 
+
+This library is _not_ intended to serve as a place for clinical NLP applications to live. If you build something cool that uses transformer models that take advantage of our model definitions, the best practice is probably to rely on it as a library rather than treating it as your workspace. This library is also not intended as a deployment-ready tool for _scalable_ clinical NLP. There is a lot of interest in developing methods and tools that are smaller and can process millions of records, and this library can potentially be used for research along those line. But it will probably never be extremely optimized or shrink-wrapped for applications. However, there should be plenty of examples and useful code for people who are interested in that type of deployment.
+
 ## Install
+When installing the library's dependencies, `pip` will probably install 
+PyTorch with CUDA 10.2 support by default. If you would like to run the 
+library in CPU-only mode or with a newer version of CUDA, [install PyTorch 
+to your desired specifications](https://pytorch.org/get-started/locally/) 
+in your virtual environment first before installing `cnlp-transformers`.
+
 If you are installing just to run the REST APIs, you can just install without cloning with:
 ```pip install cnlp_transformers```
 
@@ -88,9 +99,9 @@ should return ```200```
 >>> r = requests.post(process_url, json=doc)
 >>> r.json()
 ```
-Output: {'statuses': [-1, -1, -1, 1]}
+Output: {'statuses': [-1, -1, 1, 1]}
 
-The model thinks only one of the entities is negated (anosmia). It missed "nausea" for some reason.
+The model correctly classifies both nausea and anosmia as negated.
 
 ### Temporal API (End-to-end temporal information extraction)
 To demo the temporal API:

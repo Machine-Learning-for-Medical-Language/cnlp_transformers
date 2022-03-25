@@ -19,9 +19,11 @@ from pydantic import BaseModel
 
 from typing import List, Tuple, Dict
 
+from ..CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
+
 from transformers import (
     AutoConfig,
-    AutoModelForSequenceClassification,
+    AutoModel,
     AutoTokenizer,
     HfArgumentParser,
     Trainer,
@@ -34,9 +36,10 @@ import numpy as np
 
 import logging
 from time import time
+import torch
 
 app = FastAPI()
-model_name = "tmills/roberta_sfda_sharpseed"
+model_name = "tmills/cnlpt-negation-roberta-sharpseed"
 logger = logging.getLogger('Negation_REST_Processor')
 logger.setLevel(logging.DEBUG)
 
@@ -91,12 +94,12 @@ def create_instance_string(doc_text, offsets):
 
 @app.on_event("startup")
 async def startup_event():
-    args = ['--output_dir', 'save_run/', '--per_device_eval_batch_size', '128', '--do_predict', '--seed', '42']
+    args = ['--output_dir', 'save_run/', '--per_device_eval_batch_size', '128', '--do_predict', '--seed', '42', '--report_to', 'none']
     # training_args = parserTrainingArguments('save_run/')
     parser = HfArgumentParser((TrainingArguments,))
     training_args, = parser.parse_args_into_dataclasses(args=args)
 
-    app.training_args = training_args
+    app.state.training_args = training_args
     
     # training_args.per_device_eval_size = 32
     logger.warn("Eval batch size is: " + str(training_args.eval_batch_size))
@@ -104,15 +107,20 @@ async def startup_event():
 @app.post("/negation/initialize")
 async def initialize():
     ''' Load the model from disk and move to the device'''
+    AutoConfig.register("cnlpt", CnlpConfig)
+    AutoModel.register(CnlpConfig, CnlpModelForClassification)
+
     config = AutoConfig.from_pretrained(model_name)
-    app.tokenizer = AutoTokenizer.from_pretrained(model_name,
+    app.state.tokenizer = AutoTokenizer.from_pretrained(model_name,
                                               config=config)
     model = CnlpModelForClassification.from_pretrained(model_name, config=config)
-    model.to('cuda')
 
-    app.trainer = Trainer(
+    if torch.cuda.is_available():
+        model.to('cuda')
+
+    app.state.trainer = Trainer(
             model=model,
-            args=app.training_args,
+            args=app.state.training_args,
             compute_metrics=None,
         )    
 
@@ -129,11 +137,11 @@ async def process(doc: EntityDocument):
         logger.debug('Instance string is %s' % (inst_str))
         instances.append(inst_str)
 
-    dataset = NegationDocumentDataset.from_instance_list(instances, app.tokenizer)
+    dataset = NegationDocumentDataset.from_instance_list(instances, app.state.tokenizer)
     preproc_end = time()
 
-    output = app.trainer.predict(test_dataset=dataset)
-    predictions = output.predictions
+    output = app.state.trainer.predict(test_dataset=dataset)
+    predictions = output.predictions[0]
     predictions = np.argmax(predictions, axis=1)
 
     pred_end = time()
@@ -157,7 +165,7 @@ async def process(doc: EntityDocument):
 
 @app.post("/negation/collection_process_complete")
 async def collection_process_complete():
-    app.trainer = None
+    app.state.trainer = None
 
 @app.get("/negation/{test_str}")
 async def test(test_str: str):

@@ -28,6 +28,7 @@ import csv
 import sys
 import pandas as pd
 import string
+from pathlib import Path
 
 
 TRAIN_FILE = "drugsComTrain_raw.tsv"
@@ -53,12 +54,12 @@ def remove_newline(review):
 
 
 def main():
-    input_path = sys.argv[1]
-    output_path = sys.argv[-1]
+    input_path = Path(sys.argv[1])
+    output_path = Path(sys.argv[-1])
 
     #read-in files
-    df = pd.read_csv(f"{input_path}{TRAIN_FILE}", sep='\t', usecols = ['review','rating'])
-    test = pd.read_csv(f"{input_path}{TEST_FILE}", sep='\t', usecols = ['review','rating'])
+    df = pd.read_csv(input_path / TRAIN_FILE, sep='\t', usecols = ['review','rating'])
+    test = pd.read_csv(input_path / TEST_FILE, sep='\t', usecols = ['review','rating'])
     
     #split into sentiments categories
     test['sentiment'] = test.rating.apply(to_sentiment)
@@ -82,9 +83,9 @@ def main():
     dev = dev[['sentiment','review_clean']]
     
     #output CSVs
-    test.to_csv(f"{output_path}{'test.tsv'}", sep='\t', encoding='utf-8', index=False, header=False, quoting=csv.QUOTE_NONE, escapechar=None)
-    train.to_csv(f"{output_path}{'train.tsv'}", sep='\t', encoding='utf-8', index=False, header=False, quoting=csv.QUOTE_NONE, escapechar=None)
-    dev.to_csv(f"{output_path}{'dev.tsv'}", sep='\t', encoding='utf-8', index=False, header=False, quoting=csv.QUOTE_NONE, escapechar=None)
+    test.to_csv(output_path / 'test.tsv', sep='\t', encoding='utf-8', index=False, header=False, quoting=csv.QUOTE_NONE, escapechar=None)
+    train.to_csv(output_path / 'train.tsv', sep='\t', encoding='utf-8', index=False, header=False, quoting=csv.QUOTE_NONE, escapechar=None)
+    dev.to_csv(output_path / 'dev.tsv', sep='\t', encoding='utf-8', index=False, header=False, quoting=csv.QUOTE_NONE, escapechar=None)
 
 
 if __name__ == '__main__':

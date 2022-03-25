@@ -1,4 +1,5 @@
 import os
+import random
 from os.path import basename, dirname
 import time
 import logging
@@ -36,7 +37,7 @@ def tagging_metrics(task_name, preds, labels):
     acc = num_correct / len(preds)
     f1 = f1_score(labels, preds, average=None)
 
-    return {'acc': acc, 'token_f1': f1, 'f1': seq_f1([pred_seq], [label_seq]), 'report':'\n'+seq_cls([pred_seq], [label_seq])}
+    return {'acc': acc, 'token_f1': fix_np_types(f1), 'f1': fix_np_types(seq_f1([label_seq], [pred_seq])), 'report':'\n'+seq_cls([label_seq], [pred_seq])}
 
 def relation_metrics(task_name, preds, labels):
 
@@ -53,9 +54,9 @@ def relation_metrics(task_name, preds, labels):
     num_correct = (relevant_labels == relevant_preds).sum()
     acc = num_correct / len(relevant_preds)
 
-    recall = recall_score(relevant_preds, relevant_labels, average=None)
-    precision = precision_score(relevant_preds, relevant_labels, average=None)
-    f1_report = f1_score(relevant_labels, relevant_preds, average=None)
+    recall = recall_score(y_pred=relevant_preds, y_true=relevant_labels, average=None)
+    precision = precision_score(y_pred=relevant_preds, y_true=relevant_labels, average=None)
+    f1_report = f1_score(y_true=relevant_labels, y_pred=relevant_preds, average=None)
 
     return {'f1': fix_np_types(f1_report), 'acc': acc, 'recall':fix_np_types(recall), 'precision':fix_np_types(precision) }
 

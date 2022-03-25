@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import os
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List, Tuple, Dict
@@ -29,7 +30,7 @@ from transformers import (
 from transformers.data.processors.utils import InputFeatures, InputExample
 from torch.utils.data.dataset import Dataset
 import numpy as np
-from ..CnlpModelForClassification import CnlpModelForClassification
+from ..CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
 from seqeval.metrics.sequence_labeling import get_entities
 import logging
 from time import time
@@ -50,7 +51,7 @@ async def startup_event():
     parser = HfArgumentParser((TrainingArguments,))
     training_args, = parser.parse_args_into_dataclasses(args=args)
 
-    app.training_args = training_args
+    app.state.training_args = training_args
 
     logger.warn("Eval batch size is: " + str(training_args.eval_batch_size))
 
@@ -59,15 +60,18 @@ async def initialize():
     ''' Load the model from disk and move to the device'''
     #import pdb; pdb.set_trace()
 
+    AutoConfig.register("cnlpt", CnlpConfig)
+    AutoModel.register(CnlpConfig, CnlpModelForClassification)
+
     config = AutoConfig.from_pretrained(model_name)
-    app.tokenizer = AutoTokenizer.from_pretrained(model_name,
+    app.state.tokenizer = AutoTokenizer.from_pretrained(model_name,
                                                   config=config)
-    model = CnlpModelForClassification(model_name, config=config, tagger=[True], relations=[False], num_labels_list=[17])
+    model = CnlpModelForClassification.from_pretrained(model_name, cache_dir=os.getenv('HF_CACHE'), config=config)
     model.to('cuda')
 
-    app.trainer = Trainer(
+    app.state.trainer = Trainer(
         model=model,
-        args=app.training_args,
+        args=app.state.training_args,
         compute_metrics=None,
     )
 
@@ -94,12 +98,12 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
         logger.debug('Instance string is %s' % (inst_str))
         instances.append(inst_str)
 
-    dataset = TemporalDocumentDataset.from_instance_list(instances, app.tokenizer)
+    dataset = TemporalDocumentDataset.from_instance_list(instances, app.state.tokenizer)
     logger.warn('Dataset is as follows: %s' % (str(dataset.features)))
 
     preproc_end = time()
 
-    output = app.trainer.predict(test_dataset=dataset)
+    output = app.state.trainer.predict(test_dataset=dataset)
 
     timex_predictions = np.argmax(output.predictions[0], axis=2)
     
@@ -110,7 +114,7 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     pred_end = time()
     
     for sent_ind in range(len(dataset)):
-        tokens = app.tokenizer.convert_ids_to_tokens(dataset.features[sent_ind].input_ids)
+        tokens = app.state.tokenizer.convert_ids_to_tokens(dataset.features[sent_ind].input_ids)
         wpind_to_ind = {}
         timex_labels = []
         for token_ind in range(1,len(tokens)):
@@ -142,7 +146,7 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
 
 @app.post("/temporal/collection_process_complete")
 async def collection_process_complete():
-    app.trainer = None
+    app.state.trainer = None
 
 def rest():
     import argparse

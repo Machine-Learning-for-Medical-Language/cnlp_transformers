@@ -83,6 +83,9 @@ class CnlpTrainingArguments(TrainingArguments):
     arg_reg: Optional[float] = field(
         default=-1, metadata={"help": "Weight to use on argument regularization term (penalizes end-to-end system if a discovered relation has low probability of being any entity type). Value < 0 (default) turns off this penalty."}
     )
+    bias_fit: bool = field(
+        default=False, metadata={"help": "Only optimize the bias parameters of the encoder (and the weights of the classifier heads), as proposed in the BitFit paper by Ben Zaken et al. 2021 (https://arxiv.org/abs/2106.10199)"}
+    )
 
 @dataclass
 class ModelArguments:
@@ -119,6 +122,52 @@ class ModelArguments:
     use_prior_tasks: bool = field(
         default=False, metadata={"help": "In the multi-task setting, incorporate the logits from the previous tasks into subsequent representation layers. This will be done in the task order specified in the command line."}
     )
+    hier_num_layers: Optional[int] = field(
+        default=2,
+        metadata={
+            "help": (
+                "For the hierarchical model, the number of document-level transformer "
+                "layers"
+            )
+        },
+    )
+    hier_hidden_dim: Optional[int] = field(
+        default=2048,
+        metadata={
+            "help": (
+                "For the hierarchical model, the inner hidden size of the positionwise "
+                "FFN in the document-level transformer layers"
+            )
+        },
+    )
+    hier_n_head: Optional[int] = field(
+        default=8,
+        metadata={
+            "help": (
+                "For the hierarchical model, the number of attention heads in the "
+                "document-level transformer layers"
+            )
+        },
+    )
+    hier_d_k: Optional[int] = field(
+        default=8,
+        metadata={
+            "help": (
+                "For the hierarchical model, the size of the query and key vectors in "
+                "the document-level transformer layers"
+            )
+        },
+    )
+    hier_d_v: Optional[int] = field(
+        default=96,
+        metadata={
+            "help": (
+                "For the hierarchical model, the size of the value vectors in the "
+                "document-level transformer layers"
+            )
+        },
+    )
+
 
 def is_pretrained_model(model_name):
     # check if it's a built-in pre-trained config:
@@ -266,27 +315,15 @@ def main():
         # num_tokens=len(tokenizer))
         config.vocab_size = len(tokenizer)
 
-        # TODO we should be able to infer this during model initialization
-        encoder_dim = AutoConfig.from_pretrained(encoder_name, cache_dir=model_args.cache_dir).hidden_size
-
-        # TODO make these cli model params
-        args_tuneable = dict(
-            # transformer head
-            n_layers=2,
-            d_model=encoder_dim,
-            d_inner=2048,
-            n_head=8,
-            d_k=8,
-            d_v=96,
-        )
+        encoder_dim = config.hidden_size
 
         transformer_head_config = HierarchicalTransformerConfig(
-            n_layers=args_tuneable['n_layers'],
-            d_model=args_tuneable['d_model'],
-            n_head=args_tuneable['n_head'],
-            d_v=args_tuneable['d_v'],
-            d_k=args_tuneable['d_k'],
-            d_inner=args_tuneable['d_inner'],
+            n_layers=model_args.hier_num_layers,
+            d_model=encoder_dim,
+            d_inner=model_args.hier_hidden_dim,
+            n_head=model_args.hier_n_head,
+            d_k=model_args.hier_d_k,
+            d_v=model_args.hier_d_v,
         )
 
         model = HierarchicalModel(
@@ -302,7 +339,7 @@ def main():
         # by default cnlpt model, but need to check which encoder they want
         encoder_name = model_args.encoder_name
 
-        # TODO check when download any pretrained lanugage model to local disk, if 
+        # TODO check when download any pretrained language model to local disk, if 
         # the following condition "is_pretrained_model(encoder_name)" works or not.
         if not is_pretrained_model(encoder_name):
             # we are loading one of our own trained models as a starting point.
@@ -337,7 +374,6 @@ def main():
             if training_args.do_train:
                 # Setting 1) only load weights from the encoder
                 raise NotImplementedError('This functionality has not been restored yet')
-                ## FIXME - think this won't load the right weights?
                 model = CnlpModelForClassification(
                         model_path = model_args.encoder_name,
                         config=config,
@@ -362,6 +398,7 @@ def main():
                     class_weights=None if train_dataset is None else train_dataset.class_weights,
                     final_task_weight=training_args.final_task_weight,
                     freeze=training_args.freeze,
+                    bias_fit=training_args.bias_fit,
                     argument_regularization=training_args.arg_reg)
 
         else:
@@ -386,6 +423,7 @@ def main():
                 class_weights=None if train_dataset is None else train_dataset.class_weights,
                 final_task_weight=training_args.final_task_weight,
                 freeze=training_args.freeze,
+                bias_fit=training_args.bias_fit,
                 argument_regularization=training_args.arg_reg)
 
     best_eval_results = None
