@@ -194,14 +194,19 @@ def is_pretrained_model(model_name):
 
     return False
 
-def main(json_file=None):
+def main(json_file=None, json_obj=None):
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, CnlpTrainingArguments))
 
+    if json_file is not None and json_obj is not None:
+        raise ValueError('cannot specify json_file and json_obj')
+
     if json_file is not None:
         model_args, data_args, training_args = parser.parse_json_file(json_file=json_file)
+    elif json_obj is not None:
+        model_args, data_args, training_args = parser.parse_dict(json_obj)
     elif len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
         # let's parse it to get our arguments.
