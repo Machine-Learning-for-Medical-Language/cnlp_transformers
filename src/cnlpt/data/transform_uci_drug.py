@@ -83,6 +83,7 @@ def main():
     dev = dev[['sentiment','review_clean']]
     
     #output CSVs
+    output_path.mkdir(parents=True, exist_ok=True)
     test.to_csv(output_path / 'test.tsv', sep='\t', encoding='utf-8', index=False, header=False, quoting=csv.QUOTE_NONE, escapechar=None)
     train.to_csv(output_path / 'train.tsv', sep='\t', encoding='utf-8', index=False, header=False, quoting=csv.QUOTE_NONE, escapechar=None)
     dev.to_csv(output_path / 'dev.tsv', sep='\t', encoding='utf-8', index=False, header=False, quoting=csv.QUOTE_NONE, escapechar=None)
