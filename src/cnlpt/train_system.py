@@ -119,6 +119,18 @@ class ModelArguments:
     head_features: Optional[int] = field(
         default=64, metadata={"help": "Number of parameters in each attention head in the NxN relation classifier"}
     )
+    cnn_embed_dim: Optional[int] = field(
+        default=100,
+        metadata={
+            'help': "For the CNN baseline model, the size of the word embedding space."
+        }
+    )
+    cnn_num_filters: Optional[int] = field(
+        default=25,
+        metadata={
+            'help': 'For the CNN baseline model, the number of convolution filters to use'
+        }
+    )
     use_prior_tasks: bool = field(
         default=False, metadata={"help": "In the multi-task setting, incorporate the logits from the previous tasks into subsequent representation layers. This will be done in the task order specified in the command line."}
     )
@@ -289,7 +301,11 @@ def main():
     pretrained = False
 
     if model_name == 'cnn':
-        model = CnnSentenceClassifier(len(tokenizer), num_labels_list=num_labels)
+        model = CnnSentenceClassifier(len(tokenizer), 
+                                      num_labels_list=num_labels,
+                                      embed_dims=model_args.cnn_embed_dim,
+                                      num_filters=model_args.cnn_num_filters,
+                                      )
     elif model_name == 'lstm':
         model = LstmSentenceClassifier(len(tokenizer), num_labels_list=num_labels)
     elif model_name == 'hier':

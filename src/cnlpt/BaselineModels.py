@@ -32,7 +32,7 @@ class CnnSentenceClassifier(nn.Module):
 
         logits = []
         loss = 0
-        for task_fc in self.fcs:
+        for task_ind,task_fc in enumerate(self.fcs):
             task_logits = task_fc(fc_in)
             logits.append(task_logits)
 
