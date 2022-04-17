@@ -405,18 +405,6 @@ cnlp_processors = {'polarity': NegationProcessor,
                    'ucidrug': UciDrugSentimentProcessor,
                   }
 
-# cnlp_num_labels = { 'polarity': 2,
-#                     'dtr': 4,
-#                     'alink': 4,
-#                     'alinkx': 5,
-#                     'nc': 3,
-#                     'tlink': 5,
-#                     'timecat': 8,
-#                     'conmod': 4,
-#                     'timex': 17,
-#                     'event': 9,
-#                   }
-
 mtl = 'mtl'
 classification = 'classification'
 tagging = 'tagging'

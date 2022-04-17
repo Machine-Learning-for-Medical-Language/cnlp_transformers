@@ -29,8 +29,8 @@ from transformers import (
 )
 from transformers.data.processors.utils import InputFeatures, InputExample
 from torch.utils.data.dataset import Dataset
-from transformers.data.processors.glue import glue_convert_examples_to_features
 import numpy as np
+from .cnlp_rest import initialize_cnlpt_model
 from ..CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
 from seqeval.metrics.sequence_labeling import get_entities
 import logging
@@ -48,33 +48,7 @@ max_length = 128
 
 @app.on_event("startup")
 async def startup_event():
-    args = ['--output_dir', 'save_run/', '--per_device_eval_batch_size', '8', '--do_predict']
-    # training_args = parserTrainingArguments('save_run/')
-    parser = HfArgumentParser((TrainingArguments,))
-    training_args, = parser.parse_args_into_dataclasses(args=args)
-
-    app.state.training_args = training_args
-
-    # training_args.per_device_eval_size = 32
-    logger.warn("Eval batch size is: " + str(training_args.eval_batch_size))
-
-@app.post("/temporal/initialize")
-async def initialize():
-    ''' Load the model from disk and move to the device'''
-    AutoConfig.register("cnlpt", CnlpConfig)
-    AutoModel.register(CnlpConfig, CnlpModelForClassification)
-
-    config = AutoConfig.from_pretrained(model_name)
-    app.state.tokenizer = AutoTokenizer.from_pretrained(model_name,
-                                                  config=config)
-    model = CnlpModelForClassification.from_pretrained(model_name, cache_dir=os.getenv('HF_CACHE'), config=config)
-    model.to('cuda')
-
-    app.state.trainer = Trainer(
-        model=model,
-        args=app.state.training_args,
-        compute_metrics=None,
-    )
+    initialize_cnlpt_model(app, model_name)
 
 @app.post("/temporal/process")
 async def process(doc: TokenizedSentenceDocument):
