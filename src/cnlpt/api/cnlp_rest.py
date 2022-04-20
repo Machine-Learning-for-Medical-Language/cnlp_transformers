@@ -65,8 +65,8 @@ def create_instance_string(doc_text: str, offsets : List[int]):
     raw_str = doc_text[start:offsets[0]] + ' <e> ' + doc_text[offsets[0]:offsets[1]] + ' </e> ' + doc_text[offsets[1]:end]
     return raw_str.replace('\n', ' ')
 
-def initialize_cnlpt_model(app, model_name, cuda=True):
-    args = ['--output_dir', 'save_run/', '--per_device_eval_batch_size', '8', '--do_predict', '--report_to', 'none']
+def initialize_cnlpt_model(app, model_name, cuda=True, batch_size=8):
+    args = ['--output_dir', 'save_run/', '--per_device_eval_batch_size', str(batch_size), '--do_predict', '--report_to', 'none']
     parser = HfArgumentParser((TrainingArguments,))
     training_args, = parser.parse_args_into_dataclasses(args=args)
 
