@@ -81,6 +81,8 @@ def initialize_cnlpt_model(app, model_name, cuda=True, batch_size=8):
     model = CnlpModelForClassification.from_pretrained(model_name, cache_dir=os.getenv('HF_CACHE'), config=config)
     if cuda:
         model = model.to('cuda')
+    else:
+        model = model.to('cpu')
 
     app.state.trainer = Trainer(
         model=model,
