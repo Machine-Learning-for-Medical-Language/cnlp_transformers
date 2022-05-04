@@ -149,6 +149,20 @@ class ModelArguments:
         }
     )
 
+    # LSTM-specific arguments
+    lstm_embed_dim: Optional[int] = field(
+        default=100,
+        metadata={
+            'help': "For the LSTM baseline model, the size of the word embedding space."
+        }
+    )
+    lstm_hidden_size: Optional[int] = field(
+        default=100,
+        metadata={
+            "help": "For the LSTM baseline model, the hidden size of the LSTM layer"
+        }
+    )
+
     # Multi-task classifier-specific arguments
     use_prior_tasks: bool = field(
         default=False, metadata={"help": "In the multi-task setting, incorporate the logits from the previous tasks into subsequent representation layers. This will be done in the task order specified in the command line."}
@@ -336,7 +350,11 @@ def main(json_file=None, json_obj=None):
                                       filters=model_args.cnn_filter_sizes,
                                       )
     elif model_name == 'lstm':
-        model = LstmSentenceClassifier(len(tokenizer), num_labels_list=num_labels)
+        model = LstmSentenceClassifier(len(tokenizer),
+                                       num_labels_list=num_labels,
+                                       embed_dims=model_args.lstm_embed_dim,
+                                       hidden_size=model_args.lstm_hidden_size,
+                                       )
     elif model_name == 'hier':
         # encoder_config = AutoConfig.from_pretrained(
         #     model_args.config_name if model_args.config_name else model_args.encoder_name,
