@@ -132,7 +132,20 @@ class ModelArguments:
     cnn_num_filters: Optional[int] = field(
         default=25,
         metadata={
-            'help': 'For the CNN baseline model, the number of convolution filters to use'
+            'help': (
+                'For the CNN baseline model, the number of '
+                'convolution filters to use for each filter size.'
+            )
+        }
+    )
+
+    cnn_filter_sizes: Optional[List[int]] = field(
+        default_factory=lambda: [1, 2, 3],
+        metadata={
+            "help": (
+                "For the CNN baseline model, a space-separated list "
+                "of size(s) of the filters (kernels)"
+            )
         }
     )
 
@@ -320,6 +333,7 @@ def main(json_file=None, json_obj=None):
                                       num_labels_list=num_labels,
                                       embed_dims=model_args.cnn_embed_dim,
                                       num_filters=model_args.cnn_num_filters,
+                                      filters=model_args.cnn_filter_sizes,
                                       )
     elif model_name == 'lstm':
         model = LstmSentenceClassifier(len(tokenizer), num_labels_list=num_labels)
