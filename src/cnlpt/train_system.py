@@ -113,12 +113,16 @@ class ModelArguments:
     token: bool = field(
         default=False, metadata={"help": "Classify over an actual token rather than the [CLS] ('<s>') token -- requires that the tokens to be classified are surrounded by <e>/</e> tokens"}
     )
+
+    # NxN relation classifier-specific arguments
     num_rel_feats: Optional[int] = field(
         default=12, metadata={"help": "Number of features/attention heads to use in the NxN relation classifier"}
     )
     head_features: Optional[int] = field(
         default=64, metadata={"help": "Number of parameters in each attention head in the NxN relation classifier"}
     )
+
+    # CNN-specific arguments
     cnn_embed_dim: Optional[int] = field(
         default=100,
         metadata={
@@ -131,9 +135,13 @@ class ModelArguments:
             'help': 'For the CNN baseline model, the number of convolution filters to use'
         }
     )
+
+    # Multi-task classifier-specific arguments
     use_prior_tasks: bool = field(
         default=False, metadata={"help": "In the multi-task setting, incorporate the logits from the previous tasks into subsequent representation layers. This will be done in the task order specified in the command line."}
     )
+
+    # Hierarchical Transformer-specific arguments
     hier_num_layers: Optional[int] = field(
         default=2,
         metadata={
