@@ -18,7 +18,7 @@
 import os
 from fastapi import FastAPI
 from pydantic import BaseModel
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Union
 from transformers import (
     AutoConfig,
     AutoModel,
@@ -75,8 +75,10 @@ class Event(BaseModel):
     dtr: str
 
 class Relation(BaseModel):
-    arg1: str
-    arg2: str
+    # Allow args to be none, so that we can potentially link them to times or events in the client, or if they don't
+    # care about that. pass back the token indices of the args in addition.
+    arg1: Union[str,None]
+    arg2: Union[str,None]
     category: str
     arg1_start: int
     arg2_start: int
