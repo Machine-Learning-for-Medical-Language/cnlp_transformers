@@ -521,6 +521,8 @@ class ClinicalNlpDataset(Dataset):
                     dataconfig, domain, mode.value, tokenizer.__class__.__name__, str(args.max_seq_length),
                 ),
             )
+            if self.hierarchical:
+                cached_features_file += '_hier'
 
             # Make sure only the first process in distributed training processes the dataset,
             # and the others will use the cache.
