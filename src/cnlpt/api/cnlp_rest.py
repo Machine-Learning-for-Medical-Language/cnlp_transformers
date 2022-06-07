@@ -17,6 +17,8 @@ from transformers import (
 )
 from transformers.data.processors.utils import InputFeatures, InputExample
 from torch.utils.data.dataset import Dataset
+import torch
+import logging
 
 # intra-library imports
 from ..CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
@@ -79,6 +81,10 @@ def initialize_cnlpt_model(app, model_name, cuda=True, batch_size=8):
     app.state.tokenizer = AutoTokenizer.from_pretrained(model_name,
                                                   config=config)
     model = CnlpModelForClassification.from_pretrained(model_name, cache_dir=os.getenv('HF_CACHE'), config=config)
+    if cuda and not torch.cuda.is_available():
+        logging.warning('CUDA is set to True (probably a default) but was not available; setting to False and proceeding. If you have a GPU you need to debug why pytorch cannot see it.')
+        cuda = False
+    
     if cuda:
         model = model.to('cuda')
     else:
