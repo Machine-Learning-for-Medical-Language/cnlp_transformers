@@ -407,4 +407,4 @@ class CnlpModelForClassification(PreTrainedModel):
                 loss=state['loss'], logits=logits, hidden_states=outputs.hidden_states, attentions=outputs.attentions,
             )
         else:
-            return SequenceClassifierOutput(loss=state['loss'], logits=logits)
+            return SequenceClassifierOutput(loss=state['loss'], logits=logits, attentions=outputs.attentions)
