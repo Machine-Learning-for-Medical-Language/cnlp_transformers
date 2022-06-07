@@ -9,7 +9,7 @@ from .cnlp_processors import (
     cnlp_output_modes,
     tagging,
     classification,
-    classifier_to_relex 
+    classifier_to_relex
 )
 
 from .pipelines.tagging import TaggingPipeline
@@ -34,7 +34,7 @@ def model_dicts(models_dir):
     # Pipelines go to CPU (-1) by default so if
     # available send to GPU (0)
     main_device = 0 if torch.cuda.is_available() else -1
-    
+
     taggers_dict = {}
     out_model_dict = {}
 
@@ -125,7 +125,7 @@ def _assemble(sentence, taggers_dict, axis_task):
     axis_ann = axis_pipe(sentence)
     # We split by mode cases since there are optmizations
     # helpful for inference that could cause problems for
-    # evaluation 
+    # evaluation
     ann_sents = []
     # Make sure there's at least one axial mention
     # before running any other taggers
@@ -160,17 +160,7 @@ def get_partitions(annotation):
 
     def tag2idx(tag):
         return tag_map[tag[0]]
-    '''
-    def tag2idx(tag):
-        if tag != 'O':
-            if tag[0] == 'B':
-                return '1'
-            elif tag[0] == 'I':
-                return '2'
-        # 2 identifies the second
-        else:
-            return '0'
-    '''
+
     return ''.join(map(tag2idx, annotation))
 
 
@@ -226,7 +216,7 @@ def merge_annotations(axis_ann, sig_ann_ls, sentence):
                     ann_sent[a2] = ann_sent[a2] + ' </a1>'
                     ann_sent[s1] = '<a2> ' + ann_sent[s1]
                     ann_sent[s2] = ann_sent[s2] + ' </a2>'
-                    
+
                     sent_dict = {
                         'label': None,
                         'sentence': ' '.join(ann_sent),
@@ -249,6 +239,8 @@ def merge_annotations(axis_ann, sig_ann_ls, sentence):
 
 
 # Shamelessly grabbed (and adapted) from https://stackoverflow.com/a/57293089
+# for getting overlapping intervals from two lists of tuples e.g.
+# [(2, 4), (9, 12)] [(3, 5), (7, 10)] -> [(3, 4), (9,10)]
 def get_intersect(ls1, ls2):
     m1, m2 = tee(merge(ls1, ls2, key=lambda k: k[0]))
     next(m2, None)
@@ -258,10 +250,17 @@ def get_intersect(ls1, ls2):
             ls = [*g][0]
             inf = max(i[0] for i in ls)
             sup = min(i[1] for i in ls)
-            out.append((inf, sup))
+            if inf != sup:
+                out.append((inf, sup))
     return out
 
 
+# Given a list of tuples of the form
+# (label, axis index, sig index)
+# and a length N,
+# Generate a NxN matrix of zeros with
+# id(label) at (axis index, sig index)
+# for each tuple
 def relex_label_to_matrix(relex_label, label_map, max_len):
     sent_labels = np.zeros((max_len, max_len))
     if relex_label != 'None':
@@ -307,6 +306,9 @@ def label_update(label_dict, mention_dict, offsets):
         # higher score
         return new_score > mention_dict[offsets][new_label]['score']
 
+
+# Does the main prediction logic
+# for both evaluation and inference
 def get_predictions(
         sentences,
         taggers_dict,
@@ -326,14 +328,13 @@ def get_predictions(
     predictions_dict = {}
 
     for out_task, out_pipe in out_model_dict.items():
-        out_pipe_predictions_matrices = []
         out_pipe_predictions_tuples = []
         task_processor, label_list, label_map = None, None, None
         if mode == 'eval':
             task_processor = cnlp_processors[classifier_to_relex[out_task]]()
             label_list = task_processor.get_labels()
             label_map = {label: i for i, label in enumerate(label_list)}
-        
+
         for ann_sent_group in ann_sent_groups:
             axis_mention_dict = {}
             for sent_dict in ann_sent_group:
@@ -383,6 +384,8 @@ def get_predictions(
                             'sig_offsets': sig_offsets,
                         }
                         axis_mention_dict[axis_offsets][best_label] = axis_label_dict
+                # Only want to collect to the dictionary and print axis-only non-relations
+                # for inference
                 elif ann_label == 'None' and mode == 'inf':
                     if axis_offsets not in axis_mention_dict.keys():
                         axis_mention_dict[axis_offsets] = {}
@@ -400,21 +403,23 @@ def get_predictions(
                 out_pipe_predictions_tuples.append(sent_label_tuples)
 
         local_relex_matrix = None
-        
+
         if mode == 'eval':
             predictions_dict[out_task] = out_pipe_predictions_tuples
-            
+
             # How to convert the sentence
             # ground truth labels into the
             # same matrix format as the predictions
             # outside the function for scoring
             def local_relex_matrix(new_label_list, local_max_len):
+                # lets us hold only the label map
+                # while varying everything else
                 return relex_label_to_matrix(
                     new_label_list,
                     label_map,
                     local_max_len,
                 )
-        
+
     return predictions_dict, local_relex_matrix
 
 
@@ -422,9 +427,12 @@ def get_predictions(
 # dictionaries of labels indexed by output pipeline
 # task names
 def get_sentences_and_labels(in_file: str, mode: str, task_names):
-    task_processors = [cnlp_processors[classifier_to_relex[task_name]]() for task_name
-                       in task_names]
-    idx_labels_dict, str_labels_dict = {}, {}
+
+    def relex_proc(task_name):
+        return cnlp_processors[classifier_to_relex[task_name]]()
+
+    task_processors = list(map(relex_proc, task_names))
+    idx_labels_dict = {}
     if mode == "inf":
         # 'test' lets us forget labels
         # just use the first task processor since
@@ -435,30 +443,44 @@ def get_sentences_and_labels(in_file: str, mode: str, task_names):
         )
     elif mode == "eval":
         # 'dev' lets us get labels without running into issues of downsampling
-        dummy_processor = task_processors[0]
-        lines = dummy_processor._read_tsv(in_file)
-        examples = dummy_processor._create_examples(
+        lines = task_processors[0]._read_tsv(in_file)
+        examples = task_processors[0]._create_examples(
             lines,
             "dev"
         )
 
         def example2label(example):
             # Just assumed relex
+
+            def conv_tuple(l_tuple):
+                (
+                    start_token,
+                    end_token,
+                    category
+                ) = l_tuple
+
+                return (
+                    int(start_token),
+                    int(end_token),
+                    label_map.get(category, 0)
+                )
+
             if example.label:
-                return [(int(start_token), int(end_token), label_map.get(category, 0)) for
-                        (start_token, end_token, category) in example.label]
+                return list(map(conv_tuple, example.label))
             else:
                 return 'None'
-            
+
         for task_name, task_processor in zip(task_names, task_processors):
             label_list = task_processor.get_labels()
             label_map = {label: i for i, label in enumerate(label_list)}
 
             # Adjusted for 'relex'
             if examples[0].label is not None:
-                idx_labels_dict[task_name] = [example2label(ex) for ex in examples]
-                # Previously needed only for the getting model pairs issue
-                # str_labels_dict[task_name] = [ex.label for ex in examples]
+                # can leave this as a map object since we
+                # loop over it when generating the
+                # label/ground truth matrices
+                # for relex eval
+                idx_labels_dict[task_name] = map(example2label, examples)
             else:
                 ValueError("labels required for eval mode")
     else:
@@ -468,7 +490,6 @@ def get_sentences_and_labels(in_file: str, mode: str, task_names):
 
     def get_sent_len(sent):
         return len(ctakes_tok(sent))
-    
     if examples[0].text_b is None:
         sentences = [example.text_a for example in examples]
         max_len = get_sent_len(max(sentences, key=get_sent_len))

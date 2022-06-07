@@ -7,9 +7,7 @@ from dataclasses import dataclass, field
 from .cnlp_pipeline_utils import (
     model_dicts,
     get_sentences_and_labels,
-    assemble,
     get_predictions,
-    label_update,
 )
 
 from .cnlp_processors import classifier_to_relex, cnlp_compute_metrics
@@ -114,6 +112,9 @@ def inference(pipeline_args):
         task_names=out_model_dict.keys(),
     )
 
+    # Inference mode takes care of
+    # printing, don't need the predictions
+    # dictionary or dict->matrix function
     _, _ = get_predictions(
         sentences,
         taggers_dict,
@@ -122,15 +123,20 @@ def inference(pipeline_args):
         mode='inf',
     )
 
+
 def evaluation(pipeline_args):
     AutoConfig.register("cnlpt", CnlpConfig)
     AutoModel.register(CnlpConfig, CnlpModelForClassification)
 
     taggers_dict, out_model_dict = model_dicts(pipeline_args.models_dir)
 
+    # For eval need ground truth
+    # labels as well as the length of
+    # the longest sentence in the split
+    # for matrix generation and padding
     (
         idx_labels_dict,
-        annotated_sents,
+        sentences,
         split_max_len,
     ) = get_sentences_and_labels(
         in_file=pipeline_args.in_file,
@@ -139,7 +145,7 @@ def evaluation(pipeline_args):
     )
 
     predictions_dict, local_relex = get_predictions(
-        annotated_sents,
+        sentences,
         taggers_dict,
         out_model_dict,
         pipeline_args.axis_task,
@@ -149,10 +155,13 @@ def evaluation(pipeline_args):
     for task_name, prediction_tuples in predictions_dict.items():
         report = cnlp_compute_metrics(
             classifier_to_relex[task_name],
+            # Giant relex matrix of the predictions
             np.array(
                 [local_relex(sent_preds, split_max_len) for
                  sent_preds in prediction_tuples]
             ),
+            # Giant relex matrix of the ground
+            # truth labels
             np.array(
                 [local_relex(sent_labels, split_max_len) for
                  sent_labels in idx_labels_dict[task_name]]
