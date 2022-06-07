@@ -18,7 +18,7 @@
 import os
 from fastapi import FastAPI
 from pydantic import BaseModel
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Union
 from transformers import (
     AutoConfig,
     AutoModel,
@@ -29,8 +29,9 @@ from transformers import (
 )
 from transformers.data.processors.utils import InputFeatures, InputExample
 from torch.utils.data.dataset import Dataset
-from ..cnlp_data import cnlp_convert_examples_to_features
 import numpy as np
+from .cnlp_rest import initialize_cnlpt_model
+from ..cnlp_data import cnlp_convert_examples_to_features
 from ..CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
 from seqeval.metrics.sequence_labeling import get_entities
 import logging
@@ -38,7 +39,8 @@ from time import time
 from nltk.tokenize import wordpunct_tokenize as tokenize
 
 app = FastAPI()
-model_name = "tmills/clinical_tempeval"
+# model_name = "tmills/clinical_tempeval_roberta-base"
+model_name = "tmills/clinical_tempeval_pubmedbert"
 logger = logging.getLogger('Temporal_REST_Processor')
 logger.setLevel(logging.INFO)
 
@@ -74,9 +76,13 @@ class Event(BaseModel):
     dtr: str
 
 class Relation(BaseModel):
-    arg1: str
-    arg2: str
+    # Allow args to be none, so that we can potentially link them to times or events in the client, or if they don't
+    # care about that. pass back the token indices of the args in addition.
+    arg1: Union[str,None]
+    arg2: Union[str,None]
     category: str
+    arg1_start: int
+    arg2_start: int
 
 class TemporalResults(BaseModel):
     ''' lists of timexes, events and relations for list of sentences '''
@@ -113,35 +119,7 @@ def create_instance_string(tokens: List[str]):
 
 @app.on_event("startup")
 async def startup_event():
-    args = ['--output_dir', 'save_run/', '--per_device_eval_batch_size', '8', '--do_predict', '--report_to', 'none']
-    # training_args = parserTrainingArguments('save_run/')
-    parser = HfArgumentParser((TrainingArguments,))
-    training_args, = parser.parse_args_into_dataclasses(args=args)
-
-    app.state.training_args = training_args
-
-    # training_args.per_device_eval_size = 32
-    logger.warn("Eval batch size is: " + str(training_args.eval_batch_size))
-
-@app.post("/temporal/initialize")
-async def initialize():
-    ''' Load the model from disk and move to the device'''
-    #import pdb; pdb.set_trace()
-
-    AutoConfig.register("cnlpt", CnlpConfig)
-    AutoModel.register(CnlpConfig, CnlpModelForClassification)
-
-    config = AutoConfig.from_pretrained(model_name)
-    app.state.tokenizer = AutoTokenizer.from_pretrained(model_name,
-                                                  config=config)
-    model = CnlpModelForClassification.from_pretrained(model_name, cache_dir=os.getenv('HF_CACHE'), config=config)
-    model.to('cuda')
-
-    app.state.trainer = Trainer(
-        model=model,
-        args=app.state.training_args,
-        compute_metrics=None,
-    )
+    initialize_cnlpt_model(app, model_name)
 
 @app.post("/temporal/process")
 async def process(doc: TokenizedSentenceDocument):
@@ -185,6 +163,11 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
 
         arg1_ind = rel_inds[1][rel_num]
         arg2_ind = rel_inds[2][rel_num]
+        if arg1_ind == arg2_ind:
+            # no relations between an entity and itself
+            logger.warn('Found relation between an entity and itself... skipping')
+            continue
+
         rel_cat = rel_predictions[sent_ind,arg1_ind,arg2_ind]
 
         rels_by_sent[sent_ind].append( (arg1_ind, arg2_ind, rel_cat) )
@@ -196,17 +179,25 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     rel_results = []
 
     for sent_ind in range(len(dataset)):
-        tokens = app.state.tokenizer.convert_ids_to_tokens(dataset.features[sent_ind].input_ids)
+        batch_encoding = app.state.tokenizer.batch_encode_plus([sents[sent_ind],],
+                                                           is_split_into_words=True,
+                                                           max_length=max_length)
+        word_ids = batch_encoding.word_ids(0)
         wpind_to_ind = {}
         timex_labels = []
         event_labels = []
-        for token_ind in range(1,len(tokens)):
-            if dataset[sent_ind].input_ids[token_ind] <= 2:
-                break
-            if tokens[token_ind].startswith('Ġ'):
-                wpind_to_ind[token_ind] = len(wpind_to_ind)
-                timex_labels.append(timex_label_list[timex_predictions[sent_ind][token_ind]])
-                event_labels.append(event_label_list[event_predictions[sent_ind][token_ind]])
+        previous_word_idx = None
+
+        for word_pos_idx, word_idx in enumerate(word_ids):
+            if word_idx != previous_word_idx and word_idx is not None:
+                key = word_pos_idx
+                val = len(wpind_to_ind)
+
+                wpind_to_ind[key] = val
+                # tokeni_to_wpi[val] = key
+                timex_labels.append(timex_label_list[timex_predictions[sent_ind][word_pos_idx]])
+                event_labels.append(event_label_list[event_predictions[sent_ind][word_pos_idx]])
+            previous_word_idx = word_idx
 
         timex_entities = get_entities(timex_labels)
         logging.info("Extracted %d timex entities from the sentence" % (len(timex_entities)))
@@ -241,11 +232,7 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
                 if event.begin == arg2_ind:
                     arg2 = 'EVENT-%d' % event_ind
 
-            if arg1 is None or arg2 is None:
-                logging.warn('Tried to build a relation but couldn\'t align one of the arguments: %s to words %s [null=%s], %s [null=%s]' % (str(rel), sents[sent_ind][arg1_ind], str(arg1 is None), sents[sent_ind][arg2_ind], str(arg2 is None)))
-                continue
-
-            rel = Relation(arg1=arg1, arg2=arg2, category=relation_label_list[rel[2]])
+            rel = Relation(arg1=arg1, arg2=arg2, category=relation_label_list[rel[2]], arg1_start=arg1_ind, arg2_start=arg2_ind)
             rel_sent_results.append( rel )
 
 
@@ -262,11 +249,6 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     logging.info("Pre-processing time: %f, processing time: %f, post-processing time %f" % (preproc_time, pred_time, postproc_time))
 
     return results
-
-
-@app.post("/temporal/collection_process_complete")
-async def collection_process_complete():
-    app.state.trainer = None
 
 
 def rest():

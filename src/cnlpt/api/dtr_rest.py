@@ -16,12 +16,13 @@
 # under the License.
 from fastapi import FastAPI
 from pydantic import BaseModel
+import logging
+from typing import List
+from time import time
 
-from typing import List, Tuple, Dict
-
-from .cnlp_rest import EntityDocument, ClassificationDocumentDataset, create_instance_string, initialize_cnlpt_model
-from ..cnlp_processors import NegationProcessor
 from ..CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
+from ..cnlp_processors import DtrProcessor
+from .cnlp_rest import EntityDocument, ClassificationDocumentDataset, initialize_cnlpt_model, create_instance_string
 
 from transformers import (
     AutoConfig,
@@ -35,26 +36,22 @@ from transformers.data.processors.utils import InputFeatures, InputExample
 from torch.utils.data.dataset import Dataset
 import numpy as np
 
-import logging
-from time import time
-import torch
-
 app = FastAPI()
-model_name = "tmills/cnlpt-negation-roberta-sharpseed"
-logger = logging.getLogger('Negation_REST_Processor')
-logger.setLevel(logging.DEBUG)
+model_name = "tmills/tiny-dtr"
+logger = logging.getLogger('DocTimeRel Processor with xtremedistil encoder')
+logger.setLevel(logging.INFO)
 
 max_length = 128
 
-class NegationResults(BaseModel):
-    ''' statuses: dictionary from entity id to classification decision about negation; true -> negated, false -> not negated'''
-    statuses: List[int]
+class DocTimeRelResults(BaseModel):
+    ''' statuses: dictionary from entity id to classification decision about DocTimeRel'''
+    statuses: List[str]
 
 @app.on_event("startup")
 async def startup_event():
-    initialize_cnlpt_model(app, model_name)
+    initialize_cnlpt_model(app, model_name, cuda=False, batch_size=64)
 
-@app.post("/negation/process")
+@app.post("/dtr/process")
 async def process(doc: EntityDocument):
     doc_text = doc.doc_text
     logger.warn('Received document of len %d to process with %d entities' % (len(doc_text), len(doc.entities)))
@@ -68,8 +65,8 @@ async def process(doc: EntityDocument):
         instances.append(inst_str)
 
     dataset = ClassificationDocumentDataset.from_instance_list(instances, 
-                                                               app.state.tokenizer, 
-                                                               label_list=NegationProcessor().get_labels())
+                                                                app.state.tokenizer, 
+                                                                label_list=DtrProcessor().get_labels())
     preproc_end = time()
 
     output = app.state.trainer.predict(test_dataset=dataset)
@@ -82,7 +79,7 @@ async def process(doc: EntityDocument):
     for ent_ind in range(len(dataset)):
         results.append(dataset.get_labels()[predictions[ent_ind]])
 
-    output = NegationResults(statuses=results)
+    output = DocTimeRelResults(statuses=results)
 
     postproc_end = time()
 
@@ -94,11 +91,6 @@ async def process(doc: EntityDocument):
     
     return output
 
-@app.get("/negation/{test_str}")
-async def test(test_str: str):
-    return {'argument': test_str}
-
-
 def rest():
     import argparse
 
@@ -108,7 +100,7 @@ def rest():
     args = parser.parse_args()
 
     import uvicorn
-    uvicorn.run("cnlpt.api.negation_rest:app", host='0.0.0.0', port=args.port, reload=True)
+    uvicorn.run("cnlpt.api.dtr_rest:app", host='0.0.0.0', port=args.port, reload=True)
 
 
 if __name__ == '__main__':
