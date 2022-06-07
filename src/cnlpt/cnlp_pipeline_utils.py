@@ -307,16 +307,15 @@ def label_update(label_dict, mention_dict, offsets):
         # higher score
         return new_score > mention_dict[offsets][new_label]['score']
 
-# Get dictionary of final pipeline predictions
-# over annotated sentences, indexed by task name
-def get_eval_predictions(
-        # model_pairs_dict,
+def get_predictions(
         sentences,
         taggers_dict,
         out_model_dict,
         axis_task,
-        # max_len,
+        mode='inf',
 ):
+    if mode not in {'inf', 'eval'}:
+        ValueError(f"Invalid processing mode: {mode}")
 
     ann_sent_groups = assemble(
         sentences,
@@ -325,14 +324,15 @@ def get_eval_predictions(
     )
 
     predictions_dict = {}
-     
- 
+
     for out_task, out_pipe in out_model_dict.items():
         out_pipe_predictions_matrices = []
         out_pipe_predictions_tuples = []
-        task_processor = cnlp_processors[classifier_to_relex[out_task]]()
-        label_list = task_processor.get_labels()
-        label_map = {label: i for i, label in enumerate(label_list)}
+        task_processor, label_list, label_map = None, None, None
+        if mode == 'eval':
+            task_processor = cnlp_processors[classifier_to_relex[out_task]]()
+            label_list = task_processor.get_labels()
+            label_map = {label: i for i, label in enumerate(label_list)}
         
         for ann_sent_group in ann_sent_groups:
             axis_mention_dict = {}
@@ -352,9 +352,15 @@ def get_eval_predictions(
                         is_split_into_words=True,
                     )
 
-                    # For the pair, pick the label with the strongest signal
-                    strongest_label = max(pipe_output[0], key=lambda d: d['score'])                       
+                    # For the mention/sig pair
+                    # pick the label with the strongest signal
+                    strongest_label_dict = max(
+                        pipe_output[0],
+                        key=lambda d: d['score'],
+                    )
 
+                    best_label = strongest_label_dict['label']
+                    best_score = strongest_label_dict['score']
                     # If there's no label of any kind for the axis mention
                     # we need to update the label for that and the
                     # current signature major
@@ -362,52 +368,52 @@ def get_eval_predictions(
                         axis_mention_dict[axis_offsets] = {}
                         axis_label_dict = {
                             'sentence': ann_sent,
-                            'score': strongest_label['score'],
+                            'score': best_score,
                             'sig_offsets': sig_offsets,
                         }
-                        axis_mention_dict[axis_offsets][strongest_label['label']] = axis_label_dict
-                    # Also need to update if there's either no label for this particular
-                    # axis/signature pair or if there's a new label for the pair that
-                    # has a stronger signal than the current label 
-                    elif label_update(strongest_label, axis_mention_dict, axis_offsets):
+                        axis_mention_dict[axis_offsets][best_label] = axis_label_dict
+                    # Also need to update if there's either no label
+                    # for this particular axis/signature pair
+                    # or if there's a new label for the pair that
+                    # has a stronger signal than the current label
+                    elif label_update(strongest_label_dict, axis_mention_dict, axis_offsets):
                         axis_label_dict = {
                             'sentence': ann_sent,
-                            'score': strongest_label['score'],
+                            'score': best_score,
                             'sig_offsets': sig_offsets,
                         }
-                        axis_mention_dict[axis_offsets][strongest_label['label']] = axis_label_dict
+                        axis_mention_dict[axis_offsets][best_label] = axis_label_dict
+                elif ann_label == 'None' and mode == 'inf':
+                    if axis_offsets not in axis_mention_dict.keys():
+                        axis_mention_dict[axis_offsets] = {}
+                    axis_mention_dict[axis_offsets][ann_label] = {
+                        'sentence': ann_sent,
+                        'score': "N/A",
+                        'sig_offsets': sig_offsets
+                    }
+            if mode == 'inf':
+                for labeled_dict in axis_mention_dict.values():
+                    for label, sent in labeled_dict.items():
+                        print(f"{label}, {sent['score']} : {sent['sentence']}")
+            elif mode == 'eval':
+                sent_label_tuples = dict_to_label_list(axis_mention_dict)
+                out_pipe_predictions_tuples.append(sent_label_tuples)
 
-            # Turn the dict structure used for comparing label scores
-            # into a set of axis token idx, sig token idx, label tuples
-            sent_label_tuples = dict_to_label_list(axis_mention_dict)
-            '''
-            out_pipe_predictions_matrices.append(
-                # turn the tuples into label matrix
-                relex_label_to_matrix(
-                    sent_label_tuples,
+        local_relex_matrix = None
+        
+        if mode == 'eval':
+            predictions_dict[out_task] = out_pipe_predictions_tuples
+            
+            # How to convert the sentence
+            # ground truth labels into the
+            # same matrix format as the predictions
+            # outside the function for scoring
+            def local_relex_matrix(new_label_list, local_max_len):
+                return relex_label_to_matrix(
+                    new_label_list,
                     label_map,
-                    max_len,
+                    local_max_len,
                 )
-            )
-            '''
-            out_pipe_predictions_tuples.append(sent_label_tuples)
-        # predictions_dict[out_task] = (
-            # out_pipe_predictions_matrices,
-            # out_pipe_predictions_tuples,
-        # )
-
-        predictions_dict[out_task] = out_pipe_predictions_tuples
-
-        # How to convert the sentence
-        # ground truth labels into the
-        # same matrix format as the predictions
-        # outside the function for scoring
-        def local_relex_matrix(new_label_list, local_max_len):
-            return relex_label_to_matrix(
-                new_label_list,
-                label_map,
-                local_max_len,
-            )
         
     return predictions_dict, local_relex_matrix
 
