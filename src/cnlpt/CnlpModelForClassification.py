@@ -114,14 +114,19 @@ class CnlpConfig(PretrainedConfig):
         self.use_prior_tasks = use_prior_tasks
         self.encoder_name = encoder_name
         self.encoder_config = AutoConfig.from_pretrained(encoder_name).to_dict()
-        try:
-            self.hidden_dropout_prob = self.encoder_config['hidden_dropout_prob']
-            self.hidden_size = self.encoder_config['hidden_size']
-        except KeyError as ke:
-            raise ValueError(f'Encoder config does not have an attribute "{ke.args[0]}";'
-                             f' this is likely because the API of the chosen encoder'
-                             f' differs from the BERT/RoBERTa API (e.g. with DistilBERT).'
-                             f' Encoders with different APIs are not yet supported (#35).')
+        if encoder_name.startswith('distilbert'):
+            self.hidden_dropout_prob = self.encoder_config['dropout']
+            self.hidden_size = self.encoder_config['dim']
+        else:
+            try:
+                self.hidden_dropout_prob = self.encoder_config['hidden_dropout_prob']
+                self.hidden_size = self.encoder_config['hidden_size']
+            except KeyError as ke:
+                raise ValueError(f'Encoder config does not have an attribute'
+                                 f' "{ke.args[0]}"; this is likely because the API of'
+                                 f' the chosen encoder differs from the BERT/RoBERTa'
+                                 f' API and the DistilBERT API. Encoders with different'
+                                 f' APIs are not yet supported (#35).')
         self.num_tokens = num_tokens
 
 
