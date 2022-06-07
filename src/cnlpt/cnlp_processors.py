@@ -2,6 +2,7 @@ import os
 import random
 from os.path import basename, dirname
 import time
+import sklearn
 import logging
 import json
 
@@ -43,22 +44,43 @@ def relation_metrics(task_name, preds, labels):
 
     processor = cnlp_processors[task_name]()
     label_set = processor.get_labels()
-
+    
     # If we are using the attention-based relation extractor, many impossible pairs
     # are set to -100 so pytorch loss functions ignore them. We need to make sure the
     # scorer also ignores them.
     relevant_inds = np.where(labels != -100)
-    relevant_labels = labels[relevant_inds]
-    relevant_preds = preds[relevant_inds]
+    relevant_labels = labels[relevant_inds].astype('int')
+    relevant_preds = preds[relevant_inds].astype('int')
 
+    ids_present_in_labels = fix_np_types(np.unique(relevant_labels))
+    ids_present_in_predictions = fix_np_types(np.unique(relevant_preds))
+
+    classes_present_in_labels = [label_set[i] for i in ids_present_in_labels]
+    classes_present_in_preds = [label_set[i] for i in ids_present_in_predictions]
+    
     num_correct = (relevant_labels == relevant_preds).sum()
     acc = num_correct / len(relevant_preds)
-
+    
     recall = recall_score(y_pred=relevant_preds, y_true=relevant_labels, average=None)
     precision = precision_score(y_pred=relevant_preds, y_true=relevant_labels, average=None)
     f1_report = f1_score(y_true=relevant_labels, y_pred=relevant_preds, average=None)
 
-    return {'f1': fix_np_types(f1_report), 'acc': acc, 'recall':fix_np_types(recall), 'precision':fix_np_types(precision) }
+    _, _, _, support = sklearn.metrics.precision_recall_fscore_support(
+        y_true=relevant_labels,
+        y_pred=relevant_preds,
+        average=None
+    )
+ 
+    
+    return {
+        'f1': fix_np_types(f1_report),
+        'acc': acc,
+        'recall':fix_np_types(recall),
+        'precision':fix_np_types(precision),
+        'support' : fix_np_types(support),
+        'classes present in labels' : classes_present_in_labels,
+        'classes present in predictions' : classes_present_in_preds,
+    }
 
 def fix_np_types(input_variable):
     ''' in the mtl classification setting, f1 is an array, and when the HF library
@@ -86,6 +108,8 @@ def acc_and_f1(preds, labels):
 
 tasks = {'polarity', 'dtr', 'alink', 'alinkx', 'tlink'}
 
+dphe_tagging = {'dphe_med', 'dphe_dosage', 'dphe_duration', 'dphe_form', 'dphe_freq', 'dphe_route', 'dphe_strength'}
+
 def cnlp_compute_metrics(task_name, preds, labels):
     assert len(preds) == len(
         labels
@@ -96,7 +120,7 @@ def cnlp_compute_metrics(task_name, preds, labels):
         return acc_and_f1(preds, labels)
     elif task_name == "alink":
         return acc_and_f1(preds, labels)
-    elif task_name == "alinkx":
+    elif task_name == "alinkx" or task_name == 'dphe_rel':
         return acc_and_f1(preds, labels)
     elif task_name == 'tlink':
         return acc_and_f1(preds, labels)
@@ -104,11 +128,11 @@ def cnlp_compute_metrics(task_name, preds, labels):
         return acc_and_f1(preds, labels)
     elif task_name == 'timecat':
         return acc_and_f1(preds, labels)
-    elif task_name.startswith('i2b22008') or task_name.startswith('mimic_radi'):
+    elif task_name.startswith('i2b22008'):
         return { 'f1': fix_np_types(f1_score(y_true=labels, y_pred=preds, average=None))} #acc_and_f1(preds, labels)
-    elif task_name == 'timex' or task_name == 'event' or task_name == 'dphe':
+    elif task_name == 'timex' or task_name == 'event' or task_name == 'dphe' or task_name in dphe_tagging:
         return tagging_metrics(task_name, preds, labels)
-    elif task_name == 'tlink-sent':
+    elif task_name == 'tlink-sent' or task_name == 'dphe_end2end':
         return relation_metrics(task_name, preds, labels)
     elif cnlp_output_modes[task_name] == classification:
         logger.warn("Choosing accuracy and f1 as default metrics; modify cnlp_compute_metrics() to customize for this task.")
@@ -263,6 +287,14 @@ class TlinkProcessor(LabeledSentenceProcessor):
 
     def get_one_score(self, results):
         return np.mean(results['f1'])
+
+class DpheRelProcessor(LabeledSentenceProcessor):
+    def get_labels(self):
+        return ["None", "med-dosage", "med-duration","med-form","med-frequency","med-route","med-strength"]
+    
+    def get_one_score(self, results):
+        return np.mean(results['f1'][1:])
+ 
     
 class TimeCatProcessor(LabeledSentenceProcessor):
     """Processor for an THYME time expression dataset
@@ -291,30 +323,17 @@ class UciDrugSentimentProcessor(LabeledSentenceProcessor):
     def get_one_score(self, results):
         return np.mean(results['f1'])
 
-class Mimic_7_Processor(LabeledSentenceProcessor):
-    def get_labels(self):
-        return ['7+', '7-']
-
-    def get_one_score(self, results):
-        return np.mean(results['f1'])
-
-class Mimic_3_Processor(LabeledSentenceProcessor):
-    def get_labels(self):
-        return ['3+', '3-']
-
-    def get_one_score(self, results):
-        return np.mean(results['f1'])
-
-class CovidProcessor(LabeledSentenceProcessor):
-    def get_labels(self):
-        return ['negative', 'positive']
-    
-    def get_one_score(self, results):
-        return results['f1'][1]
-
 class RelationProcessor(CnlpProcessor):
     def _create_examples(self, lines, set_type):
         return super()._create_examples(lines, set_type, relations=True)
+
+class DpheEndToEndProcessor(RelationProcessor):
+    def get_labels(self):
+        return ["None", "med-dosage", "med-duration","med-form","med-frequency","med-route","med-strength"]
+    
+    def get_one_score(self, results):
+        # the 0th category is None
+        return np.mean(results['f1'][1:])
 
 class TlinkRelationProcessor(RelationProcessor):
     def get_one_score(self, results):
@@ -357,6 +376,56 @@ class DpheProcessor(SequenceProcessor):
                 "I-drug","I-dosage","I-duration","I-frequency","I-form","I-route","I-strength"
                 ]
 
+class DpheMedProcessor(SequenceProcessor):
+    def get_one_score(self, results):
+        return results['f1']
+
+    def get_labels(self):
+        return ["O", "B-medication", "I-medication"]
+
+class DpheDosageProcessor(SequenceProcessor):
+    def get_one_score(self, results):
+        return results['f1']
+
+    def get_labels(self):
+        return ["O", "B-dosage", "I-dosage"]
+
+class DpheDurationProcessor(SequenceProcessor):
+    def get_one_score(self, results):
+        return results['f1']
+
+    def get_labels(self):
+        return ["O", "B-duration", "I-duration"]
+
+class DpheFormProcessor(SequenceProcessor):
+    def get_one_score(self, results):
+        return results['f1']
+
+    def get_labels(self):
+        return ["O", "B-form", "I-form"]
+    
+class DpheFrequencyProcessor(SequenceProcessor):
+    def get_one_score(self, results):
+        return results['f1']
+
+    def get_labels(self):
+        return ["O", "B-frequency", "I-frequency"]
+
+class DpheRouteProcessor(SequenceProcessor):
+    def get_one_score(self, results):
+        return results['f1']
+
+    def get_labels(self):
+        return ["O", "B-route", "I-route"]
+    
+class DpheStrengthProcessor(SequenceProcessor):
+    def get_one_score(self, results):
+        return results['f1']
+
+    def get_labels(self):
+        return ["O", "B-strength", "I-strength"]
+
+    
 class MTLClassifierProcessor(DataProcessor):
     def __init__(self):
         pass
@@ -386,28 +455,6 @@ class MTLClassifierProcessor(DataProcessor):
         
         return examples
 
-class MimicRadiProcessor(MTLClassifierProcessor):
-    def get_classifiers(self):
-        return ["3-", "3+","7-","7+"]
-        # "3-": "Y", "3+": "N", "7-": "Y", "7+": "N"
-
-    def get_labels(self):
-        # return [ ["Y", "N"] for x in range(len(self.get_classifiers()))]
-        return ["Y", "N"]
-    
-    def get_num_tasks(self):
-        return len(self.get_classifiers())
-    
-    def get_one_score(self, results):
-        print(results)
-        #return results #['f1'].mean()
-        return np.mean(results['f1'])
-
-    def get_classifier_id(self):
-        return 'mimic_radi'
-
-    def get_default_label(self):
-        return 'Unlabeled'
 
 class i2b22008Processor(MTLClassifierProcessor):
     def get_classifiers(self):
@@ -428,7 +475,7 @@ class i2b22008Processor(MTLClassifierProcessor):
         return len(self.get_classifiers())
     
     def get_one_score(self, results):
-        return np.mean(results['f1'][1:2])
+        return np.mean(results['f1'])
 
 cnlp_processors = {'polarity': NegationProcessor,
                    'uncertainty': UncertaintyProcessor,
@@ -446,10 +493,15 @@ cnlp_processors = {'polarity': NegationProcessor,
                    'dphe': DpheProcessor,
                    'i2b22008': i2b22008Processor,
                    'ucidrug': UciDrugSentimentProcessor,
-                   'mimic_radi': MimicRadiProcessor,
-                   'mimic_3': Mimic_3_Processor,
-                   'mimic_7': Mimic_7_Processor,
-                   'covid': CovidProcessor
+                   'dphe_end2end' : DpheEndToEndProcessor,
+                   'dphe_rel' : DpheRelProcessor,
+                   'dphe_med' : DpheMedProcessor,
+                   'dphe_dosage' : DpheDosageProcessor,
+                   'dphe_duration' : DpheDurationProcessor,
+                   'dphe_form' : DpheFormProcessor,
+                   'dphe_freq' : DpheFrequencyProcessor,
+                   'dphe_route' : DpheRouteProcessor,
+                   'dphe_strength' : DpheStrengthProcessor
                   }
 
 mtl = 'mtl'
@@ -467,15 +519,27 @@ cnlp_output_modes = {'polarity': classification,
                 'nc': classification,
                 'timecat': classification,
                 'conmod': classification,
+                'dphe_rel' : classification,     
                 'timex': tagging,
                 'event': tagging,
                 'dphe': tagging,
                 'tlink-sent': relex,
                 'i2b22008': mtl,
                 'ucidrug': classification,
-                'mimic_radi': mtl,
-                'mimic_3': classification,
-                'mimic_7': classification,
-                'covid': classification
+                'dphe_end2end' : relex,
+                'dphe_med' : tagging,
+                'dphe_dosage' : tagging,
+                'dphe_duration' : tagging,
+                'dphe_form' : tagging,
+                'dphe_freq' : tagging,
+                'dphe_route': tagging,
+                'dphe_strength' : tagging
                 }
 
+# The class body for the relex label
+# should be exactly the same as that of
+# the classification label, the only difference besides
+# their names is that the classification processor will inherit
+# from LabeledSentenceProcessor and the relex will inherit
+# from RelationProcessor
+classifier_to_relex = {'dphe_rel' : 'dphe_end2end'}
