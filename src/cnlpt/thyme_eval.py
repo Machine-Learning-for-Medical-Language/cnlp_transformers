@@ -236,12 +236,8 @@ def main(args):
 
             # Replace <cr> with empty string so that tokens align again,
             # then after alignment add them back in so token offsets from classifier are correct.
-            cr_token_inds = []
-            num_crs_at_position = []
             for ind in range(len(sent_tokens[sent_ind])):
-                num_crs_at_position.append(len(cr_token_inds))
                 if sent_tokens[sent_ind][ind] == '<cr>':
-                    cr_token_inds.append(ind)
                     sent_tokens[sent_ind][ind] = ''
 
             try:
@@ -256,8 +252,8 @@ def main(args):
                     begin_token_ind = event['begin']
                     end_token_ind = event['end']
                     dtr = event['dtr']
-                    event_start_offset = token_spans[begin_token_ind + num_crs_at_position[begin_token_ind]][0] + sentence.begin
-                    event_end_offset = token_spans[end_token_ind + num_crs_at_position[end_token_ind]][1] + sentence.begin
+                    event_start_offset = token_spans[begin_token_ind][0] + sentence.begin
+                    event_end_offset = token_spans[end_token_ind][1] + sentence.begin
                     event_text = text[event_start_offset:event_end_offset]                    
 
                     annot = AnaforaEntity()
@@ -281,8 +277,8 @@ def main(args):
                     begin_token_ind = timex['begin']
                     end_token_ind = timex['end']
                     time_class = timex['timeClass']
-                    timex_start_offset = token_spans[begin_token_ind + num_crs_at_position[begin_token_ind]][0] + sentence.begin
-                    timex_end_offset = token_spans[end_token_ind + num_crs_at_position[end_token_ind]][1] + sentence.begin
+                    timex_start_offset = token_spans[begin_token_ind][0] + sentence.begin
+                    timex_end_offset = token_spans[end_token_ind][1] + sentence.begin
                     timex_text = text[timex_start_offset:timex_end_offset]
                     
                     if meta_rev_loc >= 0 and timex_start_offset > meta_rev_loc and timex_end_offset < meta_rev_end:
@@ -311,10 +307,10 @@ def main(args):
                         # Map from the token ind to the character offset in the sentence then add the sentence offset to get
                         # offset into the file, which is what anafora needs.
                         arg1_token_ind = rel['arg1_start']
-                        arg1_offset = token_spans[arg1_token_ind + num_crs_at_position[arg1_token_ind]][0] + sentence.begin
+                        arg1_offset = token_spans[arg1_token_ind][0] + sentence.begin
 
                         arg2_token_ind = rel['arg2_start']
-                        arg2_offset = token_spans[arg2_token_ind + num_crs_at_position[arg2_token_ind]][0] + sentence.begin
+                        arg2_offset = token_spans[arg2_token_ind][0] + sentence.begin
 
                         # Iterate through given entities and see whether the positions believed to be in relations
                         # correspond to any of them.
@@ -346,10 +342,10 @@ def main(args):
 
                             anafora_data.annotations.append(reln)
                         else:
-                            logging.warn('Skipping relation in %s that could not be mapped to a given event/timex' % (text_name) )
+                            logging.warning('Skipping relation in %s that could not be mapped to a given event/timex' % (text_name) )
                     else:
                         if rel['arg1'] is None or rel['arg2'] is None:
-                            logging.warn('Skipping relation in %s that could not be aligned to event/timex arguments.' % (text_name) )
+                            logging.warning('Skipping relation in %s that could not be aligned to event/timex arguments.' % (text_name) )
                             continue
                         
                         arg1_type, arg1_ind = rel['arg1'].split('-')
@@ -381,7 +377,6 @@ def main(args):
                         anafora_data.annotations.append(reln)
 
 
-        #break
         anafora_data.indent()
         os.makedirs(os.path.join(args[2], sub_dir), exist_ok=True)
         anafora_data.to_file(os.path.join(args[2], sub_dir, xml_name))
