@@ -148,6 +148,11 @@ class CnlpModelForClassification(PreTrainedModel):
         self.encoder = encoder_model.from_pretrained(config.encoder_name)
         self.encoder.resize_token_embeddings(encoder_config.vocab_size)
 
+        if config.layer > len(encoder_model.encoder.layer):
+            raise ValueError('The layer specified (%d) is too big for the specified encoder which has %d layers' % (
+                config.layer,
+                len(encoder_model.encoder.layer)
+            ))
         self.num_labels = config.num_labels_list
         
         if freeze:

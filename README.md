@@ -49,7 +49,7 @@ To use the library for fine-tuning, you'll need to take the following steps:
    4. cite us
 2. Run ```python -m cnlpt.data.transform_uci_drug <input dir> <output dir>``` to preprocess the data from the extract directory into a new directory. This will create {train,dev,test}.tsv in the output directory specified, where the sentiment labels have been collapsed into 3 categories.
 3. Fine-tune with something like: 
-```python -m cnlpt.train_system --task_name ucidrug --data_dir ~/mnt/r/DeepLearning/mmtl/drug-sentiment/ --model_name_or_path roberta-base --do_train --cache cache/ --output_dir temp/ --overwrite_output_dir --evals_per_epoch 5 --do_eval --num_train_epochs 1 --learning_rate 1e-5```
+```python -m cnlpt.train_system --task_name ucidrug --data_dir ~/mnt/r/DeepLearning/mmtl/drug-sentiment/ --encoder_name roberta-base --do_train --cache cache/ --output_dir temp/ --overwrite_output_dir --evals_per_epoch 5 --do_eval --num_train_epochs 1 --learning_rate 1e-5```
 
 On our hardware, that command results in the following eval performance:
 ```ucidrug = {'acc': 0.8127712337259765, 'f1': [0.8030439829743325, 0.49202644885258656, 0.9018332042344437], 'acc_and_f1': [0.8079076083501545, 0.6523988412892815, 0.8573022189802101], 'recall': [0.788500506585613, 0.524896265560166, 0.8935734752353663], 'precision': [0.8181340341655716, 0.4630307467057101, 0.9102470551443761]}```
@@ -58,7 +58,7 @@ For a demo of how to run the system in colab: [![Open In Colab](https://colab.re
 
 ### Fine-tuning options
 Run ```python -m cnlpt.train_system -h``` to see all the available options. In addition to inherited Huggingface Transformers options, there are options to do the following:
-* Run simple baselines (use ``--model_name_or_path cnn --tokenizer_name roberta-base`` -- since there is no HF model then you must specify the tokenizer explicitly)
+* Run simple baselines (use ``--model cnn --tokenizer_name roberta-base`` -- since there is no HF model then you must specify the tokenizer explicitly)
 * Use a different layer's CLS token for the classification (e.g., ```--layer 10```)
 * Only update the weights of the classifier head and leave the encoder weights alone (```--freeze```)
 * Classify based on a token embedding instead of the CLS embedding (```--token``` -- requires the input to have xml-style tags (<e>, </e>) around the tokens of interest)
@@ -80,16 +80,8 @@ To demo the negation API:
 #### Setup variables
 ```
 >>> import requests
->>> init_url = 'http://hostname:8000/negation/initialize'  ## Replace hostname with your host name
 >>> process_url = 'http://hostname:8000/negation/process'  ## Replace hostname with your host name
 ```
-
-#### Load the model
-```
->>> r = requests.post(init_url)
->>> r.status_code
-```
-should return ```200```
 
 #### Prepare the document
 ```
@@ -116,15 +108,8 @@ To demo the temporal API:
 ```
 >>> import requests
 >>> from pprint import pprint
->>> init_url = 'http://hostname:8000/temporal/initialize'  ## Replace hostname with your host name
 >>> process_url = 'http://hostname:8000/temporal/process_sentence'  ## Replace hostname with your host name
 ```
-#### Load the model
-```
->>> r = requests.post(init_url)
->>> r.status_code
-```
-should return 200
 
 #### Prepare and process the document
 ```
