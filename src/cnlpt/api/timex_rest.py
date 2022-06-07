@@ -40,7 +40,7 @@ from nltk.tokenize import wordpunct_tokenize as tokenize
 from .temporal_rest import timex_label_list, timex_label_dict, TokenizedSentenceDocument, SentenceDocument, Timex, TemporalResults, TemporalDocumentDataset, create_instance_string
 
 app = FastAPI()
-model_name = "tmills/timex-thyme-colon"
+model_name = "tmills/timex-thyme-colon-pubmedbert"
 logger = logging.getLogger('Timex_REST_Processor')
 logger.setLevel(logging.INFO)
 
@@ -89,15 +89,22 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     pred_end = time()
     
     for sent_ind in range(len(dataset)):
-        tokens = app.state.tokenizer.convert_ids_to_tokens(dataset.features[sent_ind].input_ids)
+        batch_encoding = app.state.tokenizer.batch_encode_plus([sents[sent_ind],],
+                                                           is_split_into_words=True,
+                                                           max_length=max_length)
+        word_ids = batch_encoding.word_ids(0)
         wpind_to_ind = {}
         timex_labels = []
-        for token_ind in range(1,len(tokens)):
-            if dataset[sent_ind].input_ids[token_ind] <= 2:
-                break
-            if tokens[token_ind].startswith('Ġ'):
-                wpind_to_ind[token_ind] = len(wpind_to_ind)
-                timex_labels.append(timex_label_list[timex_predictions[sent_ind][token_ind]])
+        previous_word_idx = None
+
+        for word_pos_idx, word_idx in enumerate(word_ids):
+            if word_idx != previous_word_idx and word_idx is not None:
+                key = word_pos_idx
+                val = len(wpind_to_ind)
+
+                wpind_to_ind[key] = val
+                timex_labels.append(timex_label_list[timex_predictions[sent_ind][word_pos_idx]])
+            previous_word_idx = word_idx
 
         timex_entities = get_entities(timex_labels)
         logging.info("Extracted %d timex entities from the sentence" % (len(timex_entities)))

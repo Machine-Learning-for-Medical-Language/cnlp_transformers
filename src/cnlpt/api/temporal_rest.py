@@ -39,7 +39,8 @@ from time import time
 from nltk.tokenize import wordpunct_tokenize as tokenize
 
 app = FastAPI()
-model_name = "tmills/clinical_tempeval"
+# model_name = "tmills/clinical_tempeval_roberta-base"
+model_name = "tmills/clinical_tempeval_pubmedbert"
 logger = logging.getLogger('Temporal_REST_Processor')
 logger.setLevel(logging.INFO)
 
@@ -178,17 +179,25 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     rel_results = []
 
     for sent_ind in range(len(dataset)):
-        tokens = app.state.tokenizer.convert_ids_to_tokens(dataset.features[sent_ind].input_ids)
+        batch_encoding = app.state.tokenizer.batch_encode_plus([sents[sent_ind],],
+                                                           is_split_into_words=True,
+                                                           max_length=max_length)
+        word_ids = batch_encoding.word_ids(0)
         wpind_to_ind = {}
         timex_labels = []
         event_labels = []
-        for token_ind in range(1,len(tokens)):
-            if dataset[sent_ind].input_ids[token_ind] <= 2:
-                break
-            if tokens[token_ind].startswith('Ġ'):
-                wpind_to_ind[token_ind] = len(wpind_to_ind)
-                timex_labels.append(timex_label_list[timex_predictions[sent_ind][token_ind]])
-                event_labels.append(event_label_list[event_predictions[sent_ind][token_ind]])
+        previous_word_idx = None
+
+        for word_pos_idx, word_idx in enumerate(word_ids):
+            if word_idx != previous_word_idx and word_idx is not None:
+                key = word_pos_idx
+                val = len(wpind_to_ind)
+
+                wpind_to_ind[key] = val
+                # tokeni_to_wpi[val] = key
+                timex_labels.append(timex_label_list[timex_predictions[sent_ind][word_pos_idx]])
+                event_labels.append(event_label_list[event_predictions[sent_ind][word_pos_idx]])
+            previous_word_idx = word_idx
 
         timex_entities = get_entities(timex_labels)
         logging.info("Extracted %d timex entities from the sentence" % (len(timex_entities)))
