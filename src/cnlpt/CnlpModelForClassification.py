@@ -1,6 +1,7 @@
 # from transformers.models.auto import  AutoModel, AutoConfig
 import copy
-from typing import Optional, List
+import inspect
+from typing import Optional, List, Any, Dict
 
 from transformers import AutoModel, AutoConfig
 from transformers.modeling_utils import PreTrainedModel
@@ -342,6 +343,20 @@ class CnlpModelForClassification(PreTrainedModel):
 
         state["loss"] += self.argument_regularization * prob_rel_no_ent.sum()
 
+    def generalize_encoder_forward_kwargs(self, **kwargs: Any) -> Dict[str, Any]:
+        new_kwargs = dict()
+        params = inspect.signature(self.encoder.forward).parameters
+        for name, value in kwargs.items():
+            if name not in params and value is not None:
+                # Warn if a contentful parameter is not valid
+                logger.warning(f"Parameter {name} not present for encoder class {self.encoder.__class__.__name__}.")
+            elif name in params:
+                # Pass all, and only, parameters that are valid,
+                # regardless of whether they are None
+                new_kwargs[name] = value
+            # else, value is None and not in params, so we ignore it
+        return new_kwargs
+
     def forward(
         self,
         input_ids=None,
@@ -363,8 +378,7 @@ class CnlpModelForClassification(PreTrainedModel):
             If :obj:`config.num_labels > 1` a classification loss is computed (Cross-Entropy).
         """
 
-        outputs = self.encoder(
-            input_ids,
+        kwargs = self.generalize_encoder_forward_kwargs(
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
             position_ids=position_ids,
@@ -373,6 +387,11 @@ class CnlpModelForClassification(PreTrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=True,
             return_dict=True
+        )
+
+        outputs = self.encoder(
+            input_ids,
+            **kwargs
         )
         
         batch_size,seq_len = input_ids.shape
