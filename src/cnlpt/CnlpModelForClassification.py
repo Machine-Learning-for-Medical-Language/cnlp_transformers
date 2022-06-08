@@ -2,7 +2,7 @@
 import copy
 from typing import Optional, List
 
-from transformers import AutoModel, AutoConfig, DistilBertConfig, BertConfig
+from transformers import AutoModel, AutoConfig
 from transformers.modeling_utils import PreTrainedModel
 from transformers.configuration_utils import PretrainedConfig
 
@@ -113,17 +113,15 @@ class CnlpConfig(PretrainedConfig):
         self.relations = relations
         self.use_prior_tasks = use_prior_tasks
         self.encoder_name = encoder_name
-        encoder_config_obj = AutoConfig.from_pretrained(encoder_name)
-        self.encoder_config = encoder_config_obj.to_dict()
-        if isinstance(encoder_config_obj, BertConfig):
+        self.encoder_config = AutoConfig.from_pretrained(encoder_name).to_dict()
+        try:
             self.hidden_dropout_prob = self.encoder_config['hidden_dropout_prob']
             self.hidden_size = self.encoder_config['hidden_size']
-        elif isinstance(encoder_config_obj, DistilBertConfig):
-            self.hidden_dropout_prob = self.encoder_config['dropout']
-            self.hidden_size = self.encoder_config['dim']
-        else:
-            raise ValueError(f"need to add dropout and hidden size logic"
-                             f" for {encoder_config_obj.__class__.__name__}")
+        except KeyError as ke:
+            raise ValueError(f'Encoder config does not have an attribute "{ke.args[0]}";'
+                             f' this is likely because the API of the chosen encoder'
+                             f' differs from the BERT/RoBERTa API (e.g. with DistilBERT).'
+                             f' Encoders with different APIs are not yet supported (#35).')
         self.num_tokens = num_tokens
 
 
@@ -138,12 +136,14 @@ class CnlpModelForClassification(PreTrainedModel):
                  final_task_weight: float = 1.0,
                  argument_regularization: float = -1,
                  freeze=False,
+                 bias_fit=False,
                  ):
 
         super().__init__(config)
 
         encoder_config = AutoConfig.from_pretrained(config.encoder_name)
         encoder_config.vocab_size = config.vocab_size
+        config.encoder_config = encoder_config.to_dict()
         encoder_model = AutoModel.from_config(encoder_config)
         self.encoder = encoder_model.from_pretrained(config.encoder_name)
         self.encoder.resize_token_embeddings(encoder_config.vocab_size)
@@ -154,6 +154,11 @@ class CnlpModelForClassification(PreTrainedModel):
             for param in self.encoder.parameters():
                 param.requires_grad = False
         
+        if bias_fit:
+            for name, param in self.encoder.named_parameters():
+                if not 'bias' in name:
+                    param.requires_grad = False
+
         self.feature_extractors = nn.ModuleList()
         self.logit_projectors = nn.ModuleList()
         self.classifiers = nn.ModuleList()

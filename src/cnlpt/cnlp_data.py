@@ -301,13 +301,11 @@ def cnlp_convert_examples_to_features(
                 wpi_to_tokeni = {}
                 tokeni_to_wpi = {}
                 sent_labels = np.zeros( (max_length, max_length)) - 100
-                wps = batch_encoding[sent_ind].tokens
-                sent_len = len(wps)
                 
                 ## align word-piece tokens to the tokenization we got as input and only assign labels to input tokens
                 previous_word_idx = None
                 for word_pos_idx, word_idx in enumerate(word_ids):
-                    if word_idx != previous_word_idx or word_idx is None:
+                    if word_idx != previous_word_idx and word_idx is not None:
                         key = word_pos_idx
                         val = len(wpi_to_tokeni)
 
@@ -530,6 +528,8 @@ class ClinicalNlpDataset(Dataset):
                     dataconfig, domain, mode.value, tokenizer.__class__.__name__, str(args.max_seq_length),
                 ),
             )
+            if self.hierarchical:
+                cached_features_file += '_hier'
 
             # Make sure only the first process in distributed training processes the dataset,
             # and the others will use the cache.

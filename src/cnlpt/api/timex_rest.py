@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import os
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List, Tuple, Dict
@@ -29,7 +30,8 @@ from transformers import (
 from transformers.data.processors.utils import InputFeatures, InputExample
 from torch.utils.data.dataset import Dataset
 import numpy as np
-from ..CnlpModelForClassification import CnlpModelForClassification
+from .cnlp_rest import initialize_cnlpt_model
+from ..CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
 from seqeval.metrics.sequence_labeling import get_entities
 import logging
 from time import time
@@ -46,30 +48,7 @@ max_length = 128
 
 @app.on_event("startup")
 async def startup_event():
-    args = ['--output_dir', 'save_run/', '--per_device_eval_batch_size', '8', '--do_predict']
-    parser = HfArgumentParser((TrainingArguments,))
-    training_args, = parser.parse_args_into_dataclasses(args=args)
-
-    app.state.training_args = training_args
-
-    logger.warn("Eval batch size is: " + str(training_args.eval_batch_size))
-
-@app.post("/temporal/initialize")
-async def initialize():
-    ''' Load the model from disk and move to the device'''
-    #import pdb; pdb.set_trace()
-
-    config = AutoConfig.from_pretrained(model_name)
-    app.state.tokenizer = AutoTokenizer.from_pretrained(model_name,
-                                                  config=config)
-    model = CnlpModelForClassification(model_name, config=config, tagger=[True], relations=[False], num_labels_list=[17])
-    model.to('cuda')
-
-    app.state.trainer = Trainer(
-        model=model,
-        args=app.state.training_args,
-        compute_metrics=None,
-    )
+    initialize_cnlpt_model(app, model_name)
 
 @app.post("/temporal/process")
 async def process(doc: TokenizedSentenceDocument):
@@ -138,11 +117,6 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     logging.info("Pre-processing time: %f, processing time: %f, post-processing time %f" % (preproc_time, pred_time, postproc_time))
 
     return results
-
-
-@app.post("/temporal/collection_process_complete")
-async def collection_process_complete():
-    app.state.trainer = None
 
 def rest():
     import argparse

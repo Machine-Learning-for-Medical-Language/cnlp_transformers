@@ -32,7 +32,7 @@ class CnnSentenceClassifier(nn.Module):
 
         logits = []
         loss = 0
-        for task_fc in self.fcs:
+        for task_ind,task_fc in enumerate(self.fcs):
             task_logits = task_fc(fc_in)
             logits.append(task_logits)
 
@@ -72,7 +72,7 @@ class LstmSentenceClassifier(nn.Module):
 
         logits = []
         loss = 0
-        for task_fc in self.fcs:
+        for task_ind, task_fc in enumerate(self.fcs):
             features = torch.cat( (lstm_out[:,0,:], lstm_out[:,-1,:]), 1)
             task_logits = task_fc(features)
             logits.append(task_logits)
@@ -84,6 +84,6 @@ class LstmSentenceClassifier(nn.Module):
                     task_labels = labels[:,0,task_ind]
                 loss += self.loss_fn(task_logits, task_labels.type(torch.LongTensor).to(labels.device))
 
-        
+
         return loss, logits
 
