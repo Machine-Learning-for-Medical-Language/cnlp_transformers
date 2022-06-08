@@ -361,6 +361,9 @@ class MTLClassifierProcessor(DataProcessor):
     def __init__(self):
         pass
 
+    def get_example_from_tensor_dict(self, tensor_dict):
+        return RuntimeError("not implemented for MTL tasks")
+
     def get_train_examples(self, data_dir):
         return self.get_json_examples(os.path.join(data_dir, 'training.json'), 'train')
 
