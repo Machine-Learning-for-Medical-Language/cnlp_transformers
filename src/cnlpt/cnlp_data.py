@@ -258,10 +258,6 @@ def cnlp_convert_examples_to_features(
         is_split_into_words=True,
     )
 
-    roberta_based = tokenizer.cls_token == '<s>'
-    if not roberta_based:
-        assert tokenizer.cls_token == '[CLS]', 'This tokenizer does not seem to be based on BERT or Roberta -- this will cause errors with the dataset encoding.'
-
     # This code has to solve the problem of properly setting labels for word pieces that do not actually need to be tagged.
     if not inference:
         encoded_labels = []
@@ -514,6 +510,7 @@ class ClinicalNlpDataset(Dataset):
             datadir = dirname(data_dir) if data_dir[-1] == '/' else data_dir
             domain = basename(datadir)
             dataconfig = basename(dirname(datadir))
+            num_subtasks = self.processors[task_ind].get_num_tasks()
 
             cached_features_file = os.path.join(
                 cache_dir if cache_dir is not None else data_dir,
@@ -570,15 +567,24 @@ class ClinicalNlpDataset(Dataset):
                     )
 
                 if self.args.weight_classes and mode == Split.train:
-                    class_counts = [0] * len(self.label_lists[task_ind])
-                    for feature in features:
-                        labels = feature.label[0]
-                        vals, counts = np.unique(labels, return_counts=True)
-                        for val_ind,val in enumerate(vals):
-                            if val >= 0:
-                                class_counts[int(val)] += counts[val_ind]
+                    if num_subtasks == 1:
+                        class_counts = [0] * len(self.label_lists[task_ind])
+                        for feature in features:
+                            labels = feature.label[0]
+                            vals, counts = np.unique(labels, return_counts=True)
+                            for val_ind,val in enumerate(vals):
+                                if val >= 0:
+                                    class_counts[int(val)] += counts[val_ind]
 
-                    self.class_weights[task_ind] = min(class_counts) / class_counts
+                        self.class_weights[task_ind] = min(class_counts) / class_counts
+                    else:
+                        class_counts = np.zeros( (num_subtasks, len(self.label_lists[task_ind])) )
+                        for feature in features:
+                            labels = feature.label[0]
+                            for subtask_ind,label in enumerate(labels):
+                                class_counts[subtask_ind][label] += 1
+                                
+                        self.class_weights[subtask_ind] = min(class_counts[subtask_ind]) / class_counts[subtask_ind]
 
 
                 if self.features is None:
