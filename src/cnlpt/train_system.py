@@ -251,16 +251,16 @@ def main(json_file=None, json_obj=None):
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
-    multitask_subsets = json.loads(data_args.multitask_subsets)
-
-    for task_ind, task_name in enumerate(data_args.task_name):
-        if task_name in multitask_subsets:
-            this_task_subset: Optional[List[str]] = multitask_subsets.get(task_name)
-            # TODO: generalize
-            task_name = f'{task_name}_{this_task_subset[0]}'
-            cnlp_processors[task_name] = lambda: i2b22008Processor(this_task_subset)
-            cnlp_output_modes[task_name] = mtl
-            data_args.task_name[task_ind] = task_name
+    if data_args.multitask_subsets is not None:
+        multitask_subsets = json.loads(data_args.multitask_subsets)
+        for task_ind, task_name in enumerate(data_args.task_name):
+            if task_name in multitask_subsets:
+                this_task_subset: Optional[List[str]] = multitask_subsets.get(task_name)
+                # TODO: generalize
+                task_name = f'{task_name}_{this_task_subset[0]}'
+                cnlp_processors[task_name] = lambda: i2b22008Processor(this_task_subset)
+                cnlp_output_modes[task_name] = mtl
+                data_args.task_name[task_ind] = task_name
 
     if (
         os.path.exists(training_args.output_dir)
