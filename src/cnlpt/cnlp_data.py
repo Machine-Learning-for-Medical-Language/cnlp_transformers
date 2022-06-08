@@ -139,17 +139,43 @@ def cnlp_convert_features_to_hierarchical(
     def pad_chunk(chunk, pad_type=pad_id):
         return chunk + [pad_type] * (chunk_len - len(chunk))
 
-    for i in range(0, len(input_ids_), chunk_len):
-        chunks.append(pad_chunk(input_ids_[i : i + chunk_len]))
+    def format_chunk(chunk, cls_type=cls_id, sep_type=sep_id, pad_type=pad_id, pad=True):
+        formatted_chunk = [cls_type] + chunk + [sep_type]
+        if pad:
+            return pad_chunk(formatted_chunk, pad_type=pad_type)
+        else:
+            return formatted_chunk
+
+    start = 1
+
+    while True:
+        if start >= len(input_ids_) or input_ids_[start] in {pad_id, sep_id}:
+            # we have moved past the end of the sequence or have reached
+            #  either the SEP token or a PAD token.
+            break
+
+        # end right before where the SEP token will go
+        end = min(
+            start + chunk_len - 2,
+            len(input_ids_)
+        )
+
+        # if we are ending on a PAD token or the SEP token, end before the SEP token
+        if input_ids_[end-1] in {pad_id, sep_id} and sep_id in input_ids_[start:end]:
+            end = input_ids_.index(sep_id, start, end)
+
+        chunks.append(format_chunk(input_ids_[start:end]))
         if chunks_attention_mask is not None:
-            chunks_attention_mask.append(pad_chunk(attention_mask_[i : i + chunk_len]))
+            chunks_attention_mask.append(format_chunk(attention_mask_[start:end], cls_type=1, sep_type=1))
         if chunks_token_type_ids is not None:
-            chunks_token_type_ids.append(pad_chunk(token_type_ids_[i : i + chunk_len]))
+            chunks_token_type_ids.append(format_chunk(token_type_ids_[start:end], cls_type=0, sep_type=0))
         if chunks_event_tokens is not None:
-            chunks_event_tokens.append(pad_chunk(event_tokens_[i : i + chunk_len]))
+            chunks_event_tokens.append(format_chunk(event_tokens_[start:end], cls_type=1, sep_type=1))
+
+        start = end
 
     def create_pad_chunk(cls_type=cls_id, sep_type=sep_id, pad_type=pad_id):
-        return pad_chunk([cls_type] + [sep_type])
+        return pad_chunk([cls_type] + [sep_type], pad_type=pad_type)
 
     # Insert an empty chunk at the beginning.
     if insert_empty_chunk_at_beginning:
@@ -176,11 +202,11 @@ def cnlp_convert_features_to_hierarchical(
     while len(chunks) < num_chunks:
         chunks.append(create_pad_chunk())
         if chunks_attention_mask is not None:
-            chunks_attention_mask.append([0]*chunk_len)
+            chunks_attention_mask.append(create_pad_chunk(1, 1, 0))
         if chunks_token_type_ids is not None:
-            chunks_token_type_ids.append([0]*chunk_len)
+            chunks_token_type_ids.append(create_pad_chunk(0, 0, 0))
         if chunks_event_tokens is not None:
-            chunks_event_tokens.append([0]*chunk_len)
+            chunks_event_tokens.append(create_pad_chunk(1, 1, 0))
 
     return HierarchicalInputFeatures(chunks, chunks_attention_mask, chunks_token_type_ids, chunks_event_tokens, label_)
 
@@ -288,7 +314,7 @@ def cnlp_convert_examples_to_features(
                     previous_word_idx = word_idx
 
                 encoded_labels.append(np.array(label_ids))
-    
+
             labels = encoded_labels
         elif output_mode == relex:
             # start by building a matrix that's N' x N' (word-piece length) with "None" as the default
@@ -301,7 +327,7 @@ def cnlp_convert_examples_to_features(
                 wpi_to_tokeni = {}
                 tokeni_to_wpi = {}
                 sent_labels = np.zeros( (max_length, max_length)) - 100
-                
+
                 ## align word-piece tokens to the tokenization we got as input and only assign labels to input tokens
                 previous_word_idx = None
                 for word_pos_idx, word_idx in enumerate(word_ids):
@@ -320,10 +346,10 @@ def cnlp_convert_examples_to_features(
                         # tokens not involved in a relation.
                         if wpi != wpi2:
                             sent_labels[wpi,wpi2] = 0.0
-                    
+
                 for label in labels[sent_ind]:
                     if not label[0] in tokeni_to_wpi or not label[1] in tokeni_to_wpi:
-                        out_of_bounds +=1 
+                        out_of_bounds +=1
                         continue
 
                     wpi1 = tokeni_to_wpi[label[0]]
@@ -343,18 +369,18 @@ def cnlp_convert_examples_to_features(
             event_start = inputs['input_ids'].index(event_start_ind)
         except:
             event_start = -1
-        
+
         try:
             event_end = inputs['input_ids'].index(event_end_ind)
         except:
             event_end = len(inputs['input_ids'])-1
-        
+
         inputs['event_tokens'] = [0] * len(inputs['input_ids'])
         if event_start >= 0:
             inputs['event_tokens'] = [0] * event_start + [1] * (event_end-event_start+1) + [0] * (len(inputs['input_ids'])-event_end-1)
         else:
             inputs['event_tokens'] = [1] * len(inputs['input_ids'])
-        
+
         if inference:
             label = None
         else:
