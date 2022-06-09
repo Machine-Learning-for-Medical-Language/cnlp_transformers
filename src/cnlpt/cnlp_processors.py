@@ -13,6 +13,7 @@ from seqeval.metrics import f1_score as seq_f1, classification_report as seq_cls
 
 logger = logging.getLogger(__name__)
 
+
 def tagging_metrics(task_name, preds, labels):
     processor = cnlp_processors[task_name]()
     label_set = processor.get_labels()
@@ -32,7 +33,13 @@ def tagging_metrics(task_name, preds, labels):
     acc = num_correct / len(preds)
     f1 = f1_score(labels, preds, average=None)
 
-    return {'acc': acc, 'token_f1': fix_np_types(f1), 'f1': fix_np_types(seq_f1([label_seq], [pred_seq])), 'report':'\n'+seq_cls([label_seq], [pred_seq])}
+    return {
+        'acc': acc,
+        'token_f1': fix_np_types(f1),
+        'f1': fix_np_types(seq_f1([label_seq], [pred_seq])),
+        'report': '\n'+seq_cls([label_seq], [pred_seq])
+    }
+
 
 def relation_metrics(task_name, preds, labels):
 
@@ -53,7 +60,13 @@ def relation_metrics(task_name, preds, labels):
     precision = precision_score(y_pred=relevant_preds, y_true=relevant_labels, average=None)
     f1_report = f1_score(y_true=relevant_labels, y_pred=relevant_preds, average=None)
 
-    return {'f1': fix_np_types(f1_report), 'acc': acc, 'recall':fix_np_types(recall), 'precision':fix_np_types(precision) }
+    return {
+        'f1': fix_np_types(f1_report),
+        'acc': acc,
+        'recall': fix_np_types(recall),
+        'precision': fix_np_types(precision)
+    }
+
 
 def fix_np_types(input_variable):
     ''' in the mtl classification setting, f1 is an array, and when the HF library
@@ -64,6 +77,7 @@ def fix_np_types(input_variable):
         return list(input_variable)
     
     return input_variable
+
 
 def acc_and_f1(preds, labels):
     acc = simple_accuracy(preds, labels)
@@ -79,7 +93,9 @@ def acc_and_f1(preds, labels):
         "precision": fix_np_types(precision)
     }
 
+
 tasks = {'polarity', 'dtr', 'alink', 'alinkx', 'tlink'}
+
 
 def cnlp_compute_metrics(task_name, preds, labels):
     assert len(preds) == len(
@@ -100,13 +116,18 @@ def cnlp_compute_metrics(task_name, preds, labels):
     elif task_name == 'timecat':
         return acc_and_f1(preds, labels)
     elif task_name.startswith('i2b22008') or task_name.startswith('mimic_radi'):
-        return { 'f1': fix_np_types(f1_score(y_true=labels, y_pred=preds, average=None))} #acc_and_f1(preds, labels)
+        return {
+            'f1': fix_np_types(f1_score(y_true=labels, y_pred=preds, average=None))
+        }  # acc_and_f1(preds, labels)
     elif task_name == 'timex' or task_name == 'event' or task_name == 'dphe':
         return tagging_metrics(task_name, preds, labels)
     elif task_name == 'tlink-sent':
         return relation_metrics(task_name, preds, labels)
     elif cnlp_output_modes[task_name] == classification:
-        logger.warn("Choosing accuracy and f1 as default metrics; modify cnlp_compute_metrics() to customize for this task.")
+        logger.warning(
+            "Choosing accuracy and f1 as default metrics;"
+            " modify cnlp_compute_metrics() to customize for this task."
+        )
         return acc_and_f1(preds, labels)
     else:
         raise Exception('There is no metric defined for this task in function cnlp_compute_metrics()')
@@ -218,6 +239,7 @@ class LabeledSentenceProcessor(CnlpProcessor, ABC):
     def get_one_score(self, results):
         return results['f1'].mean()
 
+
 class NegationProcessor(LabeledSentenceProcessor):
     """ Processor for the negation datasets """
     def get_labels(self):
@@ -226,6 +248,7 @@ class NegationProcessor(LabeledSentenceProcessor):
 
     def get_one_score(self, results):
         return results['f1'][1]
+
 
 class UncertaintyProcessor(LabeledSentenceProcessor):
     """ Processor for the negation datasets """
@@ -236,6 +259,7 @@ class UncertaintyProcessor(LabeledSentenceProcessor):
     def get_one_score(self, results):
         return results['f1'][1]
 
+
 class HistoryProcessor(LabeledSentenceProcessor):
     """ Processor for the negation datasets """
     def get_labels(self):
@@ -245,6 +269,7 @@ class HistoryProcessor(LabeledSentenceProcessor):
     def get_one_score(self, results):
         return results['f1'][1]
 
+
 class DtrProcessor(LabeledSentenceProcessor):
     """ Processor for DocTimeRel datasets """
     def get_labels(self):
@@ -253,6 +278,7 @@ class DtrProcessor(LabeledSentenceProcessor):
 
     def get_one_score(self, results):
         return np.mean(results['acc'])
+
 
 class AlinkxProcessor(LabeledSentenceProcessor):
     """Processor for an THYME ALINK dataset (links that describe change in temporal status of an event)
@@ -265,6 +291,7 @@ class AlinkxProcessor(LabeledSentenceProcessor):
     def get_one_score(self, results):
         return np.mean(results['f1'][1:])
 
+
 class AlinkProcessor(LabeledSentenceProcessor):
     """Processor for an THYME ALINK dataset (links that describe change in temporal status of an event)
     The classifier version of the task is _given_ an event known to have some aspectual status, label that status."""
@@ -275,6 +302,7 @@ class AlinkProcessor(LabeledSentenceProcessor):
     def get_one_score(self, results):
         return np.mean(results['f1'])
 
+
 class ContainsProcessor(LabeledSentenceProcessor):
     """ Processor for narrative container relation (THYME). Describes the contains relation status between the 
     two highlighted temporal entities (event or timex). NONE - no relation, CONTAINS - arg 1 contains arg2, 
@@ -282,6 +310,7 @@ class ContainsProcessor(LabeledSentenceProcessor):
     def get_labels(self):
         """See base class."""
         return ["NONE", "CONTAINS", "CONTAINS-1"]
+
 
 class TlinkProcessor(LabeledSentenceProcessor):
     """ Processor for narrative container relation (THYME). Describes the contains relation status between the 
@@ -293,9 +322,10 @@ class TlinkProcessor(LabeledSentenceProcessor):
 
     def get_one_score(self, results):
         return np.mean(results['f1'])
-    
+
+
 class TimeCatProcessor(LabeledSentenceProcessor):
-    """Processor for an THYME time expression dataset
+    """Processor for a THYME time expression dataset
     The classifier version of the task is _given_ a time class, label its time category (see labels below)."""
     def get_labels(self):
         """See base class."""
@@ -304,8 +334,9 @@ class TimeCatProcessor(LabeledSentenceProcessor):
     def get_one_score(self, results):
         return results['acc']
 
+
 class ContextualModalityProcessor(LabeledSentenceProcessor):
-    """Processor for a contexutal modality dataset """
+    """Processor for a contextual modality dataset """
     def get_labels(self):
         """See base class."""
         return ["ACTUAL", "HYPOTHETICAL", "HEDGED", "GENERIC"]
@@ -314,12 +345,15 @@ class ContextualModalityProcessor(LabeledSentenceProcessor):
         # actual is the default and it's very common so we use the macro f1 of non-default categories for model selection.
         return np.mean(results['f1'][1:])
 
+
 class UciDrugSentimentProcessor(LabeledSentenceProcessor):
+    """Processor for the UCI Drug Review sentiment classification dataset"""
     def get_labels(self):
         return ['Low', 'Medium', 'High']
 
     def get_one_score(self, results):
         return np.mean(results['f1'])
+
 
 class Mimic_7_Processor(LabeledSentenceProcessor):
     def get_labels(self):
@@ -328,12 +362,14 @@ class Mimic_7_Processor(LabeledSentenceProcessor):
     def get_one_score(self, results):
         return np.mean(results['f1'])
 
+
 class Mimic_3_Processor(LabeledSentenceProcessor):
     def get_labels(self):
         return ['3+', '3-']
 
     def get_one_score(self, results):
         return np.mean(results['f1'])
+
 
 class CovidProcessor(LabeledSentenceProcessor):
     def get_labels(self):
@@ -385,6 +421,7 @@ class TimexProcessor(SequenceProcessor):
                 "I-DATE","I-DURATION","I-PREPOSTEXP","I-QUANTIFIER","I-SET","I-TIME","I-SECTIONTIME","I-DOCTIME",
                 ]
 
+
 class EventProcessor(SequenceProcessor):
     def get_one_score(self, results):
         return results['f1']
@@ -393,6 +430,7 @@ class EventProcessor(SequenceProcessor):
         return ["O", "B-AFTER","B-BEFORE","B-BEFORE/OVERLAP","B-OVERLAP","I-AFTER","I-BEFORE"
                 ,"I-BEFORE/OVERLAP","I-OVERLAP"]
         # return ['B-EVENT', 'I-EVENT', 'O']
+
 
 class DpheProcessor(SequenceProcessor):
     def get_one_score(self, results):
@@ -462,10 +500,14 @@ class MTLClassifierProcessor(CnlpBaseProcessor, ABC):
             guid = '%s-%s' % (self.get_classifier_id(), inst_id)
             text_a = instance['text']
             label_dict = instance['labels']
-            labels = [label_dict.get(x, self.get_default_label()) for x in self.get_classifiers()]
+            labels = [
+                label_dict.get(x, self.get_default_label())
+                for x in self.get_classifiers()
+            ]
             examples.append(InputExample(guid=guid, text_a=text_a, text_b=None, label=labels))
         
         return examples
+
 
 class MimicRadiProcessor(MTLClassifierProcessor):
     def get_classifiers(self):
@@ -482,7 +524,6 @@ class MimicRadiProcessor(MTLClassifierProcessor):
     
     def get_one_score(self, results):
         print(results)
-        #return results #['f1'].mean()
         return np.mean(results['f1'])
 
     def get_classifier_id(self):
@@ -490,6 +531,7 @@ class MimicRadiProcessor(MTLClassifierProcessor):
 
     def get_default_label(self):
         return 'Unlabeled'
+
 
 class i2b22008Processor(MTLClassifierProcessor):
     """
@@ -521,52 +563,55 @@ class i2b22008Processor(MTLClassifierProcessor):
     def get_one_score(self, results):
         return np.mean(results['f1'][1:2])
 
-cnlp_processors = {'polarity': NegationProcessor,
-                   'uncertainty': UncertaintyProcessor,
-                   'history': HistoryProcessor,
-                   'dtr': DtrProcessor,
-                   'alink': AlinkProcessor,
-                   'alinkx': AlinkxProcessor,
-                   'tlink': TlinkProcessor,
-                   'nc': ContainsProcessor,
-                   'timecat': TimeCatProcessor,
-                   'conmod': ContextualModalityProcessor,
-                   'timex': TimexProcessor,
-                   'event': EventProcessor,
-                   'tlink-sent': TlinkRelationProcessor,
-                   'dphe': DpheProcessor,
-                   'i2b22008': i2b22008Processor,
-                   'ucidrug': UciDrugSentimentProcessor,
-                   'mimic_radi': MimicRadiProcessor,
-                   'mimic_3': Mimic_3_Processor,
-                   'mimic_7': Mimic_7_Processor,
-                   'covid': CovidProcessor
-                  }
+
+cnlp_processors = {
+    'polarity': NegationProcessor,
+    'uncertainty': UncertaintyProcessor,
+    'history': HistoryProcessor,
+    'dtr': DtrProcessor,
+    'alink': AlinkProcessor,
+    'alinkx': AlinkxProcessor,
+    'tlink': TlinkProcessor,
+    'nc': ContainsProcessor,
+    'timecat': TimeCatProcessor,
+    'conmod': ContextualModalityProcessor,
+    'timex': TimexProcessor,
+    'event': EventProcessor,
+    'tlink-sent': TlinkRelationProcessor,
+    'dphe': DpheProcessor,
+    'i2b22008': i2b22008Processor,
+    'ucidrug': UciDrugSentimentProcessor,
+    'mimic_radi': MimicRadiProcessor,
+    'mimic_3': Mimic_3_Processor,
+    'mimic_7': Mimic_7_Processor,
+    'covid': CovidProcessor
+}
 
 mtl = 'mtl'
 classification = 'classification'
 tagging = 'tagging'
 relex = 'relations'
 
-cnlp_output_modes = {'polarity': classification,
-                'uncertainty': classification,
-                'history': classification,
-                'dtr': classification,
-                'alink': classification,
-                'alinkx': classification,
-                'tlink': classification,
-                'nc': classification,
-                'timecat': classification,
-                'conmod': classification,
-                'timex': tagging,
-                'event': tagging,
-                'dphe': tagging,
-                'tlink-sent': relex,
-                'i2b22008': mtl,
-                'ucidrug': classification,
-                'mimic_radi': mtl,
-                'mimic_3': classification,
-                'mimic_7': classification,
-                'covid': classification
-                }
+cnlp_output_modes = {
+    'polarity': classification,
+    'uncertainty': classification,
+    'history': classification,
+    'dtr': classification,
+    'alink': classification,
+    'alinkx': classification,
+    'tlink': classification,
+    'nc': classification,
+    'timecat': classification,
+    'conmod': classification,
+    'timex': tagging,
+    'event': tagging,
+    'dphe': tagging,
+    'tlink-sent': relex,
+    'i2b22008': mtl,
+    'ucidrug': classification,
+    'mimic_radi': mtl,
+    'mimic_3': classification,
+    'mimic_7': classification,
+    'covid': classification
+}
 
