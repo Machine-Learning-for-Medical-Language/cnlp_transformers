@@ -48,7 +48,7 @@ from transformers.trainer_pt_utils import get_parameter_names
 from transformers.file_utils import hf_bucket_url, CONFIG_NAME
 
 from .cnlp_processors import cnlp_processors, cnlp_output_modes, cnlp_compute_metrics, \
-    tagging, relex, classification, i2b22008Processor, mtl
+    OutputMode, i2b22008Processor
 from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
 
 from .CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
@@ -259,7 +259,7 @@ def main(json_file=None, json_obj=None):
                 # TODO: generalize
                 task_name = f'{task_name}_{this_task_subset[0]}'
                 cnlp_processors[task_name] = lambda: i2b22008Processor(this_task_subset)
-                cnlp_output_modes[task_name] = mtl
+                cnlp_output_modes[task_name] = OutputMode.MTL
                 data_args.task_name[task_ind] = task_name
 
     if (
@@ -309,7 +309,7 @@ def main(json_file=None, json_obj=None):
                 for subtask_num in range(processor.get_num_tasks()):
                     task_names.append(task_name + "-" + processor.get_classifiers()[subtask_num])
                     num_labels.append(len(processor.get_labels()))
-                    output_mode.append(classification)
+                    output_mode.append(OutputMode.CLASSIFICATION)
                     tagger.append(False)
                     relations.append(False)
             else:
@@ -317,8 +317,8 @@ def main(json_file=None, json_obj=None):
                 num_labels.append(len(processor.get_labels()))
 
                 output_mode.append(cnlp_output_modes[task_name])
-                tagger.append(cnlp_output_modes[task_name] == tagging)
-                relations.append(cnlp_output_modes[task_name] == relex)
+                tagger.append(cnlp_output_modes[task_name] == OutputMode.TAGGING)
+                relations.append(cnlp_output_modes[task_name] == OutputMode.RELEX)
 
     except KeyError:
         raise ValueError("Task not found: %s" % (data_args.task_name))

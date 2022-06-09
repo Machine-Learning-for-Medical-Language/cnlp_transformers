@@ -3,6 +3,7 @@ import random
 from abc import ABC, abstractmethod
 import logging
 import json
+from enum import Enum
 
 from typing import List
 from transformers.data.processors.utils import DataProcessor, InputExample
@@ -123,7 +124,7 @@ def cnlp_compute_metrics(task_name, preds, labels):
         return tagging_metrics(task_name, preds, labels)
     elif task_name == 'tlink-sent':
         return relation_metrics(task_name, preds, labels)
-    elif cnlp_output_modes[task_name] == classification:
+    elif cnlp_output_modes[task_name] == OutputMode.CLASSIFICATION:
         logger.warning(
             "Choosing accuracy and f1 as default metrics;"
             " modify cnlp_compute_metrics() to customize for this task."
@@ -572,31 +573,34 @@ cnlp_processors = {
     'covid': CovidProcessor
 }
 
-mtl = 'mtl'
-classification = 'classification'
-tagging = 'tagging'
-relex = 'relations'
+
+class OutputMode(Enum):
+    MTL = 'mtl'
+    CLASSIFICATION = 'classification'
+    TAGGING = 'tagging'
+    RELEX = 'relations'
+
 
 cnlp_output_modes = {
-    'polarity': classification,
-    'uncertainty': classification,
-    'history': classification,
-    'dtr': classification,
-    'alink': classification,
-    'alinkx': classification,
-    'tlink': classification,
-    'nc': classification,
-    'timecat': classification,
-    'conmod': classification,
-    'timex': tagging,
-    'event': tagging,
-    'dphe': tagging,
-    'tlink-sent': relex,
-    'i2b22008': mtl,
-    'ucidrug': classification,
-    'mimic_radi': mtl,
-    'mimic_3': classification,
-    'mimic_7': classification,
-    'covid': classification
+    'polarity':     OutputMode.CLASSIFICATION,
+    'uncertainty':  OutputMode.CLASSIFICATION,
+    'history':      OutputMode.CLASSIFICATION,
+    'dtr':          OutputMode.CLASSIFICATION,
+    'alink':        OutputMode.CLASSIFICATION,
+    'alinkx':       OutputMode.CLASSIFICATION,
+    'tlink':        OutputMode.CLASSIFICATION,
+    'nc':           OutputMode.CLASSIFICATION,
+    'timecat':      OutputMode.CLASSIFICATION,
+    'conmod':       OutputMode.CLASSIFICATION,
+    'timex':        OutputMode.TAGGING,
+    'event':        OutputMode.TAGGING,
+    'dphe':         OutputMode.TAGGING,
+    'tlink-sent':   OutputMode.RELEX,
+    'i2b22008':     OutputMode.MTL,
+    'ucidrug':      OutputMode.CLASSIFICATION,
+    'mimic_radi':   OutputMode.MTL,
+    'mimic_3':      OutputMode.CLASSIFICATION,
+    'mimic_7':      OutputMode.CLASSIFICATION,
+    'covid':        OutputMode.CLASSIFICATION
 }
 

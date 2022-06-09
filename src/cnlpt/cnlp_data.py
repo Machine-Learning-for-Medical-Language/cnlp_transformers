@@ -15,7 +15,7 @@ from transformers.tokenization_utils import PreTrainedTokenizer
 from dataclasses import dataclass, field, asdict, astuple
 from enum import Enum
 
-from .cnlp_processors import cnlp_processors, cnlp_output_modes, classification, tagging, relex, mtl
+from .cnlp_processors import cnlp_processors, cnlp_output_modes, OutputMode
 
 special_tokens = ['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>', '<neg>']
 
@@ -225,7 +225,7 @@ def cnlp_convert_examples_to_features(
             # give it a random label, if we didn't specify a label with the data we won't be comparing it.
             # return list(label_map.values())[0]
             return None
-        if output_mode == classification:
+        if output_mode == OutputMode.CLASSIFICATION:
             try:
                 return label_map[example.label]
             except:
@@ -234,11 +234,11 @@ def cnlp_convert_examples_to_features(
 
         elif output_mode == "regression":
             return float(example.label)
-        elif output_mode == tagging:
+        elif output_mode == OutputMode.TAGGING:
             return [ label_map[label] for label in example.label]
-        elif output_mode == relex:
+        elif output_mode == OutputMode.RELEX:
             return [ (int(start_token),int(end_token),label_map.get(category, 0)) for (start_token,end_token,category) in example.label]
-        elif output_mode == mtl:
+        elif output_mode == OutputMode.MTL:
             return [ label_map[x] for x in example.label]
 
         raise KeyError(output_mode)
@@ -265,7 +265,7 @@ def cnlp_convert_examples_to_features(
     # This code has to solve the problem of properly setting labels for word pieces that do not actually need to be tagged.
     if not inference:
         encoded_labels = []
-        if output_mode == tagging:
+        if output_mode == OutputMode.TAGGING:
             for sent_ind,sent in enumerate(sentences):
                 sent_labels = []
 
@@ -290,7 +290,7 @@ def cnlp_convert_examples_to_features(
                 encoded_labels.append(np.array(label_ids))
     
             labels = encoded_labels
-        elif output_mode == relex:
+        elif output_mode == OutputMode.RELEX:
             # start by building a matrix that's N' x N' (word-piece length) with "None" as the default
             # for word pairs, and -100 (mask) as the default if one of word pair is a suffix token
             out_of_bounds = 0
@@ -500,7 +500,7 @@ class ClinicalNlpDataset(Dataset):
         for task in args.task_name:
             self.processors.append(cnlp_processors[task]())
             self.output_mode.append(cnlp_output_modes[task])
-            if self.output_mode[-1] == mtl:
+            if self.output_mode[-1] == OutputMode.MTL:
                 for subtask in range(self.processors[-1].get_num_tasks()):
                     self.class_weights.append(None)
             else:
