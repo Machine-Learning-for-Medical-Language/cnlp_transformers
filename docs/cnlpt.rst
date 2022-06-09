@@ -8,6 +8,7 @@ Subpackages
    :maxdepth: 4
 
    cnlpt.api
+   cnlpt.data
 
 Submodules
 ----------
@@ -28,6 +29,5 @@ Module contents
 
 .. automodule:: cnlpt
    :members:
-   :undoc-members:
    :show-inheritance:
    :noindex:
