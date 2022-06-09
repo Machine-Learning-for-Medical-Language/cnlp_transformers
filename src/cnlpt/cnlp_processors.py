@@ -237,7 +237,7 @@ class LabeledSentenceProcessor(CnlpProcessor, ABC):
     relations = False
 
     def get_one_score(self, results):
-        return results['f1'].mean()
+        return np.mean(results['f1'])
 
 
 class NegationProcessor(LabeledSentenceProcessor):
@@ -299,9 +299,6 @@ class AlinkProcessor(LabeledSentenceProcessor):
         """See base class."""
         return ["CONTINUES", "INITIATES", "REINITIATES", "TERMINATES"]
 
-    def get_one_score(self, results):
-        return np.mean(results['f1'])
-
 
 class ContainsProcessor(LabeledSentenceProcessor):
     """ Processor for narrative container relation (THYME). Describes the contains relation status between the 
@@ -319,9 +316,6 @@ class TlinkProcessor(LabeledSentenceProcessor):
     def get_labels(self):
         """See base class."""
         return ["BEFORE", "BEGINS-ON", "CONTAINS", "ENDS-ON", "OVERLAP" ]
-
-    def get_one_score(self, results):
-        return np.mean(results['f1'])
 
 
 class TimeCatProcessor(LabeledSentenceProcessor):
@@ -351,24 +345,15 @@ class UciDrugSentimentProcessor(LabeledSentenceProcessor):
     def get_labels(self):
         return ['Low', 'Medium', 'High']
 
-    def get_one_score(self, results):
-        return np.mean(results['f1'])
-
 
 class Mimic_7_Processor(LabeledSentenceProcessor):
     def get_labels(self):
         return ['7+', '7-']
 
-    def get_one_score(self, results):
-        return np.mean(results['f1'])
-
 
 class Mimic_3_Processor(LabeledSentenceProcessor):
     def get_labels(self):
         return ['3+', '3-']
-
-    def get_one_score(self, results):
-        return np.mean(results['f1'])
 
 
 class CovidProcessor(LabeledSentenceProcessor):
