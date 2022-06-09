@@ -37,7 +37,7 @@ def tagging_metrics(task_name, preds, labels):
     acc = num_correct / len(preds)
     f1 = f1_score(labels, preds, average=None)
 
-    return {'acc': acc, 'token_f1': f1, 'f1': seq_f1([pred_seq], [label_seq]), 'report':'\n'+seq_cls([pred_seq], [label_seq])}
+    return {'acc': acc, 'token_f1': fix_np_types(f1), 'f1': fix_np_types(seq_f1([label_seq], [pred_seq])), 'report':'\n'+seq_cls([label_seq], [pred_seq])}
 
 def relation_metrics(task_name, preds, labels):
 
@@ -54,9 +54,9 @@ def relation_metrics(task_name, preds, labels):
     num_correct = (relevant_labels == relevant_preds).sum()
     acc = num_correct / len(relevant_preds)
 
-    recall = recall_score(relevant_preds, relevant_labels, average=None)
-    precision = precision_score(relevant_preds, relevant_labels, average=None)
-    f1_report = f1_score(relevant_labels, relevant_preds, average=None)
+    recall = recall_score(y_pred=relevant_preds, y_true=relevant_labels, average=None)
+    precision = precision_score(y_pred=relevant_preds, y_true=relevant_labels, average=None)
+    f1_report = f1_score(y_true=relevant_labels, y_pred=relevant_preds, average=None)
 
     return {'f1': fix_np_types(f1_report), 'acc': acc, 'recall':fix_np_types(recall), 'precision':fix_np_types(precision) }
 
@@ -104,7 +104,7 @@ def cnlp_compute_metrics(task_name, preds, labels):
         return acc_and_f1(preds, labels)
     elif task_name == 'timecat':
         return acc_and_f1(preds, labels)
-    elif task_name.startswith('i2b22008'):
+    elif task_name.startswith('i2b22008') or task_name.startswith('mimic_radi'):
         return { 'f1': fix_np_types(f1_score(y_true=labels, y_pred=preds, average=None))} #acc_and_f1(preds, labels)
     elif task_name == 'timex' or task_name == 'event' or task_name == 'dphe':
         return tagging_metrics(task_name, preds, labels)
@@ -291,6 +291,27 @@ class UciDrugSentimentProcessor(LabeledSentenceProcessor):
     def get_one_score(self, results):
         return np.mean(results['f1'])
 
+class Mimic_7_Processor(LabeledSentenceProcessor):
+    def get_labels(self):
+        return ['7+', '7-']
+
+    def get_one_score(self, results):
+        return np.mean(results['f1'])
+
+class Mimic_3_Processor(LabeledSentenceProcessor):
+    def get_labels(self):
+        return ['3+', '3-']
+
+    def get_one_score(self, results):
+        return np.mean(results['f1'])
+
+class CovidProcessor(LabeledSentenceProcessor):
+    def get_labels(self):
+        return ['negative', 'positive']
+    
+    def get_one_score(self, results):
+        return results['f1'][1]
+
 class RelationProcessor(CnlpProcessor):
     def _create_examples(self, lines, set_type):
         return super()._create_examples(lines, set_type, relations=True)
@@ -340,6 +361,9 @@ class MTLClassifierProcessor(DataProcessor):
     def __init__(self):
         pass
 
+    def get_example_from_tensor_dict(self, tensor_dict):
+        return RuntimeError("not implemented for MTL tasks")
+
     def get_train_examples(self, data_dir):
         return self.get_json_examples(os.path.join(data_dir, 'training.json'), 'train')
 
@@ -365,6 +389,28 @@ class MTLClassifierProcessor(DataProcessor):
         
         return examples
 
+class MimicRadiProcessor(MTLClassifierProcessor):
+    def get_classifiers(self):
+        return ["3-", "3+","7-","7+"]
+        # "3-": "Y", "3+": "N", "7-": "Y", "7+": "N"
+
+    def get_labels(self):
+        # return [ ["Y", "N"] for x in range(len(self.get_classifiers()))]
+        return ["Y", "N"]
+    
+    def get_num_tasks(self):
+        return len(self.get_classifiers())
+    
+    def get_one_score(self, results):
+        print(results)
+        #return results #['f1'].mean()
+        return np.mean(results['f1'])
+
+    def get_classifier_id(self):
+        return 'mimic_radi'
+
+    def get_default_label(self):
+        return 'Unlabeled'
 
 class i2b22008Processor(MTLClassifierProcessor):
     def get_classifiers(self):
@@ -385,7 +431,7 @@ class i2b22008Processor(MTLClassifierProcessor):
         return len(self.get_classifiers())
     
     def get_one_score(self, results):
-        return np.mean(results['f1'])
+        return np.mean(results['f1'][1:2])
 
 cnlp_processors = {'polarity': NegationProcessor,
                    'uncertainty': UncertaintyProcessor,
@@ -403,19 +449,11 @@ cnlp_processors = {'polarity': NegationProcessor,
                    'dphe': DpheProcessor,
                    'i2b22008': i2b22008Processor,
                    'ucidrug': UciDrugSentimentProcessor,
+                   'mimic_radi': MimicRadiProcessor,
+                   'mimic_3': Mimic_3_Processor,
+                   'mimic_7': Mimic_7_Processor,
+                   'covid': CovidProcessor
                   }
-
-# cnlp_num_labels = { 'polarity': 2,
-#                     'dtr': 4,
-#                     'alink': 4,
-#                     'alinkx': 5,
-#                     'nc': 3,
-#                     'tlink': 5,
-#                     'timecat': 8,
-#                     'conmod': 4,
-#                     'timex': 17,
-#                     'event': 9,
-#                   }
 
 mtl = 'mtl'
 classification = 'classification'
@@ -438,5 +476,9 @@ cnlp_output_modes = {'polarity': classification,
                 'tlink-sent': relex,
                 'i2b22008': mtl,
                 'ucidrug': classification,
+                'mimic_radi': mtl,
+                'mimic_3': classification,
+                'mimic_7': classification,
+                'covid': classification
                 }
 

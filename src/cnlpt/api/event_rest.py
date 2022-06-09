@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import os
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List, Tuple, Dict
@@ -28,9 +29,9 @@ from transformers import (
 )
 from transformers.data.processors.utils import InputFeatures, InputExample
 from torch.utils.data.dataset import Dataset
-from transformers.data.processors.glue import glue_convert_examples_to_features
 import numpy as np
-from ..CnlpModelForClassification import CnlpModelForClassification
+from .cnlp_rest import initialize_cnlpt_model
+from ..CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
 from seqeval.metrics.sequence_labeling import get_entities
 import logging
 from time import time
@@ -39,7 +40,7 @@ from nltk.tokenize import wordpunct_tokenize as tokenize
 from .temporal_rest import event_label_list, event_label_dict, TokenizedSentenceDocument, SentenceDocument, Event, TemporalResults, TemporalDocumentDataset, create_instance_string
 
 app = FastAPI()
-model_name = "tmills/event-thyme-colon"
+model_name = "tmills/event-thyme-colon-pubmedbert"
 logger = logging.getLogger('Event_REST_Processor')
 logger.setLevel(logging.INFO)
 
@@ -47,30 +48,7 @@ max_length = 128
 
 @app.on_event("startup")
 async def startup_event():
-    args = ['--output_dir', 'save_run/', '--per_device_eval_batch_size', '8', '--do_predict']
-    # training_args = parserTrainingArguments('save_run/')
-    parser = HfArgumentParser((TrainingArguments,))
-    training_args, = parser.parse_args_into_dataclasses(args=args)
-
-    app.state.training_args = training_args
-
-    # training_args.per_device_eval_size = 32
-    logger.warn("Eval batch size is: " + str(training_args.eval_batch_size))
-
-@app.post("/temporal/initialize")
-async def initialize():
-    ''' Load the model from disk and move to the device'''
-    config = AutoConfig.from_pretrained(model_name)
-    app.state.tokenizer = AutoTokenizer.from_pretrained(model_name,
-                                                  config=config)
-    model = CnlpModelForClassification(model_name, config=config, tagger=[True], relations=[False], num_labels_list=[9])
-    model.to('cuda')
-
-    app.state.trainer = Trainer(
-        model=model,
-        args=app.state.training_args,
-        compute_metrics=None,
-    )
+    initialize_cnlpt_model(app, model_name)
 
 @app.post("/temporal/process")
 async def process(doc: TokenizedSentenceDocument):
@@ -109,15 +87,22 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     rel_results = []
 
     for sent_ind in range(len(dataset)):
-        tokens = app.state.tokenizer.convert_ids_to_tokens(dataset.features[sent_ind].input_ids)
+        batch_encoding = app.state.tokenizer.batch_encode_plus([sents[sent_ind],],
+                                                           is_split_into_words=True,
+                                                           max_length=max_length)
+        word_ids = batch_encoding.word_ids(0)
         wpind_to_ind = {}
         event_labels = []
-        for token_ind in range(1,len(tokens)):
-            if dataset[sent_ind].input_ids[token_ind] <= 2:
-                break
-            if tokens[token_ind].startswith('Ġ'):
-                wpind_to_ind[token_ind] = len(wpind_to_ind)
-                event_labels.append(event_label_list[event_predictions[sent_ind][token_ind]])
+        previous_word_idx = None
+
+        for word_pos_idx, word_idx in enumerate(word_ids):
+            if word_idx != previous_word_idx and word_idx is not None:
+                key = word_pos_idx
+                val = len(wpind_to_ind)
+
+                wpind_to_ind[key] = val
+                event_labels.append(event_label_list[event_predictions[sent_ind][word_pos_idx]])
+            previous_word_idx = word_idx
 
         event_entities = get_entities(event_labels)
         logging.info("Extracted %d events from the sentence" % (len(event_entities)))

@@ -1,8 +1,9 @@
 # from transformers.models.auto import  AutoModel, AutoConfig
 import copy
-from typing import Optional, List
+import inspect
+from typing import Optional, List, Any, Dict
 
-from transformers import AutoModel, AutoConfig, DistilBertConfig, BertConfig
+from transformers import AutoModel, AutoConfig
 from transformers.modeling_utils import PreTrainedModel
 from transformers.configuration_utils import PretrainedConfig
 
@@ -113,17 +114,20 @@ class CnlpConfig(PretrainedConfig):
         self.relations = relations
         self.use_prior_tasks = use_prior_tasks
         self.encoder_name = encoder_name
-        encoder_config_obj = AutoConfig.from_pretrained(encoder_name)
-        self.encoder_config = encoder_config_obj.to_dict()
-        if isinstance(encoder_config_obj, BertConfig):
-            self.hidden_dropout_prob = self.encoder_config['hidden_dropout_prob']
-            self.hidden_size = self.encoder_config['hidden_size']
-        elif isinstance(encoder_config_obj, DistilBertConfig):
+        self.encoder_config = AutoConfig.from_pretrained(encoder_name).to_dict()
+        if encoder_name.startswith('distilbert'):
             self.hidden_dropout_prob = self.encoder_config['dropout']
             self.hidden_size = self.encoder_config['dim']
         else:
-            raise ValueError(f"need to add dropout and hidden size logic"
-                             f" for {encoder_config_obj.__class__.__name__}")
+            try:
+                self.hidden_dropout_prob = self.encoder_config['hidden_dropout_prob']
+                self.hidden_size = self.encoder_config['hidden_size']
+            except KeyError as ke:
+                raise ValueError(f'Encoder config does not have an attribute'
+                                 f' "{ke.args[0]}"; this is likely because the API of'
+                                 f' the chosen encoder differs from the BERT/RoBERTa'
+                                 f' API and the DistilBERT API. Encoders with different'
+                                 f' APIs are not yet supported (#35).')
         self.num_tokens = num_tokens
 
 
@@ -138,22 +142,34 @@ class CnlpModelForClassification(PreTrainedModel):
                  final_task_weight: float = 1.0,
                  argument_regularization: float = -1,
                  freeze=False,
+                 bias_fit=False,
                  ):
 
         super().__init__(config)
 
         encoder_config = AutoConfig.from_pretrained(config.encoder_name)
         encoder_config.vocab_size = config.vocab_size
+        config.encoder_config = encoder_config.to_dict()
         encoder_model = AutoModel.from_config(encoder_config)
         self.encoder = encoder_model.from_pretrained(config.encoder_name)
         self.encoder.resize_token_embeddings(encoder_config.vocab_size)
 
+        if config.layer > len(encoder_model.encoder.layer):
+            raise ValueError('The layer specified (%d) is too big for the specified encoder which has %d layers' % (
+                config.layer,
+                len(encoder_model.encoder.layer)
+            ))
         self.num_labels = config.num_labels_list
         
         if freeze:
             for param in self.encoder.parameters():
                 param.requires_grad = False
         
+        if bias_fit:
+            for name, param in self.encoder.named_parameters():
+                if not 'bias' in name:
+                    param.requires_grad = False
+
         self.feature_extractors = nn.ModuleList()
         self.logit_projectors = nn.ModuleList()
         self.classifiers = nn.ModuleList()
@@ -327,6 +343,20 @@ class CnlpModelForClassification(PreTrainedModel):
 
         state["loss"] += self.argument_regularization * prob_rel_no_ent.sum()
 
+    def generalize_encoder_forward_kwargs(self, **kwargs: Any) -> Dict[str, Any]:
+        new_kwargs = dict()
+        params = inspect.signature(self.encoder.forward).parameters
+        for name, value in kwargs.items():
+            if name not in params and value is not None:
+                # Warn if a contentful parameter is not valid
+                logger.warning(f"Parameter {name} not present for encoder class {self.encoder.__class__.__name__}.")
+            elif name in params:
+                # Pass all, and only, parameters that are valid,
+                # regardless of whether they are None
+                new_kwargs[name] = value
+            # else, value is None and not in params, so we ignore it
+        return new_kwargs
+
     def forward(
         self,
         input_ids=None,
@@ -348,8 +378,7 @@ class CnlpModelForClassification(PreTrainedModel):
             If :obj:`config.num_labels > 1` a classification loss is computed (Cross-Entropy).
         """
 
-        outputs = self.encoder(
-            input_ids,
+        kwargs = self.generalize_encoder_forward_kwargs(
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
             position_ids=position_ids,
@@ -358,6 +387,11 @@ class CnlpModelForClassification(PreTrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=True,
             return_dict=True
+        )
+
+        outputs = self.encoder(
+            input_ids,
+            **kwargs
         )
         
         batch_size,seq_len = input_ids.shape
@@ -397,4 +431,4 @@ class CnlpModelForClassification(PreTrainedModel):
                 loss=state['loss'], logits=logits, hidden_states=outputs.hidden_states, attentions=outputs.attentions,
             )
         else:
-            return SequenceClassifierOutput(loss=state['loss'], logits=logits)
+            return SequenceClassifierOutput(loss=state['loss'], logits=logits, attentions=outputs.attentions)

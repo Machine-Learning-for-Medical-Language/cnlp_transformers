@@ -139,17 +139,43 @@ def cnlp_convert_features_to_hierarchical(
     def pad_chunk(chunk, pad_type=pad_id):
         return chunk + [pad_type] * (chunk_len - len(chunk))
 
-    for i in range(0, len(input_ids_), chunk_len):
-        chunks.append(pad_chunk(input_ids_[i : i + chunk_len]))
+    def format_chunk(chunk, cls_type=cls_id, sep_type=sep_id, pad_type=pad_id, pad=True):
+        formatted_chunk = [cls_type] + chunk + [sep_type]
+        if pad:
+            return pad_chunk(formatted_chunk, pad_type=pad_type)
+        else:
+            return formatted_chunk
+
+    start = 1
+
+    while True:
+        if start >= len(input_ids_) or input_ids_[start] in {pad_id, sep_id}:
+            # we have moved past the end of the sequence or have reached
+            #  either the SEP token or a PAD token.
+            break
+
+        # end right before where the SEP token will go
+        end = min(
+            start + chunk_len - 2,
+            len(input_ids_)
+        )
+
+        # if we are ending on a PAD token or the SEP token, end before the SEP token
+        if input_ids_[end-1] in {pad_id, sep_id} and sep_id in input_ids_[start:end]:
+            end = input_ids_.index(sep_id, start, end)
+
+        chunks.append(format_chunk(input_ids_[start:end]))
         if chunks_attention_mask is not None:
-            chunks_attention_mask.append(pad_chunk(attention_mask_[i : i + chunk_len]))
+            chunks_attention_mask.append(format_chunk(attention_mask_[start:end], cls_type=1, sep_type=1))
         if chunks_token_type_ids is not None:
-            chunks_token_type_ids.append(pad_chunk(token_type_ids_[i : i + chunk_len]))
+            chunks_token_type_ids.append(format_chunk(token_type_ids_[start:end], cls_type=0, sep_type=0))
         if chunks_event_tokens is not None:
-            chunks_event_tokens.append(pad_chunk(event_tokens_[i : i + chunk_len]))
+            chunks_event_tokens.append(format_chunk(event_tokens_[start:end], cls_type=1, sep_type=1))
+
+        start = end
 
     def create_pad_chunk(cls_type=cls_id, sep_type=sep_id, pad_type=pad_id):
-        return pad_chunk([cls_type] + [sep_type])
+        return pad_chunk([cls_type] + [sep_type], pad_type=pad_type)
 
     # Insert an empty chunk at the beginning.
     if insert_empty_chunk_at_beginning:
@@ -176,11 +202,11 @@ def cnlp_convert_features_to_hierarchical(
     while len(chunks) < num_chunks:
         chunks.append(create_pad_chunk())
         if chunks_attention_mask is not None:
-            chunks_attention_mask.append([0]*chunk_len)
+            chunks_attention_mask.append(create_pad_chunk(1, 1, 0))
         if chunks_token_type_ids is not None:
-            chunks_token_type_ids.append([0]*chunk_len)
+            chunks_token_type_ids.append(create_pad_chunk(0, 0, 0))
         if chunks_event_tokens is not None:
-            chunks_event_tokens.append([0]*chunk_len)
+            chunks_event_tokens.append(create_pad_chunk(1, 1, 0))
 
     return HierarchicalInputFeatures(chunks, chunks_attention_mask, chunks_token_type_ids, chunks_event_tokens, label_)
 
@@ -258,10 +284,6 @@ def cnlp_convert_examples_to_features(
         is_split_into_words=True,
     )
 
-    roberta_based = tokenizer.cls_token == '<s>'
-    if not roberta_based:
-        assert tokenizer.cls_token == '[CLS]', 'This tokenizer does not seem to be based on BERT or Roberta -- this will cause errors with the dataset encoding.'
-
     # This code has to solve the problem of properly setting labels for word pieces that do not actually need to be tagged.
     if not inference:
         encoded_labels = []
@@ -288,7 +310,7 @@ def cnlp_convert_examples_to_features(
                     previous_word_idx = word_idx
 
                 encoded_labels.append(np.array(label_ids))
-    
+
             labels = encoded_labels
         elif output_mode == relex:
             # start by building a matrix that's N' x N' (word-piece length) with "None" as the default
@@ -301,13 +323,11 @@ def cnlp_convert_examples_to_features(
                 wpi_to_tokeni = {}
                 tokeni_to_wpi = {}
                 sent_labels = np.zeros( (max_length, max_length)) - 100
-                wps = batch_encoding[sent_ind].tokens
-                sent_len = len(wps)
-                
+
                 ## align word-piece tokens to the tokenization we got as input and only assign labels to input tokens
                 previous_word_idx = None
                 for word_pos_idx, word_idx in enumerate(word_ids):
-                    if word_idx != previous_word_idx or word_idx is None:
+                    if word_idx != previous_word_idx and word_idx is not None:
                         key = word_pos_idx
                         val = len(wpi_to_tokeni)
 
@@ -322,10 +342,10 @@ def cnlp_convert_examples_to_features(
                         # tokens not involved in a relation.
                         if wpi != wpi2:
                             sent_labels[wpi,wpi2] = 0.0
-                    
+
                 for label in labels[sent_ind]:
                     if not label[0] in tokeni_to_wpi or not label[1] in tokeni_to_wpi:
-                        out_of_bounds +=1 
+                        out_of_bounds +=1
                         continue
 
                     wpi1 = tokeni_to_wpi[label[0]]
@@ -345,18 +365,18 @@ def cnlp_convert_examples_to_features(
             event_start = inputs['input_ids'].index(event_start_ind)
         except:
             event_start = -1
-        
+
         try:
             event_end = inputs['input_ids'].index(event_end_ind)
         except:
             event_end = len(inputs['input_ids'])-1
-        
+
         inputs['event_tokens'] = [0] * len(inputs['input_ids'])
         if event_start >= 0:
             inputs['event_tokens'] = [0] * event_start + [1] * (event_end-event_start+1) + [0] * (len(inputs['input_ids'])-event_end-1)
         else:
             inputs['event_tokens'] = [1] * len(inputs['input_ids'])
-        
+
         if inference:
             label = None
         else:
@@ -516,6 +536,7 @@ class ClinicalNlpDataset(Dataset):
             datadir = dirname(data_dir) if data_dir[-1] == '/' else data_dir
             domain = basename(datadir)
             dataconfig = basename(dirname(datadir))
+            num_subtasks = self.processors[task_ind].get_num_tasks()
 
             cached_features_file = os.path.join(
                 cache_dir if cache_dir is not None else data_dir,
@@ -523,6 +544,8 @@ class ClinicalNlpDataset(Dataset):
                     dataconfig, domain, mode.value, tokenizer.__class__.__name__, str(args.max_seq_length),
                 ),
             )
+            if self.hierarchical:
+                cached_features_file += '_hier'
 
             # Make sure only the first process in distributed training processes the dataset,
             # and the others will use the cache.
@@ -570,21 +593,29 @@ class ClinicalNlpDataset(Dataset):
                     )
 
                 if self.args.weight_classes and mode == Split.train:
-                    class_counts = [0] * len(self.label_lists[task_ind])
-                    for feature in features:
-                        labels = feature.label[0]
-                        vals, counts = np.unique(labels, return_counts=True)
-                        for val_ind,val in enumerate(vals):
-                            if val >= 0:
-                                class_counts[int(val)] += counts[val_ind]
+                    if num_subtasks == 1:
+                        class_counts = [0] * len(self.label_lists[task_ind])
+                        for feature in features:
+                            labels = feature.label[0]
+                            vals, counts = np.unique(labels, return_counts=True)
+                            for val_ind,val in enumerate(vals):
+                                if val >= 0:
+                                    class_counts[int(val)] += counts[val_ind]
 
-                    self.class_weights[task_ind] = min(class_counts) / class_counts
+                        self.class_weights[task_ind] = min(class_counts) / class_counts
+                    else:
+                        class_counts = np.zeros( (num_subtasks, len(self.label_lists[task_ind])) )
+                        for feature in features:
+                            labels = feature.label[0]
+                            for subtask_ind,label in enumerate(labels):
+                                class_counts[subtask_ind][label] += 1
+                                
+                        self.class_weights[subtask_ind] = min(class_counts[subtask_ind]) / class_counts[subtask_ind]
 
 
                 if self.features is None:
                     self.features = features
                 else:
-                    # FIXME: self.features is set to None earlier in this __init__ method; this is unreachable
                     assert len(features) == len(self.features)
                     if self.features[0].label is None:
                         assert features[0].label is None, 'Some of the tasks have None labels and others do not, they should be consistent!'

@@ -83,6 +83,9 @@ class CnlpTrainingArguments(TrainingArguments):
     arg_reg: Optional[float] = field(
         default=-1, metadata={"help": "Weight to use on argument regularization term (penalizes end-to-end system if a discovered relation has low probability of being any entity type). Value < 0 (default) turns off this penalty."}
     )
+    bias_fit: bool = field(
+        default=False, metadata={"help": "Only optimize the bias parameters of the encoder (and the weights of the classifier heads), as proposed in the BitFit paper by Ben Zaken et al. 2021 (https://arxiv.org/abs/2106.10199)"}
+    )
 
 @dataclass
 class ModelArguments:
@@ -110,15 +113,62 @@ class ModelArguments:
     token: bool = field(
         default=False, metadata={"help": "Classify over an actual token rather than the [CLS] ('<s>') token -- requires that the tokens to be classified are surrounded by <e>/</e> tokens"}
     )
+
+    # NxN relation classifier-specific arguments
     num_rel_feats: Optional[int] = field(
         default=12, metadata={"help": "Number of features/attention heads to use in the NxN relation classifier"}
     )
     head_features: Optional[int] = field(
         default=64, metadata={"help": "Number of parameters in each attention head in the NxN relation classifier"}
     )
+
+    # CNN-specific arguments
+    cnn_embed_dim: Optional[int] = field(
+        default=100,
+        metadata={
+            'help': "For the CNN baseline model, the size of the word embedding space."
+        }
+    )
+    cnn_num_filters: Optional[int] = field(
+        default=25,
+        metadata={
+            'help': (
+                'For the CNN baseline model, the number of '
+                'convolution filters to use for each filter size.'
+            )
+        }
+    )
+
+    cnn_filter_sizes: Optional[List[int]] = field(
+        default_factory=lambda: [1, 2, 3],
+        metadata={
+            "help": (
+                "For the CNN baseline model, a space-separated list "
+                "of size(s) of the filters (kernels)"
+            )
+        }
+    )
+
+    # LSTM-specific arguments
+    lstm_embed_dim: Optional[int] = field(
+        default=100,
+        metadata={
+            'help': "For the LSTM baseline model, the size of the word embedding space."
+        }
+    )
+    lstm_hidden_size: Optional[int] = field(
+        default=100,
+        metadata={
+            "help": "For the LSTM baseline model, the hidden size of the LSTM layer"
+        }
+    )
+
+    # Multi-task classifier-specific arguments
     use_prior_tasks: bool = field(
         default=False, metadata={"help": "In the multi-task setting, incorporate the logits from the previous tasks into subsequent representation layers. This will be done in the task order specified in the command line."}
     )
+
+    # Hierarchical Transformer-specific arguments
     hier_num_layers: Optional[int] = field(
         default=2,
         metadata={
@@ -179,13 +229,20 @@ def is_pretrained_model(model_name):
 
     return False
 
-def main():
+def main(json_file=None, json_obj=None):
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, CnlpTrainingArguments))
 
-    if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
+    if json_file is not None and json_obj is not None:
+        raise ValueError('cannot specify json_file and json_obj')
+
+    if json_file is not None:
+        model_args, data_args, training_args = parser.parse_json_file(json_file=json_file)
+    elif json_obj is not None:
+        model_args, data_args, training_args = parser.parse_dict(json_obj)
+    elif len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
         # let's parse it to get our arguments.
         model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
@@ -286,9 +343,18 @@ def main():
     pretrained = False
 
     if model_name == 'cnn':
-        model = CnnSentenceClassifier(len(tokenizer), num_labels_list=num_labels)
+        model = CnnSentenceClassifier(len(tokenizer), 
+                                      num_labels_list=num_labels,
+                                      embed_dims=model_args.cnn_embed_dim,
+                                      num_filters=model_args.cnn_num_filters,
+                                      filters=model_args.cnn_filter_sizes,
+                                      )
     elif model_name == 'lstm':
-        model = LstmSentenceClassifier(len(tokenizer), num_labels_list=num_labels)
+        model = LstmSentenceClassifier(len(tokenizer),
+                                       num_labels_list=num_labels,
+                                       embed_dims=model_args.lstm_embed_dim,
+                                       hidden_size=model_args.lstm_hidden_size,
+                                       )
     elif model_name == 'hier':
         # encoder_config = AutoConfig.from_pretrained(
         #     model_args.config_name if model_args.config_name else model_args.encoder_name,
@@ -312,8 +378,7 @@ def main():
         # num_tokens=len(tokenizer))
         config.vocab_size = len(tokenizer)
 
-        # TODO we should be able to infer this during model initialization
-        encoder_dim = AutoConfig.from_pretrained(encoder_name, cache_dir=model_args.cache_dir).hidden_size
+        encoder_dim = config.hidden_size
 
         transformer_head_config = HierarchicalTransformerConfig(
             n_layers=model_args.hier_num_layers,
@@ -337,7 +402,7 @@ def main():
         # by default cnlpt model, but need to check which encoder they want
         encoder_name = model_args.encoder_name
 
-        # TODO check when download any pretrained lanugage model to local disk, if 
+        # TODO check when download any pretrained language model to local disk, if 
         # the following condition "is_pretrained_model(encoder_name)" works or not.
         if not is_pretrained_model(encoder_name):
             # we are loading one of our own trained models as a starting point.
@@ -372,7 +437,6 @@ def main():
             if training_args.do_train:
                 # Setting 1) only load weights from the encoder
                 raise NotImplementedError('This functionality has not been restored yet')
-                ## FIXME - think this won't load the right weights?
                 model = CnlpModelForClassification(
                         model_path = model_args.encoder_name,
                         config=config,
@@ -397,6 +461,7 @@ def main():
                     class_weights=None if train_dataset is None else train_dataset.class_weights,
                     final_task_weight=training_args.final_task_weight,
                     freeze=training_args.freeze,
+                    bias_fit=training_args.bias_fit,
                     argument_regularization=training_args.arg_reg)
 
         else:
@@ -421,6 +486,7 @@ def main():
                 class_weights=None if train_dataset is None else train_dataset.class_weights,
                 final_task_weight=training_args.final_task_weight,
                 freeze=training_args.freeze,
+                bias_fit=training_args.bias_fit,
                 argument_regularization=training_args.arg_reg)
 
     best_eval_results = None

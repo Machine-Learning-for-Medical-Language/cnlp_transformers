@@ -2,8 +2,23 @@
 Transformers for Clinical NLP
 
 This library was created to add abstractions on top of the Huggingface Transformers library for many clinical NLP research use cases.
-Primary use cases include 1) simplifying multiple tasks related to fine-tuning of transformers for building models for clinical NLP, and 2) creating inference APIs that will allow downstream researchers easier access to clinical NLP outputs.
+Primary use cases include 
+ 1) simplifying multiple tasks related to fine-tuning of transformers for building models for clinical NLP research, and 
+ 2) creating inference APIs that will allow downstream researchers easier access to clinical NLP outputs. 
+
+This library is _not_ intended to serve as a place for clinical NLP applications to live. If you build something cool that uses transformer models that take advantage of our model definitions, the best practice is probably to rely on it as a library rather than treating it as your workspace. This library is also not intended as a deployment-ready tool for _scalable_ clinical NLP. There is a lot of interest in developing methods and tools that are smaller and can process millions of records, and this library can potentially be used for research along those line. But it will probably never be extremely optimized or shrink-wrapped for applications. However, there should be plenty of examples and useful code for people who are interested in that type of deployment.
+
 ## Install
+
+**Note: due to a dependency issue, this package only supports Python 
+3.7 and 3.8. We recommend Python 3.8.**
+
+When installing the library's dependencies, `pip` will probably install 
+PyTorch with CUDA 10.2 support by default. If you would like to run the 
+library in CPU-only mode or with a newer version of CUDA, [install PyTorch 
+to your desired specifications](https://pytorch.org/get-started/locally/) 
+in your virtual environment first before installing `cnlp-transformers`.
+
 If you are installing just to run the REST APIs, you can just install without cloning with:
 ```pip install cnlp_transformers```
 
@@ -34,7 +49,7 @@ To use the library for fine-tuning, you'll need to take the following steps:
    4. cite us
 2. Run ```python -m cnlpt.data.transform_uci_drug <input dir> <output dir>``` to preprocess the data from the extract directory into a new directory. This will create {train,dev,test}.tsv in the output directory specified, where the sentiment labels have been collapsed into 3 categories.
 3. Fine-tune with something like: 
-```python -m cnlpt.train_system --task_name ucidrug --data_dir ~/mnt/r/DeepLearning/mmtl/drug-sentiment/ --model_name_or_path roberta-base --do_train --cache cache/ --output_dir temp/ --overwrite_output_dir --evals_per_epoch 5 --do_eval --num_train_epochs 1 --learning_rate 1e-5```
+```python -m cnlpt.train_system --task_name ucidrug --data_dir ~/mnt/r/DeepLearning/mmtl/drug-sentiment/ --encoder_name roberta-base --do_train --cache cache/ --output_dir temp/ --overwrite_output_dir --evals_per_epoch 5 --do_eval --num_train_epochs 1 --learning_rate 1e-5```
 
 On our hardware, that command results in the following eval performance:
 ```ucidrug = {'acc': 0.8127712337259765, 'f1': [0.8030439829743325, 0.49202644885258656, 0.9018332042344437], 'acc_and_f1': [0.8079076083501545, 0.6523988412892815, 0.8573022189802101], 'recall': [0.788500506585613, 0.524896265560166, 0.8935734752353663], 'precision': [0.8181340341655716, 0.4630307467057101, 0.9102470551443761]}```
@@ -43,7 +58,7 @@ For a demo of how to run the system in colab: [![Open In Colab](https://colab.re
 
 ### Fine-tuning options
 Run ```python -m cnlpt.train_system -h``` to see all the available options. In addition to inherited Huggingface Transformers options, there are options to do the following:
-* Run simple baselines (use ``--model_name_or_path cnn --tokenizer_name roberta-base`` -- since there is no HF model then you must specify the tokenizer explicitly)
+* Run simple baselines (use ``--model cnn --tokenizer_name roberta-base`` -- since there is no HF model then you must specify the tokenizer explicitly)
 * Use a different layer's CLS token for the classification (e.g., ```--layer 10```)
 * Only update the weights of the classifier head and leave the encoder weights alone (```--freeze```)
 * Classify based on a token embedding instead of the CLS embedding (```--token``` -- requires the input to have xml-style tags (<e>, </e>) around the tokens of interest)
@@ -65,16 +80,8 @@ To demo the negation API:
 #### Setup variables
 ```
 >>> import requests
->>> init_url = 'http://hostname:8000/negation/initialize'  ## Replace hostname with your host name
 >>> process_url = 'http://hostname:8000/negation/process'  ## Replace hostname with your host name
 ```
-
-#### Load the model
-```
->>> r = requests.post(init_url)
->>> r.status_code
-```
-should return ```200```
 
 #### Prepare the document
 ```
@@ -88,9 +95,9 @@ should return ```200```
 >>> r = requests.post(process_url, json=doc)
 >>> r.json()
 ```
-Output: {'statuses': [-1, -1, -1, 1]}
+Output: {'statuses': [-1, -1, 1, 1]}
 
-The model thinks only one of the entities is negated (anosmia). It missed "nausea" for some reason.
+The model correctly classifies both nausea and anosmia as negated.
 
 ### Temporal API (End-to-end temporal information extraction)
 To demo the temporal API:
@@ -101,15 +108,8 @@ To demo the temporal API:
 ```
 >>> import requests
 >>> from pprint import pprint
->>> init_url = 'http://hostname:8000/temporal/initialize'  ## Replace hostname with your host name
 >>> process_url = 'http://hostname:8000/temporal/process_sentence'  ## Replace hostname with your host name
 ```
-#### Load the model
-```
->>> r = requests.post(init_url)
->>> r.status_code
-```
-should return 200
 
 #### Prepare and process the document
 ```
