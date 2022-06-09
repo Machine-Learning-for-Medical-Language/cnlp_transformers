@@ -2,6 +2,7 @@ import os
 import random
 from os.path import basename, dirname
 import time
+from abc import ABC, abstractmethod
 import logging
 import json
 
@@ -116,7 +117,35 @@ def cnlp_compute_metrics(task_name, preds, labels):
     else:
         raise Exception('There is no metric defined for this task in function cnlp_compute_metrics()')
 
-class CnlpProcessor(DataProcessor):
+
+class CnlpBaseProcessor(DataProcessor, ABC):
+    @property
+    @abstractmethod
+    def relations(self) -> bool:
+        pass
+
+    @property
+    @abstractmethod
+    def sequence(self) -> bool:
+        pass
+
+    @abstractmethod
+    def get_labels(self):
+        pass
+
+    @abstractmethod
+    def get_one_score(self, results):
+        pass
+
+    @abstractmethod
+    def get_num_tasks(self):
+        pass
+
+
+class CnlpProcessor(CnlpBaseProcessor, ABC):
+    """
+    Abstract base class for single-task processors
+    """
     def __init__(self, downsampling={}):
         super().__init__()
         self.downsampling = downsampling
@@ -142,7 +171,7 @@ class CnlpProcessor(DataProcessor):
         """See base class."""
         return self._create_examples(self._read_tsv(os.path.join(data_dir, "test.tsv")), "test")
 
-    def _create_examples(self, lines, set_type, sequence=False, relations=False):
+    def _create_examples(self, lines, set_type):
         """Creates examples for the training, dev and test sets."""
         test_mode = set_type == "test"
         examples = []
@@ -157,9 +186,9 @@ class CnlpProcessor(DataProcessor):
                     text_a = '\t'.join(line[0:])
                 label = None
             else:
-                if sequence:
+                if self.sequence:
                     label = line[0].split(' ')
-                elif relations:
+                elif self.relations:
                     if line[0].lower() == 'none':
                         label = []
                     else:
@@ -168,7 +197,7 @@ class CnlpProcessor(DataProcessor):
                     label = line[0]
                 text_a = '\t'.join(line[1:])
 
-            if set_type=='train' and not sequence and not relations and label in self.downsampling:
+            if set_type=='train' and not self.sequence and not self.relations and label in self.downsampling:
                 dart = random.random()
                 # if downsampling is set to 0.1 then sample 10% of those instances.
                 # so if our randomly generated number is bigger than our downsampling rate
@@ -181,9 +210,16 @@ class CnlpProcessor(DataProcessor):
     def get_num_tasks(self):
         return 1
 
-class LabeledSentenceProcessor(CnlpProcessor):
-    def _create_examples(self, lines, set_type):
-        return super()._create_examples(lines, set_type, sequence=False)
+
+###############################
+# Labeled sentence processors #
+###############################
+class LabeledSentenceProcessor(CnlpProcessor, ABC):
+    """
+    Abstract base class for labeled sentence processors
+    """
+    sequence = False
+    relations = False
 
     def get_one_score(self, results):
         return results['f1'].mean()
@@ -312,9 +348,17 @@ class CovidProcessor(LabeledSentenceProcessor):
     def get_one_score(self, results):
         return results['f1'][1]
 
-class RelationProcessor(CnlpProcessor):
-    def _create_examples(self, lines, set_type):
-        return super()._create_examples(lines, set_type, relations=True)
+
+#######################
+# Relation processors #
+#######################
+class RelationProcessor(CnlpProcessor, ABC):
+    """
+    Abstract base class for relation processors
+    """
+    sequence = False
+    relations = True
+
 
 class TlinkRelationProcessor(RelationProcessor):
     def get_one_score(self, results):
@@ -326,9 +370,17 @@ class TlinkRelationProcessor(RelationProcessor):
         #return ['None', 'CONTAINS', 'NOTED-ON']
         # return ['None', 'CONTAINS', 'OVERLAP', 'BEFORE', 'BEGINS-ON', 'ENDS-ON']
 
-class SequenceProcessor(CnlpProcessor):
-    def _create_examples(self, lines, set_type):
-        return super()._create_examples(lines, set_type, sequence=True)
+
+#######################
+# Sequence processors #
+#######################
+class SequenceProcessor(CnlpProcessor, ABC):
+    """
+    Abstract base class for sequence processors
+    """
+    sequence = True
+    relations = False
+
 
 class TimexProcessor(SequenceProcessor):
     def get_one_score(self, results):
@@ -357,12 +409,38 @@ class DpheProcessor(SequenceProcessor):
                 "I-drug","I-dosage","I-duration","I-frequency","I-form","I-route","I-strength"
                 ]
 
-class MTLClassifierProcessor(DataProcessor):
-    def __init__(self):
-        pass
+
+##################################
+# Multi-task learning processors #
+##################################
+class MTLClassifierProcessor(CnlpBaseProcessor, ABC):
+    """
+    Abstract base class for multi-task learning classifier processors
+    """
+    sequence = False
+    relations = False
+
+    subset: set
+
+    def __init__(self, subset=None):
+        self.subset = set(subset) if subset is not None else set()
+
+    def get_example_from_tensor_dict(self, tensor_dict):
+        raise RuntimeError("get_example_from_tensor_dict not permitted for MTL tasks")
 
     def get_classifiers(self) -> List[str]:
         pass
+
+    def _get_classifiers(self, classifiers) -> List[str]:
+        if self.subset:
+            bad_clfs = self.subset - set(classifiers)
+            if bad_clfs:
+                logger.warning(f"Supplied {', '.join(bad_clfs)} which "
+                               f"{'is' if len(bad_clfs) == 1 else 'are'} "
+                               f"not in the list of classifiers")
+            subset_classifiers = [clf for clf in classifiers if clf in self.subset]
+            return subset_classifiers
+        return classifiers
 
     def get_default_label(self) -> str:
         return NotImplemented
@@ -397,8 +475,9 @@ class MTLClassifierProcessor(DataProcessor):
 
 class MimicRadiProcessor(MTLClassifierProcessor):
     def get_classifiers(self):
-        return ["3-", "3+","7-","7+"]
+        classifiers = ["3-", "3+", "7-", "7+"]
         # "3-": "Y", "3+": "N", "7-": "Y", "7+": "N"
+        return self._get_classifiers(classifiers)
 
     def get_labels(self):
         # return [ ["Y", "N"] for x in range(len(self.get_classifiers()))]
@@ -419,21 +498,18 @@ class MimicRadiProcessor(MTLClassifierProcessor):
         return 'Unlabeled'
 
 class i2b22008Processor(MTLClassifierProcessor):
-    def __init__(self, subset=None):
-        super().__init__()
-        self.subset = set(subset) if subset is not None else set()
+    """
+    Processor for the i2b2-2008 disease classification dataset
+    """
 
     def get_classifiers(self):
-        classifiers = ['Asthma', 'CAD', 'CHF', 'Depression', 'Diabetes', 'Gallstones', 'GERD', 'Gout', 'Hypertension',
-                'Hypertriglyceridemia', 'Hypercholesterolemia', 'OA', 'Obesity', 'OSA', 'PVD', 'Venous Insufficiency']
-        if self.subset:
-            if (bad_clfs := self.subset - set(classifiers)):
-                logger.warning(f"Supplied {', '.join(bad_clfs)} which "
-                               f"{'is' if len(bad_clfs) == 1 else 'are'} "
-                               f"not in the list of classifiers")
-            subset_classifiers = [clf for clf in classifiers if clf in self.subset]
-            return subset_classifiers
-        return classifiers
+        classifiers = [
+            'Asthma', 'CAD', 'CHF', 'Depression', 'Diabetes',
+            'Gallstones', 'GERD', 'Gout', 'Hypertension',
+            'Hypertriglyceridemia', 'Hypercholesterolemia',
+            'OA', 'Obesity', 'OSA', 'PVD', 'Venous Insufficiency'
+        ]
+        return self._get_classifiers(classifiers)
 
     def get_labels(self):
         # return [ ["Unlabeled", "Y", "N", "Q", "U"] for x in range(len(self.get_classifiers()))]
