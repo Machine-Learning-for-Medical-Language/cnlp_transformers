@@ -1,19 +1,13 @@
 import os
 import random
-from os.path import basename, dirname
-import time
 from abc import ABC, abstractmethod
 import logging
 import json
 
-from dataclasses import dataclass, field
-from typing import Callable, Dict, Optional, List, Union
+from typing import List
 from transformers.data.processors.utils import DataProcessor, InputExample
-import torch
-from torch.utils.data.dataset import Dataset
-from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.data.metrics import simple_accuracy
-from sklearn.metrics import matthews_corrcoef, f1_score, recall_score, precision_score
+from sklearn.metrics import f1_score, recall_score, precision_score
 import numpy as np
 from seqeval.metrics import f1_score as seq_f1, classification_report as seq_cls
 
@@ -30,10 +24,10 @@ def tagging_metrics(task_name, preds, labels):
     preds = preds[pred_inds]
     labels = labels[pred_inds]
 
-    pred_seq = [ label_set[x] for x in preds]
-    label_seq = [ label_set[x] for x in labels]
+    pred_seq = [label_set[x] for x in preds]
+    label_seq = [label_set[x] for x in labels]
 
-    num_correct = (preds==labels).sum()
+    num_correct = (preds == labels).sum()
 
     acc = num_correct / len(preds)
     f1 = f1_score(labels, preds, average=None)
