@@ -23,7 +23,7 @@ import os
 from os.path import basename, dirname
 import sys
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Optional, List, Union
+from typing import Callable, Dict, Optional, List, Union, Type
 from filelock import FileLock
 import time
 import tempfile
@@ -48,7 +48,7 @@ from transformers.trainer_pt_utils import get_parameter_names
 from transformers.file_utils import hf_bucket_url, CONFIG_NAME
 
 from .cnlp_processors import cnlp_processors, cnlp_output_modes, cnlp_compute_metrics, \
-    OutputMode, i2b22008Processor
+    OutputMode, MTLClassifierProcessor
 from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
 
 from .CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
@@ -256,11 +256,11 @@ def main(json_file=None, json_obj=None):
         for task_ind, task_name in enumerate(data_args.task_name):
             if task_name in multitask_subsets:
                 this_task_subset: Optional[List[str]] = multitask_subsets.get(task_name)
-                # TODO: generalize
-                task_name = f'{task_name}_{this_task_subset[0]}'
-                cnlp_processors[task_name] = lambda: i2b22008Processor(this_task_subset)
-                cnlp_output_modes[task_name] = OutputMode.MTL
-                data_args.task_name[task_ind] = task_name
+                subset_task_name = f'{task_name}_{",".join(this_task_subset)}'
+                processor_cls: Type[MTLClassifierProcessor] = cnlp_processors[task_name]
+                cnlp_processors[subset_task_name] = lambda: processor_cls(this_task_subset)
+                cnlp_output_modes[subset_task_name] = OutputMode.MTL
+                data_args.task_name[task_ind] = subset_task_name
 
     if (
         os.path.exists(training_args.output_dir)
@@ -303,9 +303,7 @@ def main(json_file=None, json_obj=None):
         relations = []
         for task_name in data_args.task_name:
             processor = cnlp_processors[task_name]()
-            if processor.get_num_tasks() > 1 or isinstance(processor, i2b22008Processor):
-                # if a subset of processors was specified for this task, retrieve it;
-                #  otherwise, pass subset=None for all processors
+            if cnlp_output_modes[task_name] == OutputMode.MTL:
                 for subtask_num in range(processor.get_num_tasks()):
                     task_names.append(task_name + "-" + processor.get_classifiers()[subtask_num])
                     num_labels.append(len(processor.get_labels()))
