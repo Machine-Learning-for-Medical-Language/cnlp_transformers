@@ -191,7 +191,7 @@ def cnlp_convert_examples_to_features(
     max_length: Optional[int] = None,
     task=None,
     label_list=None,
-    output_mode=None,
+    output_mode: Optional[OutputMode] = None,
     token_classify=False,
     inference=False,
     hierarchical=False,
@@ -216,7 +216,7 @@ def cnlp_convert_examples_to_features(
             logger.info("Using label list %s for task %s" % (label_list, task))
         if output_mode is None:
             output_mode = cnlp_output_modes[task]
-            logger.info("Using output mode %s for task %s" % (output_mode, task))
+            logger.info("Using output mode %s for task %s" % (output_mode.name, task))
 
     label_map = {label: i for i, label in enumerate(label_list)}
 
@@ -232,7 +232,7 @@ def cnlp_convert_examples_to_features(
                 logger.error('Error with example %s' % (example.guid))
                 raise Exception()
 
-        elif output_mode == "regression":
+        elif output_mode == OutputMode.REGRESSION:
             return float(example.label)
         elif output_mode == OutputMode.TAGGING:
             return [ label_map[label] for label in example.label]

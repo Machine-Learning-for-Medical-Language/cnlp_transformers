@@ -30,6 +30,8 @@ from transformers import (
 from transformers.data.processors.utils import InputFeatures, InputExample
 from torch.utils.data.dataset import Dataset
 import numpy as np
+
+from cnlpt.cnlp_processors import OutputMode
 from .cnlp_rest import initialize_cnlpt_model
 from ..cnlp_data import cnlp_convert_examples_to_features
 from ..CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
@@ -108,7 +110,7 @@ class TemporalDocumentDataset(Dataset):
             tokenizer,
             max_length=max_length,
             label_list = labels,
-            output_mode='classification',
+            output_mode=OutputMode.CLASSIFICATION,
             inference=True
         )
         return cls(features)

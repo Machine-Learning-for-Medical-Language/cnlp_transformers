@@ -574,11 +574,12 @@ cnlp_processors = {
 }
 
 
-class OutputMode(Enum):
+class OutputMode(str, Enum):
     MTL = 'mtl'
     CLASSIFICATION = 'classification'
     TAGGING = 'tagging'
     RELEX = 'relations'
+    REGRESSION = 'regression'  # not currently used
 
 
 cnlp_output_modes = {

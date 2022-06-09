@@ -21,6 +21,8 @@ from torch.utils.data.dataset import Dataset
 # intra-library imports
 from ..CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
 from ..cnlp_data import cnlp_convert_examples_to_features
+from ..cnlp_processors import OutputMode
+
 
 class EntityDocument(BaseModel):
     ''' doc_text: The raw text of the document
@@ -54,7 +56,7 @@ class ClassificationDocumentDataset(Dataset):
             tokenizer,
             max_length=max_length,
             label_list = label_list,
-            output_mode='classification',
+            output_mode=OutputMode.CLASSIFICATION,
             inference=True
         )
         return cls(features, label_list)

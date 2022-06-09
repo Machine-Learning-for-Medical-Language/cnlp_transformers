@@ -629,7 +629,7 @@ def main(json_file=None, json_obj=None):
                 predictions = trainer.predict(test_dataset=eval_dataset).predictions
                 dataset_labels = eval_dataset.get_labels()
                 for task_ind, task_name in enumerate(task_names):
-                    if output_mode[task_ind] == classification:
+                    if output_mode[task_ind] == OutputMode.CLASSIFICATION:
                         task_predictions = np.argmax(predictions[task_ind], axis=1)
                         for index, item in enumerate(task_predictions):
                             if len(task_names) > len(dataset_labels):
@@ -638,7 +638,7 @@ def main(json_file=None, json_obj=None):
                                 subtask_ind = task_ind
                             item = dataset_labels[subtask_ind][item]
                             writer.write("Task %d (%s) - Index %d - %s\n" % (task_ind, task_name, index, item))
-                    elif output_mode[task_ind] == tagging:
+                    elif output_mode[task_ind] == OutputMode.TAGGING:
                         task_predictions = np.argmax(predictions[task_ind], axis=2)
                         task_labels = dataset_labels[task_ind]
                         for index, pred_seq in enumerate(task_predictions):
@@ -655,7 +655,7 @@ def main(json_file=None, json_obj=None):
 
                             entities = get_entities(chunk_labels)
                             writer.write('Task %d (%s) - Index %d: %s\n' % (task_ind, task_name, index, str(entities)))
-                    elif output_mode[task_ind] == relex:
+                    elif output_mode[task_ind] == OutputMode.RELEX:
                         task_predictions = np.argmax(predictions[task_ind], axis=3)
                         task_labels = dataset_labels[task_ind]
                         assert task_labels[0] == 'None', 'The first labeled relation category should always be "None" but for task %s it is %s' % (task_names[task_ind], task_labels[0])
@@ -681,7 +681,7 @@ def main(json_file=None, json_obj=None):
         # while for relations we can punt to the user to just write their own eval code.
         predictions = trainer.predict(test_dataset=test_dataset).predictions
         for task_ind, task_name in enumerate(task_names):
-            if output_mode[task_ind] == "classification":
+            if output_mode[task_ind] == OutputMode.CLASSIFICATION:
                 task_predictions = np.argmax(predictions[task_ind], axis=1)
             else:
                 raise NotImplementedError('Writing predictions is not implemented for this output_mode!')
