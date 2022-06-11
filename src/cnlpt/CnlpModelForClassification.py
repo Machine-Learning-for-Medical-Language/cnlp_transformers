@@ -1,3 +1,6 @@
+"""
+Module containing the CNLP transformer model.
+"""
 # from transformers.models.auto import  AutoModel, AutoConfig
 import copy
 import inspect
@@ -98,10 +101,39 @@ class RepresentationProjectionLayer(nn.Module):
 
 
 class CnlpConfig(PretrainedConfig):
+    """
+    The config class for :class:`CnlpModelForClassification`.
+
+    :param encoder_name: the encoder name to use with :meth:`transformers.AutoConfig.from_pretrained`
+    :param typing.Optional[str] finetuning_task: TODO define
+    :param typing.List[int] num_labels_list: the number of labels for each task
+    :param int layer: the index of the encoder layer to extract features from
+    :param bool tokens: TODO define
+    :param int num_rel_attention_heads: the number of features/attention heads to use in the NxN relation classifier
+    :param int rel_attention_head_dims: the number of parameters in each attention head in the NxN relation classifier
+    :param typing.List[bool] tagger: for each task, whether the task is a sequence tagging task
+    :param typing.List[bool] relations: for each task, whether the task is a relation extraction task
+    :param bool use_prior_tasks: whether to use the outputs from the previous tasks as additional inputs for subsequent tasks
+    :param int num_tokens: TODO define
+    :param \**kwargs: arguments for :class:`transformers.PretrainedConfig`
+    """
     model_type='cnlpt'
 
-    def __init__(self, encoder_name='roberta-base', finetuning_task=None, num_labels_list=[], layer=-1, tokens=False, num_rel_attention_heads=12, rel_attention_head_dims=64, tagger = [False], relations = [False], use_prior_tasks=False, num_tokens=-1,
-    **kwargs):
+    def __init__(
+        self,
+        encoder_name='roberta-base',
+        finetuning_task=None,
+        num_labels_list=[],
+        layer=-1,
+        tokens=False,
+        num_rel_attention_heads=12,
+        rel_attention_head_dims=64,
+        tagger = [False],
+        relations = [False],
+        use_prior_tasks=False,
+        num_tokens=-1,
+        **kwargs
+     ):
         super().__init__(**kwargs)
         # self.name_or_path='cnlpt'
         self.finetuning_task = finetuning_task
@@ -132,6 +164,18 @@ class CnlpConfig(PretrainedConfig):
 
 
 class CnlpModelForClassification(PreTrainedModel):
+    """
+    The CNLP transformer model.
+
+    :param typing.Optional[typing.List[float]] class_weights: if provided,
+        the weights to use for each task when computing the loss
+    :param float final_task_weight: the weight to use for the final task
+        when computing the loss; default 1.0.
+    :param float argument_regularization: if provided, the argument
+        regularization to use when computing the loss
+    :param bool freeze: whether to freeze the weights of the encoder
+    :param bool bias_fit: whether to fine-tune only the bias of the encoder
+    """
     base_model_prefix = 'cnlpt'
     config_class = CnlpConfig
 
@@ -243,6 +287,7 @@ class CnlpModelForClassification(PreTrainedModel):
             batch_size:
             seq_len:
             state:
+        :meta private:
         """
         if task_num_labels == 1:
             #  We are doing regression
@@ -299,6 +344,7 @@ class CnlpModelForClassification(PreTrainedModel):
             logits (`List[torch.FloatTensor]`): the computed logits of the batch.
             attention_mask (`torch.LongTensor`): the attention mask for the batch.
             state: the state dict containing the loss for the batch.
+        :meta private:
         """
         # standard e2e relation task -- two entity extractors and relation extractor.
         prob_no_rel = softmax(logits[2], dim=3)[:, :, :, 0]
@@ -371,11 +417,31 @@ class CnlpModelForClassification(PreTrainedModel):
         event_tokens=None,
     ):
         r"""
-        labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size,)`, `optional`, defaults to :obj:`None`):
-            Labels for computing the sequence classification/regression loss.
-            Indices should be in :obj:`[0, ..., config.num_labels - 1]`.
-            If :obj:`config.num_labels == 1` a regression loss is computed (Mean-Square loss),
-            If :obj:`config.num_labels > 1` a classification loss is computed (Cross-Entropy).
+        Forward method.
+
+        Args:
+            input_ids (`torch.LongTensor` of shape `(batch_size, sequence_len)`, *optional*):
+                A batch of chunked documents as tokenizer indices.
+            attention_mask (`torch.LongTensor` of shape `(batch_size, sequence_len)`, *optional*):
+                Attention masks for the batch.
+            token_type_ids (`torch.LongTensor` of shape `(batch_size, sequence_len)`, *optional*):
+                Token type IDs for the batch.
+            position_ids: (`torch.LongTensor` of shape `(batch_size, sequence_len)`, *optional*):
+                Position IDs for the batch.
+            head_mask (`torch.LongTensor` of shape `(num_heads,)` or `(num_layers, num_heads)`, *optional*):
+                Token encoder head mask.
+            inputs_embeds (`torch.FloatTensor` of shape `(batch_size, sequence_len, hidden_size)`, *optional*):
+                A batch of chunked documents as token embeddings.
+            labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
+                Labels for computing the sequence classification/regression loss.
+                Indices should be in :obj:`[0, ..., config.num_labels - 1]`.
+                If :obj:`config.num_labels == 1` a regression loss is computed (Mean-Square loss),
+                If :obj:`config.num_labels > 1` a classification loss is computed (Cross-Entropy).
+            output_attentions (`bool`, *optional*): Whether or not to return the attentions tensors of all attention layers.
+            output_hidden_states: not used.
+            event_tokens: TODO define
+
+        Returns: (`transformers.SequenceClassifierOutput`) the output of the model
         """
 
         kwargs = self.generalize_encoder_forward_kwargs(

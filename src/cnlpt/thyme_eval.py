@@ -1,3 +1,7 @@
+"""
+Module used for evaluating a model on THYME data.
+Not currently documented for public use.
+"""
 import os
 import sys
 import re

@@ -33,7 +33,7 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.napoleon',
     'sphinx.ext.intersphinx',
-    'sphinx_rtd_theme',
+    # 'sphinx_rtd_theme',  # Unset this comment for building locally
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -45,17 +45,23 @@ templates_path = ['_templates']
 exclude_patterns = []
 
 autodoc_class_signature = 'separated'
+autodoc_member_order = 'bysource'
 
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),
     'transformers': ('https://huggingface.co/docs/transformers', 'transformer_objects.inv'),
+    'numpy': ('https://numpy.org/doc/stable', None),
+    'torch': ('https://pytorch.org/docs/stable', None),
 }
+
+autodoc_typehints = 'none'
 
 # -- Options for HTML output -------------------------------------------------
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
+""" Unset this comment for building locally """
 # html_theme = 'sphinx_rtd_theme'
 
 # Add any paths that contain custom static files (such as style sheets) here,

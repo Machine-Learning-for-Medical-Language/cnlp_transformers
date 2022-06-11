@@ -22,7 +22,7 @@ import os
 from os.path import basename, dirname
 import sys
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Optional, List, Union
+from typing import Callable, Dict, Optional, List, Union, Any
 from filelock import FileLock
 import time
 import tempfile
@@ -69,7 +69,9 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CnlpTrainingArguments(TrainingArguments):
     """
-    Additional arguments specific to this class
+    Additional arguments specific to this class.
+    See all possible arguments in :class:`transformers.TrainingArguments`
+    or by passing the ``--help`` flag to this script.
     """
     evals_per_epoch: Optional[int] = field(
         default = -1, metadata={"help": "Number of times to evaluate and possibly save model per training epoch (allows for a lazy kind of early stopping)"}
@@ -91,6 +93,7 @@ class CnlpTrainingArguments(TrainingArguments):
 class ModelArguments:
     """
     Arguments pertaining to which model/config/tokenizer we are going to fine-tune from.
+    See all possible arguments by passing the ``--help`` flag to this script.
     """
     model: Optional[str] = field( default='cnlpt', 
         metadata={'help': "Model type", 'choices':cnlpt_models}
@@ -230,9 +233,21 @@ def is_pretrained_model(model_name):
     return False
 
 def main(json_file=None, json_obj=None):
-    # See all possible arguments in src/transformers/training_args.py
-    # or by passing the --help flag to this script.
-    # We now keep distinct sets of args, for a cleaner separation of concerns.
+    """
+    See all possible arguments in :class:`transformers.TrainingArguments`
+    or by passing the --help flag to this script.
+
+    We now keep distinct sets of args, for a cleaner separation of concerns.
+
+    :param typing.Optional[str] json_file: if passed, a path to a JSON file
+        to use as the model, data, and training arguments instead of
+        retrieving them from the CLI (mutually exclusive with ``json_obj``)
+    :param typing.Optional[dict] json_obj: if passed, a JSON dictionary
+        to use as the model, data, and training arguments instead of
+        retrieving them from the CLI (mutually exclusive with ``json_file``)
+    :rtype: typing.Dict[str, typing.Dict[str, typing.Any]]
+    :return: the evaluation results (will be empty if ``--do_eval`` not passed)
+    """
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, CnlpTrainingArguments))
 
     if json_file is not None and json_obj is not None:

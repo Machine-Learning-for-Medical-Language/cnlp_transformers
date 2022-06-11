@@ -4,4 +4,11 @@
 # The remainder of this file is compressed using zlib.
 transformers.HfArgumentParser py:class 1 internal/trainer_utils#$ -
 transformers.TrainingArguments py:class 1 main_classes/trainer#$ -
-transformers.training_args.TrainingArguments py:class 1 main_classes/trainer#$ -
+transformers.training_args.TrainingArguments py:class 1 main_classes/trainer#transformers.TrainingArguments -
+transformers.data.processors.utils.DataProcessor py:class 1 main_classes/processors#transformers.DataProcessor -
+transformers.DataProcessor py:class 1 main_classes/processors#$ -
+transformers.InputExample py:class 1 main_classes/processors#$ -
+transformers.data.processors.utils.InputExample py:class 1 main_classes/processors#transformers.InputExample -
+transformers.tokenization_utils.PreTrainedTokenizer py:class 1 main_classes/tokenizer#transformers.PreTrainedTokenizer -
+transformers.PretrainedConfig py:class 1 main_classes/configuration#$ -
+transformers.AutoConfig py:class 1 model_doc/auto#$ -
