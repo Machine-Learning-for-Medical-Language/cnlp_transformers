@@ -80,7 +80,8 @@ To rebuild the autodoc toctrees and the `transformers` Intersphinx
 mappings, run `build_doc_source.sh`.
 
 To build the docs locally for testing documentation changes before 
-uploading to readthedocs:
+uploading to readthedocs, first **uncomment lines 36 and 65 on 
+`docs/conf.py`,** then execute the following:
 
 ```sh
 $ cd docs
