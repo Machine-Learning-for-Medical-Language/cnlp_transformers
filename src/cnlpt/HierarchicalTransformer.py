@@ -1,3 +1,6 @@
+"""
+Module containing the Hierarchical Transformer module, adapted from Xin Su.
+"""
 import logging
 import copy
 import random
