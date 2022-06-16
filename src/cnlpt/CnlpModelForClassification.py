@@ -105,16 +105,15 @@ class CnlpConfig(PretrainedConfig):
     The config class for :class:`CnlpModelForClassification`.
 
     :param encoder_name: the encoder name to use with :meth:`transformers.AutoConfig.from_pretrained`
-    :param typing.Optional[str] finetuning_task: TODO define
+    :param typing.Optional[str] finetuning_task: the tasks for which this model is fine-tuned
     :param typing.List[int] num_labels_list: the number of labels for each task
     :param int layer: the index of the encoder layer to extract features from
-    :param bool tokens: TODO define
+    :param bool tokens: if true, sentence-level classification is done based on averaged token embeddings for token(s) surrounded by <e> </e> special tokens
     :param int num_rel_attention_heads: the number of features/attention heads to use in the NxN relation classifier
     :param int rel_attention_head_dims: the number of parameters in each attention head in the NxN relation classifier
     :param typing.List[bool] tagger: for each task, whether the task is a sequence tagging task
     :param typing.List[bool] relations: for each task, whether the task is a relation extraction task
     :param bool use_prior_tasks: whether to use the outputs from the previous tasks as additional inputs for subsequent tasks
-    :param int num_tokens: TODO define
     :param \**kwargs: arguments for :class:`transformers.PretrainedConfig`
     """
     model_type='cnlpt'
@@ -131,7 +130,6 @@ class CnlpConfig(PretrainedConfig):
         tagger = [False],
         relations = [False],
         use_prior_tasks=False,
-        num_tokens=-1,
         **kwargs
      ):
         super().__init__(**kwargs)
@@ -160,7 +158,6 @@ class CnlpConfig(PretrainedConfig):
                                  f' the chosen encoder differs from the BERT/RoBERTa'
                                  f' API and the DistilBERT API. Encoders with different'
                                  f' APIs are not yet supported (#35).')
-        self.num_tokens = num_tokens
 
 
 class CnlpModelForClassification(PreTrainedModel):
@@ -439,7 +436,7 @@ class CnlpModelForClassification(PreTrainedModel):
                 If :obj:`config.num_labels > 1` a classification loss is computed (Cross-Entropy).
             output_attentions (`bool`, *optional*): Whether or not to return the attentions tensors of all attention layers.
             output_hidden_states: not used.
-            event_tokens: TODO define
+            event_tokens: a mask defining which tokens in the input are to be averaged for input to classifier head; only used when self.tokens==True.
 
         Returns: (`transformers.SequenceClassifierOutput`) the output of the model
         """

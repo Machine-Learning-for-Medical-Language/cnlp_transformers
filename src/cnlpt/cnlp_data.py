@@ -221,7 +221,6 @@ def cnlp_convert_examples_to_features(
     task: str = None,
     label_list: Optional[List[str]] = None,
     output_mode: Optional[str] = None,
-    token_classify: bool = False,
     inference: bool = False,
     hierarchical: bool = False,
     chunk_len: int = -1,
@@ -247,8 +246,7 @@ def cnlp_convert_examples_to_features(
     :param typing.Optional[str] output_mode: the output mode for this task.
         If not provided explicitly, it will be retrieved from
         :data:`cnlpt.cnlp_processors.cnlp_output_modes`.
-    :param bool token_classify: TODO define
-    :param bool inference: TODO define
+    :param bool inference: whether we're doing training or inference only -- if inference mode the labels associated with examples can't be trusted.
     :param bool hierarchical: whether to structure the data for the hierarchical
         model (:class:`cnlpt.HierarchicalTransformer.HierarchicalModel`)
     :param int chunk_len: for the hierarchical model, the length of each
