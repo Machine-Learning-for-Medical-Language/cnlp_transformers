@@ -19,7 +19,7 @@
 import dataclasses
 import logging
 import os
-from os.path import basename, dirname
+from os.path import basename, dirname, join, exists
 import sys
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Optional, List, Union, Any
@@ -364,12 +364,20 @@ def main(json_file=None, json_obj=None):
                                       num_filters=model_args.cnn_num_filters,
                                       filters=model_args.cnn_filter_sizes,
                                       )
+        # Check if the caller specified a saved model to load (e.g., for an inference-only run)
+        model_path = join(model_args.encoder_name, 'pytorch_model.bin')
+        if exists(model_path):
+            model.load_state_dict(torch.load(model_path))
     elif model_name == 'lstm':
         model = LstmSentenceClassifier(len(tokenizer),
                                        num_labels_list=num_labels,
                                        embed_dims=model_args.lstm_embed_dim,
                                        hidden_size=model_args.lstm_hidden_size,
                                        )
+        # Check if the caller specified a saved model to load (e.g., for an inference-only run)
+        model_path = join(model_args.encoder_name, 'pytorch_model.bin')
+        if exists(model_path):
+            model.load_state_dict(torch.load(model_path))
     elif model_name == 'hier':
         # encoder_config = AutoConfig.from_pretrained(
         #     model_args.config_name if model_args.config_name else model_args.encoder_name,
@@ -567,12 +575,12 @@ def main(json_file=None, json_obj=None):
 
             if not model is None:
                 if not hasattr(model, 'best_score') or one_score > model.best_score:
-                    if pretrained:
-                        trainer.save_model()
                     # For convenience, we also re-save the tokenizer to the same directory,
                     # so that you can share your model easily on huggingface.co/models =)
                     if trainer.is_world_process_zero():
-                        tokenizer.save_pretrained(training_args.output_dir)
+                        if training_args.do_train:
+                            trainer.save_model()
+                            tokenizer.save_pretrained(training_args.output_dir)
                         for task_ind,task_name in enumerate(metrics):
                             with open(output_eval_file, "w") as writer:
                                 logger.info("***** Eval results for task %s *****" % (task_name))
@@ -602,12 +610,11 @@ def main(json_file=None, json_obj=None):
         )
 
         if not hasattr(model, 'best_score'):
-            if pretrained:
+            # For convenience, we also re-save the tokenizer to the same directory,
+            # so that you can share your model easily on huggingface.co/models =)
+            if trainer.is_world_process_zero():
                 trainer.save_model()
-                # For convenience, we also re-save the tokenizer to the same directory,
-                # so that you can share your model easily on huggingface.co/models =)
-                if trainer.is_world_process_zero():
-                    tokenizer.save_pretrained(training_args.output_dir)
+                tokenizer.save_pretrained(training_args.output_dir)
 
     # Evaluation
     eval_results = {}
