@@ -10,8 +10,9 @@ This library is _not_ intended to serve as a place for clinical NLP applications
 
 ## Install
 
-**Note: due to a dependency issue, this package only supports Python 
-3.7 and 3.8. We recommend Python 3.8.**
+**Note: due to some dependency issues, this package does not officially
+support macOS on Apple Silicon. If you want to install it on Apple Silicon,
+you are on your own; we unofficially recommend trying it with Python 3.10.**
 
 When installing the library's dependencies, `pip` will probably install 
 PyTorch with CUDA 10.2 support by default. If you would like to run the 

@@ -19,10 +19,10 @@
 import dataclasses
 import logging
 import os
-from os.path import basename, dirname
+from os.path import basename, dirname, join, exists
 import sys
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Optional, List, Union
+from typing import Callable, Dict, Optional, List, Union, Any
 from filelock import FileLock
 import time
 import tempfile
@@ -69,7 +69,9 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CnlpTrainingArguments(TrainingArguments):
     """
-    Additional arguments specific to this class
+    Additional arguments specific to this class.
+    See all possible arguments in :class:`transformers.TrainingArguments`
+    or by passing the ``--help`` flag to this script.
     """
     evals_per_epoch: Optional[int] = field(
         default = -1, metadata={"help": "Number of times to evaluate and possibly save model per training epoch (allows for a lazy kind of early stopping)"}
@@ -91,6 +93,7 @@ class CnlpTrainingArguments(TrainingArguments):
 class ModelArguments:
     """
     Arguments pertaining to which model/config/tokenizer we are going to fine-tune from.
+    See all possible arguments by passing the ``--help`` flag to this script.
     """
     model: Optional[str] = field( default='cnlpt', 
         metadata={'help': "Model type", 'choices':cnlpt_models}
@@ -230,9 +233,21 @@ def is_pretrained_model(model_name):
     return False
 
 def main(json_file=None, json_obj=None):
-    # See all possible arguments in src/transformers/training_args.py
-    # or by passing the --help flag to this script.
-    # We now keep distinct sets of args, for a cleaner separation of concerns.
+    """
+    See all possible arguments in :class:`transformers.TrainingArguments`
+    or by passing the --help flag to this script.
+
+    We now keep distinct sets of args, for a cleaner separation of concerns.
+
+    :param typing.Optional[str] json_file: if passed, a path to a JSON file
+        to use as the model, data, and training arguments instead of
+        retrieving them from the CLI (mutually exclusive with ``json_obj``)
+    :param typing.Optional[dict] json_obj: if passed, a JSON dictionary
+        to use as the model, data, and training arguments instead of
+        retrieving them from the CLI (mutually exclusive with ``json_file``)
+    :rtype: typing.Dict[str, typing.Dict[str, typing.Any]]
+    :return: the evaluation results (will be empty if ``--do_eval`` not passed)
+    """
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, CnlpTrainingArguments))
 
     if json_file is not None and json_obj is not None:
@@ -349,12 +364,20 @@ def main(json_file=None, json_obj=None):
                                       num_filters=model_args.cnn_num_filters,
                                       filters=model_args.cnn_filter_sizes,
                                       )
+        # Check if the caller specified a saved model to load (e.g., for an inference-only run)
+        model_path = join(model_args.encoder_name, 'pytorch_model.bin')
+        if exists(model_path):
+            model.load_state_dict(torch.load(model_path))
     elif model_name == 'lstm':
         model = LstmSentenceClassifier(len(tokenizer),
                                        num_labels_list=num_labels,
                                        embed_dims=model_args.lstm_embed_dim,
                                        hidden_size=model_args.lstm_hidden_size,
                                        )
+        # Check if the caller specified a saved model to load (e.g., for an inference-only run)
+        model_path = join(model_args.encoder_name, 'pytorch_model.bin')
+        if exists(model_path):
+            model.load_state_dict(torch.load(model_path))
     elif model_name == 'hier':
         # encoder_config = AutoConfig.from_pretrained(
         #     model_args.config_name if model_args.config_name else model_args.encoder_name,
@@ -552,12 +575,12 @@ def main(json_file=None, json_obj=None):
 
             if not model is None:
                 if not hasattr(model, 'best_score') or one_score > model.best_score:
-                    if pretrained:
-                        trainer.save_model()
                     # For convenience, we also re-save the tokenizer to the same directory,
                     # so that you can share your model easily on huggingface.co/models =)
                     if trainer.is_world_process_zero():
-                        tokenizer.save_pretrained(training_args.output_dir)
+                        if training_args.do_train:
+                            trainer.save_model()
+                            tokenizer.save_pretrained(training_args.output_dir)
                         for task_ind,task_name in enumerate(metrics):
                             with open(output_eval_file, "w") as writer:
                                 logger.info("***** Eval results for task %s *****" % (task_name))
@@ -587,12 +610,11 @@ def main(json_file=None, json_obj=None):
         )
 
         if not hasattr(model, 'best_score'):
-            if pretrained:
+            # For convenience, we also re-save the tokenizer to the same directory,
+            # so that you can share your model easily on huggingface.co/models =)
+            if trainer.is_world_process_zero():
                 trainer.save_model()
-                # For convenience, we also re-save the tokenizer to the same directory,
-                # so that you can share your model easily on huggingface.co/models =)
-                if trainer.is_world_process_zero():
-                    tokenizer.save_pretrained(training_args.output_dir)
+                tokenizer.save_pretrained(training_args.output_dir)
 
     # Evaluation
     eval_results = {}

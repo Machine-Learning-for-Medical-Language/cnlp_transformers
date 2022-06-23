@@ -1,3 +1,37 @@
+"""
+Module containing processor classes, evaluation metrics, and output
+modes for tasks defined in the library.
+
+Add custom classes here to add new tasks to the library with the following steps:
+
+#. Create a unique ``task_name`` for your task.
+#. :data:`cnlp_output_modes` -- Add a mapping from a task name to a
+   task type. Currently supported task types are sentence classification,
+   tagging, relation extraction, and multi-task sentence classification.
+#. Processor class -- Create a subclass of :class:`transformers.DataProcessor`
+   for your data source. There are multiple examples to base off of,
+   including intermediate abstractions like :class:`LabeledSentenceProcessor`,
+   :class:`RelationProcessor`, :class:`SequenceProcessor`, that simplify
+   the implementation.
+#. :data:`cnlp_processors` -- Add a mapping from your task name to the
+   "processor" class you created in the last step.
+#. (Optional) -- Modify :func:`cnlp_compute_metrics` to add
+   you task. If your task is classification a reasonable default will
+   be used so this step would be optional.
+
+.. data:: cnlp_processors
+
+    Mapping from task names to processor classes
+
+    :type: typing.Dict[str, transformers.DataProcessor]
+
+.. data:: cnlp_output_modes
+
+    Mapping from task names to output modes
+
+    :type: typing.Dict[str, str]
+
+"""
 import os
 import random
 from os.path import basename, dirname
@@ -6,7 +40,7 @@ import logging
 import json
 
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Optional, List, Union
+from typing import Callable, Dict, Optional, List, Union, Any
 from transformers.data.processors.utils import DataProcessor, InputExample
 import torch
 from torch.utils.data.dataset import Dataset
@@ -14,11 +48,34 @@ from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.data.metrics import simple_accuracy
 from sklearn.metrics import matthews_corrcoef, f1_score, recall_score, precision_score
 import numpy as np
+import numpy  # for Sphinx
 from seqeval.metrics import f1_score as seq_f1, classification_report as seq_cls
 
 logger = logging.getLogger(__name__)
 
 def tagging_metrics(task_name, preds, labels):
+    """
+    One of the metrics functions for use in :func:`cnlp_compute_metrics`.
+
+    Generates evaluation metrics for sequence tagging tasks.
+
+    Ignores tags for which the true label is -100.
+
+    The returned dict is structured as follows::
+
+        {
+            'acc': accuracy
+            'token_f1': token-wise F1 score
+            'f1': seqeval F1 score
+            'report': seqeval classification report
+        }
+
+    :param str task_name: the task name used to index into cnlp_processors
+    :param numpy.ndarray preds: the predicted labels from the model
+    :param numpy.ndarray labels: the true labels
+    :rtype: typing.Dict[str, typing.Any]
+    :return: a dictionary containing evaluation metrics
+    """
     processor = cnlp_processors[task_name]()
     label_set = processor.get_labels()
 
@@ -40,6 +97,28 @@ def tagging_metrics(task_name, preds, labels):
     return {'acc': acc, 'token_f1': fix_np_types(f1), 'f1': fix_np_types(seq_f1([label_seq], [pred_seq])), 'report':'\n'+seq_cls([label_seq], [pred_seq])}
 
 def relation_metrics(task_name, preds, labels):
+    """
+    One of the metrics functions for use in :func:`cnlp_compute_metrics`.
+
+    Generates evaluation metrics for relation extraction tasks.
+
+    Ignores tags for which the true label is -100.
+
+    The returned dict is structured as follows::
+
+        {
+            'f1': F1 score
+            'acc': accuracy
+            'recall': recall
+            'precision': precision
+        }
+
+    :param str task_name: the task name used to index into cnlp_processors
+    :param numpy.ndarray preds: the predicted labels from the model
+    :param numpy.ndarray labels: the true labels
+    :rtype: typing.Dict[str, typing.Any]
+    :return: a dictionary containing evaluation metrics
+    """
 
     processor = cnlp_processors[task_name]()
     label_set = processor.get_labels()
@@ -61,16 +140,39 @@ def relation_metrics(task_name, preds, labels):
     return {'f1': fix_np_types(f1_report), 'acc': acc, 'recall':fix_np_types(recall), 'precision':fix_np_types(precision) }
 
 def fix_np_types(input_variable):
-    ''' in the mtl classification setting, f1 is an array, and when the HF library
-        tries to write out the trainig history to a json file it will throw an error.
-        Here, we just check whether it's an numpy array and if so convert to a list.
-    '''
+    """
+    In the mtl classification setting, f1 is an array, and when the HF library
+    tries to write out the training history to a json file it will throw an error.
+    Here, we just check whether it's a numpy array and if so convert to a list.
+
+    :meta private:
+    """
     if isinstance(input_variable, np.ndarray):
         return list(input_variable)
     
     return input_variable
 
 def acc_and_f1(preds, labels):
+    """
+    One of the metrics functions for use in :func:`cnlp_compute_metrics`.
+
+    Generates evaluation metrics for generic tasks.
+
+    The returned dict is structured as follows::
+
+        {
+            'acc': accuracy
+            'f1': F1 score
+            'acc_and_f1': mean of accuracy and F1 score
+            'recall': recall
+            'precision': precision
+        }
+
+    :param numpy.ndarray preds: the predicted labels from the model
+    :param numpy.ndarray labels: the true labels
+    :rtype: typing.Dict[str, typing.Any]
+    :return: a dictionary containing evaluation metrics
+    """
     acc = simple_accuracy(preds, labels)
     recall = recall_score(y_true=labels, y_pred=preds, average=None)
     precision = precision_score(y_true=labels, y_pred=preds, average=None)
@@ -87,6 +189,20 @@ def acc_and_f1(preds, labels):
 tasks = {'polarity', 'dtr', 'alink', 'alinkx', 'tlink'}
 
 def cnlp_compute_metrics(task_name, preds, labels):
+    """
+    Function that defines and computes the metrics used for each task.
+
+    When adding a task definition to this file, add a branch to this
+    function defining what its evaluation metric invocation should be.
+    If the new task is a simple classification task, a sensible default
+    is defined; falling back on this will trigger a warning.
+
+    :param str task_name: the task name used to index into cnlp_processors
+    :param numpy.ndarray preds: the predicted labels from the model
+    :param numpy.ndarray labels: the true labels
+    :rtype: typing.Dict[str, typing.Any]
+    :return: a dictionary containing evaluation metrics
+    """
     assert len(preds) == len(
         labels
     ), f"Predictions and labels have mismatched lengths {len(preds)} and {len(labels)}"
@@ -117,12 +233,30 @@ def cnlp_compute_metrics(task_name, preds, labels):
         raise Exception('There is no metric defined for this task in function cnlp_compute_metrics()')
 
 class CnlpProcessor(DataProcessor):
-    def __init__(self, downsampling={}):
+    """
+    Base class for single-task dataset processors
+
+    :param typing.Optional[typing.Dict[str, float]] downsampling: downsampling values for class balance
+    """
+    def __init__(self, downsampling=None):
         super().__init__()
+        if downsampling is None:
+            downsampling = {}
         self.downsampling = downsampling
 
+    def get_one_score(self, results):
+        """
+        Return a single value to use as the score for
+        selecting the best model epoch after training.
+
+        :param typing.Dict[str, typing.Any] results: the dictionary of evaluation
+            metrics for the current epoch
+        :return: a single value; it needs to be of a type that can be
+            ordered (preferably, but not necessarily, a float).
+        """
+        raise NotImplementedError()
+
     def get_example_from_tensor_dict(self, tensor_dict):
-        """See base class."""
         return InputExample(
             tensor_dict["idx"].numpy(),
             tensor_dict["sentence"].numpy().decode("utf-8"),
@@ -131,19 +265,40 @@ class CnlpProcessor(DataProcessor):
         )
 
     def get_train_examples(self, data_dir):
-        """See base class."""
         return self._create_examples(self._read_tsv(os.path.join(data_dir, "train.tsv")), "train")
 
     def get_dev_examples(self, data_dir):
-        """See base class."""
         return self._create_examples(self._read_tsv(os.path.join(data_dir, "dev.tsv")), "dev")
 
     def get_test_examples(self, data_dir):
-        """See base class."""
         return self._create_examples(self._read_tsv(os.path.join(data_dir, "test.tsv")), "test")
 
     def _create_examples(self, lines, set_type, sequence=False, relations=False):
-        """Creates examples for the training, dev and test sets."""
+        """
+        **This is an internal function, but it is included in the documentation
+        to illustrate the input format for single-task datasets.**
+
+        ----
+
+        Creates examples for the training, dev and test sets from a
+        headingless TSV file with one of the following structures:
+
+        * For sequence classification::
+
+            label\ttext
+
+        * For sequence tagging::
+
+            tag1 tag2 ... tagN\ttext
+
+        * For relation tagging::
+
+            <source1,target1> , <source2,target2> , ... , <sourceN,targetN>\ttext
+
+        TODO: check that these formats are correct
+
+        :meta public:
+        """
         test_mode = set_type == "test"
         examples = []
         for (i, line) in enumerate(lines):
@@ -182,6 +337,9 @@ class CnlpProcessor(DataProcessor):
         return 1
 
 class LabeledSentenceProcessor(CnlpProcessor):
+    """
+    Base class for labeled sentence dataset processors
+    """
     def _create_examples(self, lines, set_type):
         return super()._create_examples(lines, set_type, sequence=False)
 
@@ -191,7 +349,6 @@ class LabeledSentenceProcessor(CnlpProcessor):
 class NegationProcessor(LabeledSentenceProcessor):
     """ Processor for the negation datasets """
     def get_labels(self):
-        """See base class."""
         return ["-1", "1"]
 
     def get_one_score(self, results):
@@ -200,7 +357,6 @@ class NegationProcessor(LabeledSentenceProcessor):
 class UncertaintyProcessor(LabeledSentenceProcessor):
     """ Processor for the negation datasets """
     def get_labels(self):
-        """See base class."""
         return ["-1", "1"]
 
     def get_one_score(self, results):
@@ -209,7 +365,6 @@ class UncertaintyProcessor(LabeledSentenceProcessor):
 class HistoryProcessor(LabeledSentenceProcessor):
     """ Processor for the negation datasets """
     def get_labels(self):
-        """See base class."""
         return ["-1", "1"]
 
     def get_one_score(self, results):
@@ -218,7 +373,6 @@ class HistoryProcessor(LabeledSentenceProcessor):
 class DtrProcessor(LabeledSentenceProcessor):
     """ Processor for DocTimeRel datasets """
     def get_labels(self):
-        """See base class."""
         return ["BEFORE", "OVERLAP", "BEFORE/OVERLAP", "AFTER"]
 
     def get_one_score(self, results):
@@ -229,7 +383,6 @@ class AlinkxProcessor(LabeledSentenceProcessor):
     The classifier version of the task is _given_ an event known to have some aspectual status, label that status."""
 
     def get_labels(self):
-        """See base class."""
         return ["None", "CONTINUES", "INITIATES", "REINITIATES", "TERMINATES"]
 
     def get_one_score(self, results):
@@ -239,7 +392,6 @@ class AlinkProcessor(LabeledSentenceProcessor):
     """Processor for an THYME ALINK dataset (links that describe change in temporal status of an event)
     The classifier version of the task is _given_ an event known to have some aspectual status, label that status."""
     def get_labels(self):
-        """See base class."""
         return ["CONTINUES", "INITIATES", "REINITIATES", "TERMINATES"]
 
     def get_one_score(self, results):
@@ -250,7 +402,6 @@ class ContainsProcessor(LabeledSentenceProcessor):
     two highlighted temporal entities (event or timex). NONE - no relation, CONTAINS - arg 1 contains arg2, 
     CONTAINS-1 - arg 2 contains arg 1"""
     def get_labels(self):
-        """See base class."""
         return ["NONE", "CONTAINS", "CONTAINS-1"]
 
 class TlinkProcessor(LabeledSentenceProcessor):
@@ -258,26 +409,23 @@ class TlinkProcessor(LabeledSentenceProcessor):
     two highlighted temporal entities (event or timex). NONE - no relation, CONTAINS - arg 1 contains arg2, 
     CONTAINS-1 - arg 2 contains arg 1"""
     def get_labels(self):
-        """See base class."""
         return ["BEFORE", "BEGINS-ON", "CONTAINS", "ENDS-ON", "OVERLAP" ]
 
     def get_one_score(self, results):
         return np.mean(results['f1'])
-    
+
 class TimeCatProcessor(LabeledSentenceProcessor):
-    """Processor for an THYME time expression dataset
+    """Processor for a THYME time expression dataset
     The classifier version of the task is _given_ a time class, label its time category (see labels below)."""
     def get_labels(self):
-        """See base class."""
         return ["DATE", "DOCTIME", "DURATION", "PREPOSTEXP", "QUANTIFIER", "SECTIONTIME", "SET", "TIME"]
 
     def get_one_score(self, results):
         return results['acc']
 
 class ContextualModalityProcessor(LabeledSentenceProcessor):
-    """Processor for a contexutal modality dataset """
+    """Processor for a contextual modality dataset """
     def get_labels(self):
-        """See base class."""
         return ["ACTUAL", "HYPOTHETICAL", "HEDGED", "GENERIC"]
 
     def get_one_score(self, results):
@@ -285,6 +433,7 @@ class ContextualModalityProcessor(LabeledSentenceProcessor):
         return np.mean(results['f1'][1:])
 
 class UciDrugSentimentProcessor(LabeledSentenceProcessor):
+    """Processor for the UCI Drug Review sentiment classification dataset"""
     def get_labels(self):
         return ['Low', 'Medium', 'High']
 
@@ -292,6 +441,7 @@ class UciDrugSentimentProcessor(LabeledSentenceProcessor):
         return np.mean(results['f1'])
 
 class Mimic_7_Processor(LabeledSentenceProcessor):
+    """TODO: docstring"""
     def get_labels(self):
         return ['7+', '7-']
 
@@ -299,6 +449,7 @@ class Mimic_7_Processor(LabeledSentenceProcessor):
         return np.mean(results['f1'])
 
 class Mimic_3_Processor(LabeledSentenceProcessor):
+    """TODO: docstring"""
     def get_labels(self):
         return ['3+', '3-']
 
@@ -306,6 +457,7 @@ class Mimic_3_Processor(LabeledSentenceProcessor):
         return np.mean(results['f1'])
 
 class CovidProcessor(LabeledSentenceProcessor):
+    """TODO: docstring"""
     def get_labels(self):
         return ['negative', 'positive']
     
@@ -313,10 +465,14 @@ class CovidProcessor(LabeledSentenceProcessor):
         return results['f1'][1]
 
 class RelationProcessor(CnlpProcessor):
+    """
+    Base class for relation extraction dataset processors
+    """
     def _create_examples(self, lines, set_type):
         return super()._create_examples(lines, set_type, relations=True)
 
 class TlinkRelationProcessor(RelationProcessor):
+    """TODO: docstring"""
     def get_one_score(self, results):
         # the 0th category is None
         return np.mean(results['f1'][1:])
@@ -327,10 +483,14 @@ class TlinkRelationProcessor(RelationProcessor):
         # return ['None', 'CONTAINS', 'OVERLAP', 'BEFORE', 'BEGINS-ON', 'ENDS-ON']
 
 class SequenceProcessor(CnlpProcessor):
+    """
+    Base class for sequence tagging dataset processors
+    """
     def _create_examples(self, lines, set_type):
         return super()._create_examples(lines, set_type, sequence=True)
 
 class TimexProcessor(SequenceProcessor):
+    """TODO: docstring"""
     def get_one_score(self, results):
         return results['f1']
 
@@ -340,6 +500,7 @@ class TimexProcessor(SequenceProcessor):
                 ]
 
 class EventProcessor(SequenceProcessor):
+    """TODO: docstring"""
     def get_one_score(self, results):
         return results['f1']
     
@@ -349,6 +510,7 @@ class EventProcessor(SequenceProcessor):
         # return ['B-EVENT', 'I-EVENT', 'O']
 
 class DpheProcessor(SequenceProcessor):
+    """TODO: docstring"""
     def get_one_score(self, results):
         return results['f1']
 
@@ -358,19 +520,94 @@ class DpheProcessor(SequenceProcessor):
                 ]
 
 class MTLClassifierProcessor(DataProcessor):
-    def __init__(self):
+    """
+    Base class for multi-task learning classification dataset processors
+    """
+
+    def get_classifiers(self):
+        """
+        Get the list of classification subtasks in this multi-task setting
+
+        :rtype: typing.List[str]
+        :return: a list of task names
+        """
+        return NotImplemented
+
+    def get_num_tasks(self):
+        """
+        Get the number of subtasks in this multi-task setting.
+
+        Equivalent to :obj:`len(self.get_classifiers())`.
+
+        :rtype: int
+        :return: the number of subtasks
+        """
+        return len(self.get_classifiers())
+
+    def get_classifier_id(self):
+        """
+        Get the classifier ID name used in building the GUIDs for the
+        :class:`transformers.InputExample` instances.
+
+        Not necessarily equal to the ``task_name`` used as keys for
+        :data:`cnlp_processors` and :data:`cnlp_output_modes`.
+
+        :rtype: str
+        :return: the value of the classifier ID
+        """
         pass
 
+    def get_default_label(self):
+        """
+        Get the default label to assign to unlabeled instances in the dataset.
+
+        :rtype: str
+        :return: the value of the default label
+        """
+        pass
+
+    def get_example_from_tensor_dict(self, tensor_dict):
+        """
+        Not used.
+        """
+        return RuntimeError("not implemented for MTL tasks")
+
     def get_train_examples(self, data_dir):
-        return self.get_json_examples(os.path.join(data_dir, 'training.json'), 'train')
+        return self._get_json_examples(os.path.join(data_dir, 'training.json'), 'train')
 
     def get_dev_examples(self, data_dir):
-        return self.get_json_examples(os.path.join(data_dir, 'dev.json'), 'dev')
+        return self._get_json_examples(os.path.join(data_dir, 'dev.json'), 'dev')
 
     def get_test_examples(self, data_dir):
-        return self.get_json_examples(os.path.join(data_dir, 'test.json'), 'test')
+        return self._get_json_examples(os.path.join(data_dir, 'test.json'), 'test')
 
-    def get_json_examples(self, fn, set_type):
+    def _get_json_examples(self, fn, set_type):
+        """
+        **This is an internal function, but it is included in the documentation
+        to illustrate the input format for MTL datasets.**
+
+        ----
+
+        Creates examples for the training, dev and test sets
+        from a JSON file with the following structure::
+
+            {
+                "<guid_1>": {
+                    "text": "<text>",
+                    "labels: {
+                        "<task_1>": "<label>",
+                        ...
+                    }
+                },
+                ...
+            }
+
+        :param str fn: the path to the dataset file to load
+        :param str set_type: the type of split the file contains (e.g. train, dev, test)
+        :rtype: typing.List[transformers.InputExample]
+        :return: the examples loaded from the file
+        :meta public:
+        """
         test_mode = set_type == "test"
         examples = []
 
@@ -387,6 +624,7 @@ class MTLClassifierProcessor(DataProcessor):
         return examples
 
 class MimicRadiProcessor(MTLClassifierProcessor):
+    """TODO: docstring"""
     def get_classifiers(self):
         return ["3-", "3+","7-","7+"]
         # "3-": "Y", "3+": "N", "7-": "Y", "7+": "N"
@@ -394,9 +632,6 @@ class MimicRadiProcessor(MTLClassifierProcessor):
     def get_labels(self):
         # return [ ["Y", "N"] for x in range(len(self.get_classifiers()))]
         return ["Y", "N"]
-    
-    def get_num_tasks(self):
-        return len(self.get_classifiers())
     
     def get_one_score(self, results):
         print(results)
@@ -410,6 +645,9 @@ class MimicRadiProcessor(MTLClassifierProcessor):
         return 'Unlabeled'
 
 class i2b22008Processor(MTLClassifierProcessor):
+    """
+    Processor for the i2b2-2008 disease classification dataset
+    """
     def get_classifiers(self):
         return ['Asthma', 'CAD', 'CHF', 'Depression', 'Diabetes', 'Gallstones', 'GERD', 'Gout', 'Hypertension',
                 'Hypertriglyceridemia', 'Hypercholesterolemia', 'OA', 'Obesity', 'OSA', 'PVD', 'Venous Insufficiency']
@@ -423,13 +661,14 @@ class i2b22008Processor(MTLClassifierProcessor):
     
     def get_classifier_id(self):
         return 'i2b2-2008'
-
-    def get_num_tasks(self):
-        return len(self.get_classifiers())
     
     def get_one_score(self, results):
         return np.mean(results['f1'][1:2])
 
+
+"""
+Add processor classes for new tasks here.
+"""
 cnlp_processors = {'polarity': NegationProcessor,
                    'uncertainty': UncertaintyProcessor,
                    'history': HistoryProcessor,
@@ -457,6 +696,10 @@ classification = 'classification'
 tagging = 'tagging'
 relex = 'relations'
 
+
+"""
+Add output modes for new tasks here.
+"""
 cnlp_output_modes = {'polarity': classification,
                 'uncertainty': classification,
                 'history': classification,

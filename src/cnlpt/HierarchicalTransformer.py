@@ -1,3 +1,6 @@
+"""
+Module containing the Hierarchical Transformer module, adapted from Xin Su.
+"""
 import logging
 import copy
 import random
@@ -303,10 +306,7 @@ class HierarchicalModel(CnlpModelForClassification):
             batch_size, num_chunks, chunk_len, embed_dim = inputs_embeds.shape
             flat_shape = (batch_size * num_chunks, chunk_len, embed_dim)
 
-        outputs = self.encoder(
-            input_ids.reshape(flat_shape[:3])
-            if input_ids is not None
-            else None,
+        kwargs = self.generalize_encoder_forward_kwargs(
             attention_mask=attention_mask.reshape(flat_shape[:3])
             if attention_mask is not None
             else None,
@@ -323,6 +323,13 @@ class HierarchicalModel(CnlpModelForClassification):
             output_attentions=output_attentions,
             output_hidden_states=True,
             return_dict=True,
+        )
+
+        outputs = self.encoder(
+            input_ids.reshape(flat_shape[:3])
+            if input_ids is not None
+            else None,
+            **kwargs
         )
 
         logits = []

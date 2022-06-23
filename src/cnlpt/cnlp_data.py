@@ -25,6 +25,9 @@ def list_field(default=None, metadata=None):
     return field(default_factory=lambda: default, metadata=metadata)
 
 class Split(Enum):
+    """
+    Enum representing the three data splits for model development.
+    """
     train = "train"
     dev = "dev"
     test = "test"
@@ -42,6 +45,7 @@ class InputFeatures:
             Usually  ``1`` for tokens that are NOT MASKED, ``0`` for MASKED (padded) tokens.
         token_type_ids: (Optional) Segment token indices to indicate first and second
             portions of the inputs. Only some models use them.
+        event_tokens: (Optional)
         label: (Optional) Label corresponding to the input. Int for classification problems,
             float for regression problems.
     """
@@ -70,6 +74,7 @@ class HierarchicalInputFeatures:
             Usually  ``1`` for tokens that are NOT MASKED, ``0`` for MASKED (padded) tokens.
         token_type_ids: (Optional) Segment token indices to indicate first and second
             portions of the inputs. Only some models use them.
+        event_tokens: (Optional)
         label: (Optional) Label corresponding to the input. Int for classification problems,
             float for regression problems.
     """
@@ -103,18 +108,16 @@ def cnlp_convert_features_to_hierarchical(
     Chunk an instance of InputFeatures into an instance of HierarchicalInputFeatures
     for the hierarchical model.
 
-    Args:
-        features: the old instance
-        chunk_len: the maximum length of a chunk
-        num_chunks: the maximum number of chunks in the instance
-        cls_id: the tokenizer's ID representing the CLS token
-        sep_id: the tokenizer's ID representing the SEP token
-        pad_id: the tokenizer's ID representing the PAD token
-        insert_empty_chunk_at_beginning: whether to insert an
-            empty chunk at the beginning of the instance
-
-    Returns:
-        an instance of `HierarchicalInputFeatures` containing the chunked instance
+    :param InputFeatures features: the old instance
+    :param int chunk_len: the maximum length of a chunk
+    :param int num_chunks: the maximum number of chunks in the instance
+    :param int cls_id: the tokenizer's ID representing the CLS token
+    :param int sep_id: the tokenizer's ID representing the SEP token
+    :param int pad_id: the tokenizer's ID representing the PAD token
+    :param bool insert_empty_chunk_at_beginning: whether to insert an
+        empty chunk at the beginning of the instance
+    :rtype: HierarchicalInputFeatures
+    :return: an instance of `HierarchicalInputFeatures` containing the chunked instance
     """
     # Get feature variables
     input_ids_, attention_mask_, token_type_ids_, event_tokens_, label_ = astuple(features)
@@ -139,17 +142,43 @@ def cnlp_convert_features_to_hierarchical(
     def pad_chunk(chunk, pad_type=pad_id):
         return chunk + [pad_type] * (chunk_len - len(chunk))
 
-    for i in range(0, len(input_ids_), chunk_len):
-        chunks.append(pad_chunk(input_ids_[i : i + chunk_len]))
+    def format_chunk(chunk, cls_type=cls_id, sep_type=sep_id, pad_type=pad_id, pad=True):
+        formatted_chunk = [cls_type] + chunk + [sep_type]
+        if pad:
+            return pad_chunk(formatted_chunk, pad_type=pad_type)
+        else:
+            return formatted_chunk
+
+    start = 1
+
+    while True:
+        if start >= len(input_ids_) or input_ids_[start] in {pad_id, sep_id}:
+            # we have moved past the end of the sequence or have reached
+            #  either the SEP token or a PAD token.
+            break
+
+        # end right before where the SEP token will go
+        end = min(
+            start + chunk_len - 2,
+            len(input_ids_)
+        )
+
+        # if we are ending on a PAD token or the SEP token, end before the SEP token
+        if input_ids_[end-1] in {pad_id, sep_id} and sep_id in input_ids_[start:end]:
+            end = input_ids_.index(sep_id, start, end)
+
+        chunks.append(format_chunk(input_ids_[start:end]))
         if chunks_attention_mask is not None:
-            chunks_attention_mask.append(pad_chunk(attention_mask_[i : i + chunk_len]))
+            chunks_attention_mask.append(format_chunk(attention_mask_[start:end], cls_type=1, sep_type=1))
         if chunks_token_type_ids is not None:
-            chunks_token_type_ids.append(pad_chunk(token_type_ids_[i : i + chunk_len]))
+            chunks_token_type_ids.append(format_chunk(token_type_ids_[start:end], cls_type=0, sep_type=0))
         if chunks_event_tokens is not None:
-            chunks_event_tokens.append(pad_chunk(event_tokens_[i : i + chunk_len]))
+            chunks_event_tokens.append(format_chunk(event_tokens_[start:end], cls_type=1, sep_type=1))
+
+        start = end
 
     def create_pad_chunk(cls_type=cls_id, sep_type=sep_id, pad_type=pad_id):
-        return pad_chunk([cls_type] + [sep_type])
+        return pad_chunk([cls_type] + [sep_type], pad_type=pad_type)
 
     # Insert an empty chunk at the beginning.
     if insert_empty_chunk_at_beginning:
@@ -176,11 +205,11 @@ def cnlp_convert_features_to_hierarchical(
     while len(chunks) < num_chunks:
         chunks.append(create_pad_chunk())
         if chunks_attention_mask is not None:
-            chunks_attention_mask.append([0]*chunk_len)
+            chunks_attention_mask.append(create_pad_chunk(1, 1, 0))
         if chunks_token_type_ids is not None:
-            chunks_token_type_ids.append([0]*chunk_len)
+            chunks_token_type_ids.append(create_pad_chunk(0, 0, 0))
         if chunks_event_tokens is not None:
-            chunks_event_tokens.append([0]*chunk_len)
+            chunks_event_tokens.append(create_pad_chunk(1, 1, 0))
 
     return HierarchicalInputFeatures(chunks, chunks_attention_mask, chunks_token_type_ids, chunks_event_tokens, label_)
 
@@ -189,20 +218,48 @@ def cnlp_convert_examples_to_features(
     examples: List[InputExample],
     tokenizer: PreTrainedTokenizer,
     max_length: Optional[int] = None,
-    task=None,
-    label_list=None,
-    output_mode=None,
-    token_classify=False,
-    inference=False,
-    hierarchical=False,
+    task: str = None,
+    label_list: Optional[List[str]] = None,
+    output_mode: Optional[str] = None,
+    inference: bool = False,
+    hierarchical: bool = False,
     chunk_len: int = -1,
     num_chunks: int = -1,
-    cls_id: int = -1,
-    sep_id: int = -1,
-    pad_id: int = -1,
     insert_empty_chunk_at_beginning: bool = False,
     truncate_examples: bool = False,
 ) -> Union[List[InputFeatures], List[HierarchicalInputFeatures]]:
+    """
+    Processes the list of :class:`transformers.InputExample` generated by
+    the processor defined in :data:`cnlpt.cnlp_processors.cnlp_processors`
+    and converts the examples into a list of :class:`InputFeatures` or
+    :class:`HierarchicalInputFeatures`, depending on the model.
+
+    :param typing.List[transformers.data.processors.utils.InputExample] examples:
+        the list of examples to convert
+    :param transformers.tokenization_utils.PreTrainedTokenizer tokenizer: the tokenizer
+    :param typing.Optional[int] max_length: the maximum sequence length
+        at which to truncate examples
+    :param str task: the task name
+    :param typing.Optional[typing.List[str]] label_list: the list of labels
+        for this task. If not provided explicitly, it will be retrieved from
+        the processor with :meth:`transformers.DataProcessor.get_labels`.
+    :param typing.Optional[str] output_mode: the output mode for this task.
+        If not provided explicitly, it will be retrieved from
+        :data:`cnlpt.cnlp_processors.cnlp_output_modes`.
+    :param bool inference: whether we're doing training or inference only -- if inference mode the labels associated with examples can't be trusted.
+    :param bool hierarchical: whether to structure the data for the hierarchical
+        model (:class:`cnlpt.HierarchicalTransformer.HierarchicalModel`)
+    :param int chunk_len: for the hierarchical model, the length of each
+        chunk in tokens
+    :param int num_chunks: for the hierarchical model, the number of chunks
+    :param bool insert_empty_chunk_at_beginning: for the hierarchical model,
+        whether to insert an empty chunk at the beginning of the list of chunks
+        (equivalent in theory to a CLS chunk).
+    :param bool truncate_examples: whether to truncate the string representation
+        of the example instances printed to the log
+    :rtype: typing.Union[typing.List[InputFeatures], typing.List[HierarchicalInputFeatures]]
+    :return: the list of converted input features
+    """
     event_start_ind = tokenizer.convert_tokens_to_ids('<e>')
     event_end_ind = tokenizer.convert_tokens_to_ids('</e>')
     
@@ -258,10 +315,6 @@ def cnlp_convert_examples_to_features(
         is_split_into_words=True,
     )
 
-    roberta_based = tokenizer.cls_token == '<s>'
-    if not roberta_based:
-        assert tokenizer.cls_token == '[CLS]', 'This tokenizer does not seem to be based on BERT or Roberta -- this will cause errors with the dataset encoding.'
-
     # This code has to solve the problem of properly setting labels for word pieces that do not actually need to be tagged.
     if not inference:
         encoded_labels = []
@@ -288,7 +341,7 @@ def cnlp_convert_examples_to_features(
                     previous_word_idx = word_idx
 
                 encoded_labels.append(np.array(label_ids))
-    
+
             labels = encoded_labels
         elif output_mode == relex:
             # start by building a matrix that's N' x N' (word-piece length) with "None" as the default
@@ -301,7 +354,7 @@ def cnlp_convert_examples_to_features(
                 wpi_to_tokeni = {}
                 tokeni_to_wpi = {}
                 sent_labels = np.zeros( (max_length, max_length)) - 100
-                
+
                 ## align word-piece tokens to the tokenization we got as input and only assign labels to input tokens
                 previous_word_idx = None
                 for word_pos_idx, word_idx in enumerate(word_ids):
@@ -320,10 +373,10 @@ def cnlp_convert_examples_to_features(
                         # tokens not involved in a relation.
                         if wpi != wpi2:
                             sent_labels[wpi,wpi2] = 0.0
-                    
+
                 for label in labels[sent_ind]:
                     if not label[0] in tokeni_to_wpi or not label[1] in tokeni_to_wpi:
-                        out_of_bounds +=1 
+                        out_of_bounds +=1
                         continue
 
                     wpi1 = tokeni_to_wpi[label[0]]
@@ -343,18 +396,18 @@ def cnlp_convert_examples_to_features(
             event_start = inputs['input_ids'].index(event_start_ind)
         except:
             event_start = -1
-        
+
         try:
             event_end = inputs['input_ids'].index(event_end_ind)
         except:
             event_end = len(inputs['input_ids'])-1
-        
+
         inputs['event_tokens'] = [0] * len(inputs['input_ids'])
         if event_start >= 0:
             inputs['event_tokens'] = [0] * event_start + [1] * (event_end-event_start+1) + [0] * (len(inputs['input_ids'])-event_end-1)
         else:
             inputs['event_tokens'] = [1] * len(inputs['input_ids'])
-        
+
         if inference:
             label = None
         else:
@@ -365,9 +418,9 @@ def cnlp_convert_examples_to_features(
                 feature,
                 chunk_len=chunk_len,
                 num_chunks=num_chunks,
-                cls_id=cls_id,
-                sep_id=sep_id,
-                pad_id=pad_id,
+                cls_id=tokenizer.cls_token_id,
+                sep_id=tokenizer.sep_token_id,
+                pad_id=tokenizer.pad_token_id,
                 insert_empty_chunk_at_beginning=insert_empty_chunk_at_beginning,
             )
         features.append(feature)
@@ -381,6 +434,15 @@ def cnlp_convert_examples_to_features(
 
 
 def truncate_features(feature: Union[InputFeatures, HierarchicalInputFeatures]):
+    """
+    Method to produce a truncated string representation of a feature.
+
+    :param typing.Union[InputFeatures, HierarchicalInputFeatures] feature:
+        the feature to represent
+    :rtype: str
+    :return: the truncated representation of the feature
+    :meta private:
+    """
     return (
         f"{feature.__class__.__name__}"
         "("
@@ -418,7 +480,7 @@ class DataTrainingArguments:
     """
     Arguments pertaining to what data we are going to input our model for training and eval.
 
-    Using `HfArgumentParser` we can turn this class
+    Using :class:`transformers.HfArgumentParser` we can turn this class
     into argparse arguments to be able to specify them on
     the command line.
     """
@@ -468,8 +530,20 @@ class DataTrainingArguments:
 
 
 class ClinicalNlpDataset(Dataset):
-    """ Copy-pasted from GlueDataset with glue task-specific code changed
-        moved into here to be self-contained
+    """
+    Copy-pasted from GlueDataset with glue task-specific code changed;
+    moved into here to be self-contained.
+
+    :param DataTrainingArguments args: the data training args for this experiment
+    :param transformers.tokenization_utils.PreTrainedTokenizer tokenizer: the tokenizer
+    :param typing.Optional[int] limit_length: if provided, the number of
+        examples to include in the dataset
+    :param typing.Union[str, Split] mode: the data split mode of this dataset
+        (:obj:`"train"`, :obj:`"dev"`, :obj:`"test"`)
+    :param typing.Optional[str] cache_dir: if provided, the directory to save/load a cache
+        of this dataset
+    :param bool hierarchical: whether to structure the data for the hierarchical
+        model (:class:`cnlpt.HierarchicalTransformer.HierarchicalModel`)
     """
     args: DataTrainingArguments
     output_mode: List[str]
@@ -514,6 +588,7 @@ class ClinicalNlpDataset(Dataset):
             datadir = dirname(data_dir) if data_dir[-1] == '/' else data_dir
             domain = basename(datadir)
             dataconfig = basename(dirname(datadir))
+            num_subtasks = self.processors[task_ind].get_num_tasks()
 
             cached_features_file = os.path.join(
                 cache_dir if cache_dir is not None else data_dir,
@@ -556,9 +631,6 @@ class ClinicalNlpDataset(Dataset):
                         hierarchical=self.hierarchical,
                         chunk_len=self.args.chunk_len,
                         num_chunks=self.args.num_chunks,
-                        cls_id=tokenizer.cls_token_id,
-                        sep_id=tokenizer.sep_token_id,
-                        pad_id=tokenizer.pad_token_id,
                         insert_empty_chunk_at_beginning=self.args.insert_empty_chunk_at_beginning,
                         truncate_examples=self.args.truncate_examples,
                     )
@@ -570,15 +642,24 @@ class ClinicalNlpDataset(Dataset):
                     )
 
                 if self.args.weight_classes and mode == Split.train:
-                    class_counts = [0] * len(self.label_lists[task_ind])
-                    for feature in features:
-                        labels = feature.label[0]
-                        vals, counts = np.unique(labels, return_counts=True)
-                        for val_ind,val in enumerate(vals):
-                            if val >= 0:
-                                class_counts[int(val)] += counts[val_ind]
+                    if num_subtasks == 1:
+                        class_counts = [0] * len(self.label_lists[task_ind])
+                        for feature in features:
+                            labels = feature.label[0]
+                            vals, counts = np.unique(labels, return_counts=True)
+                            for val_ind,val in enumerate(vals):
+                                if val >= 0:
+                                    class_counts[int(val)] += counts[val_ind]
 
-                    self.class_weights[task_ind] = min(class_counts) / class_counts
+                        self.class_weights[task_ind] = min(class_counts) / class_counts
+                    else:
+                        class_counts = np.zeros( (num_subtasks, len(self.label_lists[task_ind])) )
+                        for feature in features:
+                            labels = feature.label[0]
+                            for subtask_ind,label in enumerate(labels):
+                                class_counts[subtask_ind][label] += 1
+                                
+                        self.class_weights[subtask_ind] = min(class_counts[subtask_ind]) / class_counts[subtask_ind]
 
 
                 if self.features is None:
@@ -599,11 +680,29 @@ class ClinicalNlpDataset(Dataset):
                                                                             feature.label[0]])
 
     def __len__(self) -> int:
+        """
+        Length method for this class.
+
+        :rtype: int
+        :return: the number of instances in the dataset
+        """
         return len(self.features)
 
-    def __getitem__(self, i) -> InputFeatures:
+    def __getitem__(self, i):
+        """
+        Getitem method for this class.
+
+        :param i: the index of the example to retrieve
+        :rtype: typing.Union[InputFeatures, HierarchicalInputFeatures]
+        :return: the example at index `i`
+        """
         return self.features[i]
 
     def get_labels(self):
-        return self.label_lists
+        """
+        Retrieve the label lists for all the tasks for the dataset.
 
+        :rtype: typing.List[typing.List[str]]
+        :return: the list of label lists
+        """
+        return self.label_lists
