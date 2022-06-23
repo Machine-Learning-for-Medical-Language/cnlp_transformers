@@ -45,7 +45,7 @@ $ git push --set-upstream fork your-branch-name
 
 ### Building
 
-First, increment the version number in `src/cnlpt/VERSION`.
+First, increment the version number in `src/cnlpt/VERSION` if it isn't already.
 
 Then, run `build`:
 
@@ -57,7 +57,7 @@ This will build the package in the `./dist/` directory, creating it if it does n
 
 ### Uploading
 
-First, set up your PyPI API key:
+In preparation, set up your PyPI API key if you haven't already:
 
 1. Log into your PyPI account
 1. Generate an API key for the `cnlp-transformers` project [here](https://pypi.org/manage/account/#api-tokens)
@@ -68,11 +68,23 @@ username = __token__
 password = <the token value, including the `pypi-` prefix>
 ```
 
-Then, upload to PyPI with `twine`:
+**Only follow these steps after merging the new version branch into `master`.**
 
-```sh
-$ python -m twine upload dist/*
-```
+1. Checkout the merge commit for the new version; this will usually
+   be the latest commit in `master`.
+
+2. Before continuing, **ensure the version number in `src/cnlpt/VERSION`
+   has been incremented** from the previous version on PyPI.
+
+3. Delete the contents of the `./dist/` directory if it exists.
+
+4. Build the new version according to the
+   [building instructions](#Building) above.
+
+5. Upload to PyPI with `twine`:
+   ```sh
+   $ python -m twine upload dist/*
+   ```
 
 ### Building the documentation
 
