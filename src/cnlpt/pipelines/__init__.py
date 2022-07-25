@@ -5,4 +5,3 @@ from typing import List
 # handled by split() for whatever reason
 def ctakes_tok(s: str) -> List[str]:
     return [token for token in s.split() if token]
-

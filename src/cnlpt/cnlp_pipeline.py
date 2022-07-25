@@ -115,7 +115,7 @@ def inference(pipeline_args):
     # Inference mode takes care of
     # printing, don't need the predictions
     # dictionary or dict->matrix function
-    _, _ = get_predictions(
+    _, _, _, _ = get_predictions(
         sentences,
         taggers_dict,
         out_model_dict,
@@ -144,7 +144,7 @@ def evaluation(pipeline_args):
         task_names=out_model_dict.keys(),
     )
 
-    predictions_dict, local_relex = get_predictions(
+    predictions_dict, local_relex, _, _ = get_predictions(
         sentences,
         taggers_dict,
         out_model_dict,

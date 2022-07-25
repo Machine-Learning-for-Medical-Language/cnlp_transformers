@@ -54,17 +54,33 @@ def model_dicts(models_dir):
                 model_dir,
                 config=config,
             )
-
-            # Right now assume roberta thus
-            # add_prefix_space = True
-            # but want to generalize eventually to
-            # other model tokenizers, in particular
-            # Flair models for RadOnc
+            
             tokenizer = AutoTokenizer.from_pretrained(
                 model_dir,
                 add_prefix_space=True,
                 additional_special_tokens=SPECIAL_TOKENS,
             )
+            
+            # Right now assume roberta thus
+            # add_prefix_space = True
+            # but want to generalize eventually to
+            # other model tokenizers, in particular
+            # Flair models for RadOnc
+            """
+            print(f"{task_name} : {config.encoder_name}")
+            if config.encoder_name != 'roberta-base':
+                tokenizer = AutoTokenizer.from_pretrained(
+                    model_dir,
+                    # add_prefix_space=True,
+                    additional_special_tokens=SPECIAL_TOKENS,
+                )
+            else:
+                tokenizer = AutoTokenizer.from_pretrained(
+                    model_dir,
+                    add_prefix_space=True,
+                    additional_special_tokens=SPECIAL_TOKENS,
+                )
+            """            
 
             task_processor = cnlp_processors[task_name]()
 
@@ -113,7 +129,12 @@ def assemble(sentences, taggers_dict, axis_task):
     # for each sentences
     def process(sent):
         return _assemble(sent, taggers_dict, axis_task)
-    return map(process, sentences)
+    (
+        ann_sent_groups,
+        axial_idx_dicts,
+        sig_idx_dicts,
+    ) = map(list, zip(*map(process, sentences)))
+    return ann_sent_groups, axial_idxs, sig_idxs
 
 
 # Given a dictionary of taggers, a single sentence, and an axial task,
@@ -123,22 +144,28 @@ def assemble(sentences, taggers_dict, axis_task):
 def _assemble(sentence, taggers_dict, axis_task):
     axis_pipe = taggers_dict[axis_task]
     axis_ann = axis_pipe(sentence)
+    # Also might want to have a way to generalize to multiple annotation axes later
+    axis_ann_dict = {axis_task: axis_ann}
     # We split by mode cases since there are optmizations
     # helpful for inference that could cause problems for
     # evaluation
     ann_sents = []
     # Make sure there's at least one axial mention
     # before running any other taggers
-    if any(filter(lambda x: x[0] == 'B', axis_ann)):
-        sig_ann_ls = []
+    axis_offset_dict = {}
+    sig_offset_dict = {}
+    if any([*map(lambda ax_ann: filter(lambda x: x[0] == 'B', ax_ann), axis_ann_dict.values())]):
+        sig_ann_dict = {}
         for task, pipeline in taggers_dict.items():
             # Don't rerun the axial pipeline
+            # will need to generalize this in the case of multiple axes
             if task != axis_task:
                 sig_out = pipeline(sentence)
-                sig_ann_ls.append(sig_out)
+                # sig_ann_ls.append(sig_out)
+                sig_ann_dict[task] = sig_out
         ann_sents = merge_annotations(
-            axis_ann,
-            sig_ann_ls,
+            axis_ann_dict,
+            sig_ann_dict,
             sentence,
         )
     else:
@@ -149,7 +176,7 @@ def _assemble(sentence, taggers_dict, axis_task):
             'sig_offsets': None,
         }
         ann_sents.append(sent_dict)
-    return ann_sents
+    return ann_sents, axis_offset_dict, sig_offset_dict
 
 
 # Convert from B I O list format
@@ -188,54 +215,60 @@ def process_ann(annotation):
 # around the entities
 # - this is another wrapper function where
 # we handle looping and some optimizations
-def merge_annotations(axis_ann, sig_ann_ls, sentence):
+def merge_annotations(axis_ann_dict, sig_ann_dict, sentence):
     merged_annotations = []
-    axis_indices = process_ann(axis_ann)
-    sig_indices_ls = [process_ann(sig_ann) for sig_ann in sig_ann_ls]
+    axis_indices_dict = {task:process_ann(axis_ann) for task, axis_ann in axis_ann_dict.items()}
+    sig_indices_dict = {task:process_ann(sig_ann) for task, sig_ann in sig_ann_dict.items()}
     ref_sent = ctakes_tok(sentence)
-    for a1, a2 in axis_indices:
-        # list of lists, only want to
-        # iterate if at least one is non-empty
-        if any(sig_indices_ls):
-            for sig_indices in sig_indices_ls:
-                for s1, s2 in sig_indices:
-                    intersects = get_intersect([(a1, a2)], [(s1, s2)])
-                    if intersects:
-                        warnings.warn(
-                            (
-                                "Warning axis annotation and sig annotation \n"
-                                f"{ref_sent}\n"
-                                f"{a1, a2}\n"
-                                f"{s1, s2}\n"
-                                f"Have intersections at indices:\n"
-                                f"{intersects}"
+    axis_offset_dict = {}
+    sig_offset_dict = {}
+    for axis_task, axis_indices in axis_indices_dict.items():
+        for a1, a2 in axis_indices:
+            # list of lists, only want to
+            # iterate if at least one is non-empty
+            if any(sig_indices_dict):
+                for sig_task, sig_indices in sig_indices_dict.items():
+                    for s1, s2 in sig_indices:
+                        intersects = get_intersect([(a1, a2)], [(s1, s2)])
+                        if intersects:
+                            warnings.warn(
+                                (
+                                    "Warning axis annotation and sig annotation \n"
+                                    f"{ref_sent}\n"
+                                    f"{a1, a2}\n"
+                                    f"{s1, s2}\n"
+                                    f"Have intersections at indices:\n"
+                                    f"{intersects}"
+                                )
                             )
-                        )
-                    ann_sent = ref_sent.copy()
-                    ann_sent[a1] = '<a1> ' + ann_sent[a1]
-                    ann_sent[a2] = ann_sent[a2] + ' </a1>'
-                    ann_sent[s1] = '<a2> ' + ann_sent[s1]
-                    ann_sent[s2] = ann_sent[s2] + ' </a2>'
+                        ann_sent = ref_sent.copy()
+                        ann_sent[a1] = '<a1> ' + ann_sent[a1]
+                        ann_sent[a2] = ann_sent[a2] + ' </a1>'
+                        ann_sent[s1] = '<a2> ' + ann_sent[s1]
+                        ann_sent[s2] = ann_sent[s2] + ' </a2>'
 
-                    sent_dict = {
-                        'label': None,
-                        'sentence': ' '.join(ann_sent),
-                        'axis_offsets': (a1, a2),
-                        'sig_offsets': (s1, s2),
-                    }
-                    merged_annotations.append(sent_dict)
-        else:
-            ann_sent = ref_sent.copy()
-            ann_sent[a1] = '<a1> ' + ann_sent[a1]
-            ann_sent[a2] = ann_sent[a2] + ' </a1>'
-            sent_dict = {
-                'label': "None",
-                'sentence': ' '.join(ann_sent),
-                'axis_offsets': (a1, a2),
-                'sig_offsets': None,
-            }
-            merged_annotations.append(sent_dict)
-    return merged_annotations
+                        sent_dict = {
+                            'label': None,
+                            'sentence': ' '.join(ann_sent),
+                            'axis_offsets': (a1, a2),
+                            'sig_offsets': (s1, s2),
+                        }
+                        axis_offset_dict[axis_task] = (a1, a2)
+                        sig_offset_dict[sig_task] = (s1, s2)
+                        merged_annotations.append(sent_dict)
+            else:
+                ann_sent = ref_sent.copy()
+                ann_sent[a1] = '<a1> ' + ann_sent[a1]
+                ann_sent[a2] = ann_sent[a2] + ' </a1>'
+                sent_dict = {
+                    'label': "None",
+                    'sentence': ' '.join(ann_sent),
+                    'axis_offsets': (a1, a2),
+                    'sig_offsets': None,
+                }
+                axis_offset_dict[axis_task] = (a1, a2)
+                merged_annotations.append(sent_dict)
+    return merged_annotations, axis_offset_dict, sig_offset_dict
 
 
 # Shamelessly grabbed (and adapted) from https://stackoverflow.com/a/57293089
@@ -319,7 +352,11 @@ def get_predictions(
     if mode not in {'inf', 'eval'}:
         ValueError(f"Invalid processing mode: {mode}")
 
-    ann_sent_groups = assemble(
+    (
+        ann_sent_groups,
+        axis_idxs_groups,
+        sig_idxs_groups,
+    ) = assemble(
         sentences,
         taggers_dict,
         axis_task,
@@ -420,7 +457,7 @@ def get_predictions(
                     local_max_len,
                 )
 
-    return predictions_dict, local_relex_matrix
+    return predictions_dict, local_relex_matrix, axis_idxs_groups, sig_idxs_groups
 
 
 # Get raw sentences, as well as
