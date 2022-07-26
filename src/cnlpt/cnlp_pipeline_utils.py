@@ -66,21 +66,6 @@ def model_dicts(models_dir):
             # but want to generalize eventually to
             # other model tokenizers, in particular
             # Flair models for RadOnc
-            """
-            print(f"{task_name} : {config.encoder_name}")
-            if config.encoder_name != 'roberta-base':
-                tokenizer = AutoTokenizer.from_pretrained(
-                    model_dir,
-                    # add_prefix_space=True,
-                    additional_special_tokens=SPECIAL_TOKENS,
-                )
-            else:
-                tokenizer = AutoTokenizer.from_pretrained(
-                    model_dir,
-                    add_prefix_space=True,
-                    additional_special_tokens=SPECIAL_TOKENS,
-                )
-            """            
 
             task_processor = cnlp_processors[task_name]()
 
@@ -230,11 +215,14 @@ def merge_annotations(axis_ann_dict, sig_ann_dict, sentence):
     ref_sent = ctakes_tok(sentence)
     axis_offset_dict = {}
     sig_offset_dict = {}
+    print(f"axis: {axis_indices_dict}")
+    print(f"sig: {sig_indices_dict}")
     for axis_task, axis_indices in axis_indices_dict.items():
         for a1, a2 in axis_indices:
             # list of lists, only want to
             # iterate if at least one is non-empty
-            if any(sig_indices_dict):
+            if any(sig_indices_dict.values()):
+                print("Reached")
                 for sig_task, sig_indices in sig_indices_dict.items():
                     for s1, s2 in sig_indices:
                         intersects = get_intersect([(a1, a2)], [(s1, s2)])
@@ -249,46 +237,52 @@ def merge_annotations(axis_ann_dict, sig_ann_dict, sentence):
                                     f"{intersects}"
                                 )
                             )
-                            ann_sent = ref_sent.copy()
-                            ann_sent[a1] = '<a1> ' + ann_sent[a1]
-                            ann_sent[a2] = ann_sent[a2] + ' </a1>'
-                            ann_sent[s1] = '<a2> ' + ann_sent[s1]
-                            ann_sent[s2] = ann_sent[s2] + ' </a2>'
+                        ann_sent = ref_sent.copy()
+                        ann_sent[a1] = '<a1> ' + ann_sent[a1]
+                        ann_sent[a2] = ann_sent[a2] + ' </a1>'
+                        ann_sent[s1] = '<a2> ' + ann_sent[s1]
+                        ann_sent[s2] = ann_sent[s2] + ' </a2>'
                             
-                            sent_dict = {
-                                'label': None,
-                                'sentence': ' '.join(ann_sent),
-                                'axis_offsets': (a1, a2),
-                                'sig_offsets': (s1, s2),
-                            }
-
-                            if axis_task not in axis_offset_dict:
-                                axis_offset_dict[axis_task] = []
-                            else:
-                                axis_offset_dict[axis_task].append((a1, a2))
-
-                            if sig_task not in sig_offset_dict:
-                                sig_offset_dict = []
-                            else:
-                                sig_offset_dict[sig_task].append((s1, s2))
-                            merged_annotations.append(sent_dict)
+                        sent_dict = {
+                            'label': None,
+                            'sentence': ' '.join(ann_sent),
+                            'axis_offsets': (a1, a2),
+                            'sig_offsets': (s1, s2),
+                        }
+                        
+                        if axis_task not in axis_offset_dict:
+                            print(a1,a2)
+                            axis_offset_dict[axis_task] = set()
+                            axis_offset_dict[axis_task].add((a1,a2))
                         else:
-                            ann_sent = ref_sent.copy()
-                            ann_sent[a1] = '<a1> ' + ann_sent[a1]
-                            ann_sent[a2] = ann_sent[a2] + ' </a1>'
-                            sent_dict = {
-                                'label': "None",
-                                'sentence': ' '.join(ann_sent),
-                                'axis_offsets': (a1, a2),
-                                'sig_offsets': None,
-                            }
+                            axis_offset_dict[axis_task].add((a1, a2))
                             
-                            if axis_task not in axis_offset_dict:
-                                axis_offset_dict = []
-                            else:
-                                axis_offset_dict[axis_task].append((a1, a2))
-                                
-                            merged_annotations.append(sent_dict)
+                        if sig_task not in sig_offset_dict:
+                            print(s1,s2)
+                            sig_offset_dict[sig_task] = set()
+                            sig_offset_dict[sig_task].add((s1, s2))
+                        else:
+                            sig_offset_dict[sig_task].add((s1, s2))
+                        merged_annotations.append(sent_dict)
+            else:
+                ann_sent = ref_sent.copy()
+                ann_sent[a1] = '<a1> ' + ann_sent[a1]
+                ann_sent[a2] = ann_sent[a2] + ' </a1>'
+                sent_dict = {
+                    'label': "None",
+                    'sentence': ' '.join(ann_sent),
+                    'axis_offsets': (a1, a2),
+                    'sig_offsets': None,
+                }
+                
+                if axis_task not in axis_offset_dict:
+                    axis_offset_dict[axis_task] = set()
+                    axis_offset_dict[axis_task].add((a1,a2))
+                else:
+                    print(a1,a2)
+                    axis_offset_dict[axis_task].add((a1, a2))
+                    
+                merged_annotations.append(sent_dict)
     return merged_annotations, axis_offset_dict, sig_offset_dict
 
 
