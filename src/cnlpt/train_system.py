@@ -39,7 +39,6 @@ from transformers import AutoConfig, AutoTokenizer, AutoModel, EvalPrediction
 from transformers.training_args import IntervalStrategy
 from transformers.data.processors.utils import InputFeatures
 from transformers.tokenization_utils import PreTrainedTokenizer
-from transformers.data.metrics import acc_and_f1
 from transformers.data.processors.utils import DataProcessor, InputExample, InputFeatures
 from transformers import ALL_PRETRAINED_CONFIG_ARCHIVE_MAP
 from transformers.optimization import AdamW, get_scheduler

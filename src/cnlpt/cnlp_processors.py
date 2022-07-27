@@ -45,7 +45,6 @@ from transformers.data.processors.utils import DataProcessor, InputExample
 import torch
 from torch.utils.data.dataset import Dataset
 from transformers.tokenization_utils import PreTrainedTokenizer
-from transformers.data.metrics import simple_accuracy
 from sklearn.metrics import matthews_corrcoef, f1_score, recall_score, precision_score
 import numpy as np
 import numpy  # for Sphinx
@@ -151,6 +150,19 @@ def fix_np_types(input_variable):
         return list(input_variable)
     
     return input_variable
+
+def simple_accuracy(preds, labels):
+    """
+    Simple accuracy function to replace deprecated Hugging Face
+    Transformers function.
+
+    :param numpy.ndarray preds: the predicted labels
+    :param numpy.ndarray labels: the target labels
+    :rtype: float
+    :return: the accuracy of the predicted labels to the target labels
+    :meta private:
+    """
+    return (preds == labels).mean()
 
 def acc_and_f1(preds, labels):
     """
