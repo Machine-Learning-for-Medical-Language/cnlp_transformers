@@ -46,7 +46,7 @@ import torch
 from torch.utils.data.dataset import Dataset
 from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.data.metrics import simple_accuracy
-from sklearn.metrics import matthews_corrcoef, f1_score, recall_score, precision_score
+from sklearn.metrics import matthews_corrcoef, f1_score, recall_score, precision_score, classification_report
 import numpy as np
 import numpy  # for Sphinx
 from seqeval.metrics import f1_score as seq_f1, classification_report as seq_cls
@@ -135,9 +135,11 @@ def relation_metrics(task_name, preds, labels):
 
     recall = recall_score(y_pred=relevant_preds, y_true=relevant_labels, average=None)
     precision = precision_score(y_pred=relevant_preds, y_true=relevant_labels, average=None)
-    f1_report = f1_score(y_true=relevant_labels, y_pred=relevant_preds, average=None)
+    f1_scores = fix_np_types(f1_score(y_true=relevant_labels, y_pred=relevant_preds, average=None))
+    report_dict = classification_report(y_true=relevant_labels, y_pred=relevant_preds, output_dict=True)
+    report_str = classification_report(y_true=relevant_labels, y_pred=relevant_preds)
 
-    return {'f1': fix_np_types(f1_report), 'acc': acc, 'recall':fix_np_types(recall), 'precision':fix_np_types(precision) }
+    return {'f1': f1_scores, 'acc': acc, 'recall':fix_np_types(recall), 'precision':fix_np_types(precision), 'report_dict':report_dict, 'report_str':report_str }
 
 def fix_np_types(input_variable):
     """
@@ -224,7 +226,7 @@ def cnlp_compute_metrics(task_name, preds, labels):
         return { 'f1': fix_np_types(f1_score(y_true=labels, y_pred=preds, average=None))} #acc_and_f1(preds, labels)
     elif task_name == 'timex' or task_name == 'event' or task_name == 'dphe':
         return tagging_metrics(task_name, preds, labels)
-    elif task_name == 'tlink-sent':
+    elif task_name.startswith('tlinkx'):
         return relation_metrics(task_name, preds, labels)
     elif cnlp_output_modes[task_name] == classification:
         logger.warn("Choosing accuracy and f1 as default metrics; modify cnlp_compute_metrics() to customize for this task.")
@@ -471,7 +473,7 @@ class RelationProcessor(CnlpProcessor):
     def _create_examples(self, lines, set_type):
         return super()._create_examples(lines, set_type, relations=True)
 
-class TlinkRelationProcessor(RelationProcessor):
+class Thyme1ContainsRelationProcessor(RelationProcessor):
     """TODO: docstring"""
     def get_one_score(self, results):
         # the 0th category is None
@@ -479,8 +481,14 @@ class TlinkRelationProcessor(RelationProcessor):
     
     def get_labels(self):
         return ['None', 'CONTAINS']
-        #return ['None', 'CONTAINS', 'NOTED-ON']
-        # return ['None', 'CONTAINS', 'OVERLAP', 'BEFORE', 'BEGINS-ON', 'ENDS-ON']
+
+class Thyme1AllRelationProcessor(RelationProcessor):
+    """TODO: docstring"""
+    def get_one_score(self, results):
+        # the 0th category is None
+        return np.mean(results['f1'][1:])
+    def get_labels(self):
+        return ['None', 'CONTAINS', 'OVERLAP', 'BEFORE', 'BEGINS-ON', 'ENDS-ON']
 
 class SequenceProcessor(CnlpProcessor):
     """
@@ -681,7 +689,8 @@ cnlp_processors = {'polarity': NegationProcessor,
                    'conmod': ContextualModalityProcessor,
                    'timex': TimexProcessor,
                    'event': EventProcessor,
-                   'tlink-sent': TlinkRelationProcessor,
+                   'tlinkx-nc': Thyme1ContainsRelationProcessor,
+                   'tlinkx': Thyme1AllRelationProcessor,
                    'dphe': DpheProcessor,
                    'i2b22008': i2b22008Processor,
                    'ucidrug': UciDrugSentimentProcessor,
@@ -713,7 +722,8 @@ cnlp_output_modes = {'polarity': classification,
                 'timex': tagging,
                 'event': tagging,
                 'dphe': tagging,
-                'tlink-sent': relex,
+                'tlinkx-nc': relex,
+                'tlinkx': relex,
                 'i2b22008': mtl,
                 'ucidrug': classification,
                 'mimic_radi': mtl,
