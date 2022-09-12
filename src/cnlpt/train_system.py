@@ -42,12 +42,15 @@ from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.data.metrics import acc_and_f1
 from transformers.data.processors.utils import DataProcessor, InputExample, InputFeatures
 from transformers import ALL_PRETRAINED_CONFIG_ARCHIVE_MAP
-from transformers.optimization import AdamW, get_scheduler
+from transformers.optimization import get_scheduler
+from torch.optim import AdamW
 from transformers.trainer_pt_utils import get_parameter_names
-from transformers.file_utils import hf_bucket_url, CONFIG_NAME
+from transformers.file_utils import CONFIG_NAME
+from huggingface_hub import hf_hub_url
 
-from .cnlp_processors import cnlp_processors, cnlp_output_modes, cnlp_compute_metrics, tagging, relex, classification
+from .cnlp_processors import cnlp_processors, tagging, relex, classification
 from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
+from .cnlp_metrics import cnlp_compute_metrics
 
 from .CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
 from .BaselineModels import CnnSentenceClassifier, LstmSentenceClassifier
@@ -225,7 +228,7 @@ def is_pretrained_model(model_name):
         return True
     
     # check if it's a model on the huggingface model hub:
-    url = hf_bucket_url(model_name, CONFIG_NAME)
+    url = hf_hub_url(model_name, CONFIG_NAME)
     r = requests.head(url)
     if r.status_code == 200:
         return True
@@ -274,9 +277,10 @@ def main(json_file=None, json_obj=None):
             f"Output directory ({training_args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overcome."
         )
 
+    # FIXME - goal is to eliminate task names and just infer them from data directories and automatically do data processing.
+    # but for now maybe just create a dummy task called 'infer' meaning, 'just infer the task properties'
     assert len(data_args.task_name) == len(data_args.data_dir), 'Number of tasks and data directories should be the same!'
 
-    
     # Setup logging
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
@@ -297,14 +301,31 @@ def main(json_file=None, json_obj=None):
     # Set seed
     set_seed(training_args.seed)
 
+
+    # Load tokenizer: Need this first for loading the datasets
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_args.tokenizer_name if model_args.tokenizer_name else model_args.encoder_name,
+        cache_dir=model_args.cache_dir,
+        add_prefix_space=True,
+        additional_special_tokens=['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>', '<neg>']
+    )
+
+    model_name = model_args.model
+    hierarchical = model_name == 'hier'
+
+    # Get datasets
+    dataset = (
+        ClinicalNlpDataset(data_args, tokenizer=tokenizer, cache_dir=model_args.cache_dir, hierarchical=hierarchical,)
+    )
+
     try:
         task_names = []
         num_labels = []
         output_mode = []
         tagger = []
         relations = []
-        for task_name in data_args.task_name:
-            processor = cnlp_processors[task_name]()
+        for task_ind, task_name in enumerate(data_args.task_name):
+            processor = dataset.processors[task_ind]
             if processor.get_num_tasks() > 1:
                 for subtask_num in range(processor.get_num_tasks()):
                     task_names.append(task_name + "-" + processor.get_classifiers()[subtask_num])
@@ -322,32 +343,6 @@ def main(json_file=None, json_obj=None):
 
     except KeyError:
         raise ValueError("Task not found: %s" % (data_args.task_name))
-
-    # Load tokenizer: Need this first for loading the datasets
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_args.tokenizer_name if model_args.tokenizer_name else model_args.encoder_name,
-        cache_dir=model_args.cache_dir,
-        add_prefix_space=True,
-        additional_special_tokens=['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>', '<neg>']
-    )
-
-    model_name = model_args.model
-    hierarchical = model_name == 'hier'
-
-    # Get datasets
-    train_dataset = (
-        ClinicalNlpDataset(data_args, tokenizer=tokenizer, cache_dir=model_args.cache_dir, hierarchical=hierarchical) if training_args.do_train else None
-    )
-    eval_dataset = (
-        ClinicalNlpDataset(data_args, tokenizer=tokenizer, mode="dev", cache_dir=model_args.cache_dir, hierarchical=hierarchical)
-        if training_args.do_eval
-        else None
-    )
-    test_dataset = (
-        ClinicalNlpDataset(data_args, tokenizer=tokenizer, mode="test", cache_dir=model_args.cache_dir, hierarchical=hierarchical)
-        if training_args.do_predict
-        else None
-    )
 
     # Load pretrained model and tokenizer
     #
@@ -415,7 +410,7 @@ def main(json_file=None, json_obj=None):
         model = HierarchicalModel(
             config=config,
             transformer_head_config=transformer_head_config,
-            class_weights=None if train_dataset is None else train_dataset.class_weights,
+            class_weights=dataset.class_weights,
             final_task_weight=training_args.final_task_weight,
             freeze=training_args.freeze,
             argument_regularization=training_args.arg_reg,
@@ -466,7 +461,7 @@ def main(json_file=None, json_obj=None):
                         cache_dir=model_args.cache_dir,
                         tagger=tagger,
                         relations=relations,
-                        class_weights=None if train_dataset is None else train_dataset.class_weights,
+                        class_weights=dataset.class_weights,
                         final_task_weight=training_args.final_task_weight,
                         use_prior_tasks=model_args.use_prior_tasks,
                         argument_regularization=model_args.arg_reg)
@@ -481,7 +476,7 @@ def main(json_file=None, json_obj=None):
                 model = CnlpModelForClassification.from_pretrained(
                     model_args.encoder_name,
                     config=config,
-                    class_weights=None if train_dataset is None else train_dataset.class_weights,
+                    class_weights=dataset.class_weights,
                     final_task_weight=training_args.final_task_weight,
                     freeze=training_args.freeze,
                     bias_fit=training_args.bias_fit,
@@ -506,7 +501,7 @@ def main(json_file=None, json_obj=None):
             pretrained = True
             model = CnlpModelForClassification(
                 config=config,
-                class_weights=None if train_dataset is None else train_dataset.class_weights,
+                class_weights=dataset.class_weights,
                 final_task_weight=training_args.final_task_weight,
                 freeze=training_args.freeze,
                 bias_fit=training_args.bias_fit,
@@ -521,7 +516,9 @@ def main(json_file=None, json_obj=None):
     )
 
     if training_args.do_train:
-        batches_per_epoch = math.ceil(len(train_dataset) / training_args.train_batch_size)
+        # TODO: This assumes that if there are multiple training sets, they all have the same length, but
+        # in the future it would be nice to be able to have multiple heterogeneous datasets
+        batches_per_epoch = math.ceil(dataset.num_train_instances / training_args.train_batch_size)
         total_steps = int(training_args.num_train_epochs * batches_per_epoch // training_args.gradient_accumulation_steps)
 
         if training_args.evals_per_epoch > 0:
@@ -542,9 +539,6 @@ def main(json_file=None, json_obj=None):
             metrics = {}
             task_scores = []
             task_label_ind = 0
-
-            # if not p is list:
-            #     p = [p]
 
             for task_ind,task_name in enumerate(task_names):
                 if tagger[task_ind]:
@@ -598,8 +592,8 @@ def main(json_file=None, json_obj=None):
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
+        train_dataset=dataset.datasets[0].get('train', None),
+        eval_dataset=dataset.datasets[0].get('validation', None),
         compute_metrics=build_compute_metrics_fn(task_names, model),
     )
 
@@ -624,7 +618,7 @@ def main(json_file=None, json_obj=None):
         try:
             eval_result = model.best_eval_results
         except:
-            eval_result = trainer.evaluate(eval_dataset=eval_dataset)
+            eval_result = trainer.evaluate(eval_dataset=dataset['validation'])
         
         if trainer.is_world_process_zero():
             with open(output_eval_file, "w") as writer:
@@ -635,8 +629,8 @@ def main(json_file=None, json_obj=None):
 
             with open(output_eval_predictions, 'w') as writer:
                 #Chen wrote the below but it doesn't work for all settings
-                predictions = trainer.predict(test_dataset=eval_dataset).predictions
-                dataset_labels = eval_dataset.get_labels()
+                predictions = trainer.predict(test_dataset=dataset['validation']).predictions
+                dataset_labels = dataset.get_labels()
                 for task_ind, task_name in enumerate(task_names):
                     if output_mode[task_ind] == classification:
                         task_predictions = np.argmax(predictions[task_ind], axis=1)

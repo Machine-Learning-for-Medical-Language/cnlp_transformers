@@ -10,12 +10,13 @@ from typing import Callable, Dict, Optional, List, Union, Tuple
 import numpy as np
 import torch
 from torch.utils.data.dataset import Dataset
+from transformers import BatchEncoding
 from transformers.data.processors.utils import DataProcessor, InputExample
 from transformers.tokenization_utils import PreTrainedTokenizer
 from dataclasses import dataclass, field, asdict, astuple
 from enum import Enum
 
-from .cnlp_processors import cnlp_processors, cnlp_output_modes, classification, tagging, relex, mtl
+from .cnlp_processors import cnlp_processors, classification, tagging, relex, mtl
 
 special_tokens = ['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>', '<neg>']
 
@@ -91,7 +92,7 @@ class HierarchicalInputFeatures:
 
 
 def cnlp_convert_features_to_hierarchical(
-        features: InputFeatures,
+        features: BatchEncoding,
         chunk_len: int,
         num_chunks: int,
         cls_id: int,
@@ -108,7 +109,7 @@ def cnlp_convert_features_to_hierarchical(
     Chunk an instance of InputFeatures into an instance of HierarchicalInputFeatures
     for the hierarchical model.
 
-    :param InputFeatures features: the old instance
+    :param BatchEncoding features: the dictionary containing mappings from properties to lists of values for each instance for each of those properties
     :param int chunk_len: the maximum length of a chunk
     :param int num_chunks: the maximum number of chunks in the instance
     :param int cls_id: the tokenizer's ID representing the CLS token
@@ -119,106 +120,123 @@ def cnlp_convert_features_to_hierarchical(
     :rtype: HierarchicalInputFeatures
     :return: an instance of `HierarchicalInputFeatures` containing the chunked instance
     """
-    # Get feature variables
-    input_ids_, attention_mask_, token_type_ids_, event_tokens_, label_ = astuple(features)
 
-    assert len(input_ids_) == len(attention_mask_) == len(event_tokens_)
+    for ind in range(len(features['input_ids'])):
+        # Get feature variables
+        # input_ids_, attention_mask_, token_type_ids_, event_tokens_, label_ = astuple(features)
+        input_ids_ = features['input_ids'][ind]
+        attention_mask_ = features['attention_mask'][ind]
+        token_type_ids_ = features.get('token_type_ids', None)
+        if not token_type_ids_ is None:
+            token_type_ids_ = token_type_ids_[ind]
+        event_tokens_ = features['event_mask'][ind]
+        label_ = features['label'][ind]
 
-    # Split the sample's tokens into several chunk lists.
-    chunks = []
-    if attention_mask_ is not None:
-        chunks_attention_mask = []
-    else:
-        chunks_attention_mask = None
-    if token_type_ids_ is not None:
-        chunks_token_type_ids = []
-    else:
-        chunks_token_type_ids = None
-    if event_tokens_ is not None:
-        chunks_event_tokens = []
-    else:
-        chunks_event_tokens = None
+        assert len(input_ids_) == len(attention_mask_) == len(event_tokens_)
 
-    def pad_chunk(chunk, pad_type=pad_id):
-        return chunk + [pad_type] * (chunk_len - len(chunk))
-
-    def format_chunk(chunk, cls_type=cls_id, sep_type=sep_id, pad_type=pad_id, pad=True):
-        formatted_chunk = [cls_type] + chunk + [sep_type]
-        if pad:
-            return pad_chunk(formatted_chunk, pad_type=pad_type)
+        # Split the sample's tokens into several chunk lists.
+        chunks = []
+        if attention_mask_ is not None:
+            chunks_attention_mask = []
         else:
-            return formatted_chunk
+            chunks_attention_mask = None
+        if token_type_ids_ is not None:
+            chunks_token_type_ids = []
+        else:
+            chunks_token_type_ids = None
+        if event_tokens_ is not None:
+            chunks_event_tokens = []
+        else:
+            chunks_event_tokens = None
 
-    start = 1
+        def pad_chunk(chunk, pad_type=pad_id):
+            return chunk + [pad_type] * (chunk_len - len(chunk))
 
-    while True:
-        if start >= len(input_ids_) or input_ids_[start] in {pad_id, sep_id}:
-            # we have moved past the end of the sequence or have reached
-            #  either the SEP token or a PAD token.
-            break
+        def format_chunk(chunk, cls_type=cls_id, sep_type=sep_id, pad_type=pad_id, pad=True):
+            formatted_chunk = [cls_type] + chunk + [sep_type]
+            if pad:
+                return pad_chunk(formatted_chunk, pad_type=pad_type)
+            else:
+                return formatted_chunk
 
-        # end right before where the SEP token will go
-        end = min(
-            start + chunk_len - 2,
-            len(input_ids_)
-        )
+        start = 1
 
-        # if we are ending on a PAD token or the SEP token, end before the SEP token
-        if input_ids_[end-1] in {pad_id, sep_id} and sep_id in input_ids_[start:end]:
-            end = input_ids_.index(sep_id, start, end)
+        while True:
+            if start >= len(input_ids_) or input_ids_[start] in {pad_id, sep_id}:
+                # we have moved past the end of the sequence or have reached
+                #  either the SEP token or a PAD token.
+                break
 
-        chunks.append(format_chunk(input_ids_[start:end]))
+            # end right before where the SEP token will go
+            end = min(
+                start + chunk_len - 2,
+                len(input_ids_)
+            )
+
+            # if we are ending on a PAD token or the SEP token, end before the SEP token
+            if input_ids_[end-1] in {pad_id, sep_id} and sep_id in input_ids_[start:end]:
+                end = input_ids_.index(sep_id, start, end)
+
+            chunks.append(format_chunk(input_ids_[start:end]))
+            if chunks_attention_mask is not None:
+                chunks_attention_mask.append(format_chunk(attention_mask_[start:end], cls_type=1, sep_type=1))
+            if chunks_token_type_ids is not None:
+                chunks_token_type_ids.append(format_chunk(token_type_ids_[start:end], cls_type=0, sep_type=0))
+            if chunks_event_tokens is not None:
+                chunks_event_tokens.append(format_chunk(event_tokens_[start:end], cls_type=1, sep_type=1))
+
+            start = end
+
+        def create_pad_chunk(cls_type=cls_id, sep_type=sep_id, pad_type=pad_id):
+            return pad_chunk([cls_type] + [sep_type], pad_type=pad_type)
+
+        # Insert an empty chunk at the beginning.
+        if insert_empty_chunk_at_beginning:
+            chunks.insert(0, create_pad_chunk())
+            if chunks_attention_mask is not None:
+                chunks_attention_mask.insert(0, create_pad_chunk(1, 1, 0))
+            if chunks_token_type_ids is not None:
+                # TODO: do we want special TTIDs?
+                chunks_token_type_ids.insert(0, create_pad_chunk(0, 0, 0))
+            if chunks_event_tokens is not None:
+                # TODO: do we want special ETs?
+                chunks_event_tokens.insert(0, create_pad_chunk(1, 1, 0))
+
+        # Truncate the chunks and add attention masks
+        chunks = chunks[:num_chunks]
         if chunks_attention_mask is not None:
-            chunks_attention_mask.append(format_chunk(attention_mask_[start:end], cls_type=1, sep_type=1))
+            chunks_attention_mask = chunks_attention_mask[:num_chunks]
         if chunks_token_type_ids is not None:
-            chunks_token_type_ids.append(format_chunk(token_type_ids_[start:end], cls_type=0, sep_type=0))
+            chunks_token_type_ids = chunks_token_type_ids[:num_chunks]
         if chunks_event_tokens is not None:
-            chunks_event_tokens.append(format_chunk(event_tokens_[start:end], cls_type=1, sep_type=1))
+            chunks_event_tokens = chunks_event_tokens[:num_chunks]
 
-        start = end
+        # Add empty lists to list of chunks, if the number of chunks less than max number.
+        while len(chunks) < num_chunks:
+            chunks.append(create_pad_chunk())
+            if chunks_attention_mask is not None:
+                chunks_attention_mask.append(create_pad_chunk(1, 1, 0))
+            if chunks_token_type_ids is not None:
+                chunks_token_type_ids.append(create_pad_chunk(0, 0, 0))
+            if chunks_event_tokens is not None:
+                chunks_event_tokens.append(create_pad_chunk(1, 1, 0))
 
-    def create_pad_chunk(cls_type=cls_id, sep_type=sep_id, pad_type=pad_id):
-        return pad_chunk([cls_type] + [sep_type], pad_type=pad_type)
+        features['input_ids'][ind] = chunks
+        features['attention_mask'][ind] = chunks_attention_mask
+        if not token_type_ids_ is None:
+            features['token_type_ids'][ind] = chunks_token_type_ids
+        features['event_mask'][ind] = chunks_event_tokens
+        features['label'][ind] = label_
 
-    # Insert an empty chunk at the beginning.
-    if insert_empty_chunk_at_beginning:
-        chunks.insert(0, create_pad_chunk())
-        if chunks_attention_mask is not None:
-            chunks_attention_mask.insert(0, create_pad_chunk(1, 1, 0))
-        if chunks_token_type_ids is not None:
-            # TODO: do we want special TTIDs?
-            chunks_token_type_ids.insert(0, create_pad_chunk(0, 0, 0))
-        if chunks_event_tokens is not None:
-            # TODO: do we want special ETs?
-            chunks_event_tokens.insert(0, create_pad_chunk(1, 1, 0))
-
-    # Truncate the chunks and add attention masks
-    chunks = chunks[:num_chunks]
-    if chunks_attention_mask is not None:
-        chunks_attention_mask = chunks_attention_mask[:num_chunks]
-    if chunks_token_type_ids is not None:
-        chunks_token_type_ids = chunks_token_type_ids[:num_chunks]
-    if chunks_event_tokens is not None:
-        chunks_event_tokens = chunks_event_tokens[:num_chunks]
-
-    # Add empty lists to list of chunks, if the number of chunks less than max number.
-    while len(chunks) < num_chunks:
-        chunks.append(create_pad_chunk())
-        if chunks_attention_mask is not None:
-            chunks_attention_mask.append(create_pad_chunk(1, 1, 0))
-        if chunks_token_type_ids is not None:
-            chunks_token_type_ids.append(create_pad_chunk(0, 0, 0))
-        if chunks_event_tokens is not None:
-            chunks_event_tokens.append(create_pad_chunk(1, 1, 0))
-
-    return HierarchicalInputFeatures(chunks, chunks_attention_mask, chunks_token_type_ids, chunks_event_tokens, label_)
+    return features
+    #return HierarchicalInputFeatures(chunks, chunks_attention_mask, chunks_token_type_ids, chunks_event_tokens, label_)
 
 
-def cnlp_convert_examples_to_features(
+def cnlp_preprocess_data(
     examples: List[InputExample],
     tokenizer: PreTrainedTokenizer,
     max_length: Optional[int] = None,
-    task: str = None,
+    tasks: List[str] = None,
     label_list: Optional[List[str]] = None,
     output_mode: Optional[str] = None,
     inference: bool = False,
@@ -239,7 +257,7 @@ def cnlp_convert_examples_to_features(
     :param transformers.tokenization_utils.PreTrainedTokenizer tokenizer: the tokenizer
     :param typing.Optional[int] max_length: the maximum sequence length
         at which to truncate examples
-    :param str task: the task name
+    :param List[str] tasks: the task name(s) in a list, used to index the labels in the examples list.
     :param typing.Optional[typing.List[str]] label_list: the list of labels
         for this task. If not provided explicitly, it will be retrieved from
         the processor with :meth:`transformers.DataProcessor.get_labels`.
@@ -266,48 +284,53 @@ def cnlp_convert_examples_to_features(
     if max_length is None:
         max_length = tokenizer.max_len
 
-    if task is not None:
-        processor = cnlp_processors[task]()
-        if label_list is None:
-            label_list = processor.get_labels()
-            logger.info("Using label list %s for task %s" % (label_list, task))
-        if output_mode is None:
-            output_mode = cnlp_output_modes[task]
-            logger.info("Using output mode %s for task %s" % (output_mode, task))
-
     label_map = {label: i for i, label in enumerate(label_list)}
 
-    def label_from_example(example: InputExample) -> Union[int, float, None]:
-        if example.label is None:
-            # give it a random label, if we didn't specify a label with the data we won't be comparing it.
-            # return list(label_map.values())[0]
-            return None
-        if output_mode == classification:
-            try:
-                return label_map[example.label]
-            except:
-                logger.error('Error with example %s' % (example.guid))
-                raise Exception()
+    # def label_from_example(example: InputExample) -> Union[int, float, None]:
+    #     if example.label is None:
+    #         # give it a random label, if we didn't specify a label with the data we won't be comparing it.
+    #         # return list(label_map.values())[0]
+    #         return None
+    #     if output_mode == classification:
+    #         try:
+    #             return label_map[example.label]
+    #         except:
+    #             logger.error('Error with example %s' % (example.guid))
+    #             raise Exception()
 
-        elif output_mode == "regression":
-            return float(example.label)
-        elif output_mode == tagging:
-            return [ label_map[label] for label in example.label]
-        elif output_mode == relex:
-            return [ (int(start_token),int(end_token),label_map.get(category, 0)) for (start_token,end_token,category) in example.label]
-        elif output_mode == mtl:
-            return [ label_map[x] for x in example.label]
+    #     elif output_mode == "regression":
+    #         return float(example.label)
+    #     elif output_mode == tagging:
+    #         return [ label_map[label] for label in example.label]
+    #     elif output_mode == relex:
+    #         # If the data has more categories than the label map (e.g. we focus on CONTAINS), any label that is not in the
+    #         # label map gets mapped to 0, which is equivalent to no relation.
+    #         return [ (int(start_token),int(end_token),label_map.get(category, 0)) for (start_token,end_token,category) in example.label]
+    #     elif output_mode == mtl:
+    #         return [ label_map[x] for x in example.label]
 
-        raise KeyError(output_mode)
+    #     raise KeyError(output_mode)
 
-    labels = [label_from_example(example) for example in examples]
+    # labels = [label_from_example(example) for example in examples[task]]
+    raw_labels = []
+    for task in tasks:
+        raw_labels.append(examples[task])
 
-    if examples[0].text_b is None:
-        sentences = [example.text_a.split(' ') for example in examples]
-    else:
-        sentences = [(example.text_a, example.text_b) for example in examples]
+    labels = []
+    if output_mode == mtl:
+        for task_ind,task in enumerate(tasks):
+            labels.append( [label_map[x] for x in raw_labels[task_ind]])
+        labels = list(zip(*labels))
 
-    batch_encoding = tokenizer(
+    # Try to infer the structure based on column names
+    if 'text' in examples.keys():
+        sentences = [example.split(' ') for example in examples['text']]
+    elif 'text_b' in examples.keys():
+        # FIXME - not sure if this is right but doesn't get used much in our data
+        raise NotImplementedError("2-sentence classification has not been re-implemented yet.")
+        sentences = (examples['text_a'], examples['text_b'])        
+
+    result = tokenizer(
         sentences,
         max_length=max_length,
         padding="max_length",
@@ -389,48 +412,59 @@ def cnlp_convert_examples_to_features(
             if out_of_bounds > 0:
                 logging.warn('During relation processing, there were %d relations (out of %d total relations) where at least one argument was truncated so the relation could not be trained/predicted.' % (out_of_bounds, num_relations) )
 
-    features = []
-    for i in range(len(examples)):
-        inputs = {k: batch_encoding[k][i] for k in batch_encoding}
+    result['label'] = labels
+
+    # features = []
+    event_tokens = []
+    for i in range(len(labels)):
+        input_ids = result['input_ids'][i]
         try:
-            event_start = inputs['input_ids'].index(event_start_ind)
+            event_start = input_ids.index(event_start_ind)
         except:
             event_start = -1
 
         try:
-            event_end = inputs['input_ids'].index(event_end_ind)
+            event_end = input_ids.index(event_end_ind)
         except:
-            event_end = len(inputs['input_ids'])-1
+            event_end = len(input_ids)-1
 
-        inputs['event_tokens'] = [0] * len(inputs['input_ids'])
         if event_start >= 0:
-            inputs['event_tokens'] = [0] * event_start + [1] * (event_end-event_start+1) + [0] * (len(inputs['input_ids'])-event_end-1)
+            inst_event_tokens = [0] * event_start + [1] * (event_end-event_start+1) + [0] * (len(input_ids)-event_end-1)
         else:
-            inputs['event_tokens'] = [1] * len(inputs['input_ids'])
+            inst_event_tokens = [1] * len(input_ids)
 
-        if inference:
-            label = None
-        else:
-            label = [labels[i]]
-        feature = InputFeatures(**inputs, label=label)
-        if hierarchical:
-            feature = cnlp_convert_features_to_hierarchical(
-                feature,
-                chunk_len=chunk_len,
-                num_chunks=num_chunks,
-                cls_id=tokenizer.cls_token_id,
-                sep_id=tokenizer.sep_token_id,
-                pad_id=tokenizer.pad_token_id,
-                insert_empty_chunk_at_beginning=insert_empty_chunk_at_beginning,
-            )
-        features.append(feature)
+        event_tokens.append(inst_event_tokens)
 
-    for i, example in enumerate(examples[:5]):
-        logger.info("*** Example ***")
-        logger.info("guid: %s" % (example.guid))
-        logger.info("features: %s" % truncate_features(features[i]) if truncate_examples else features[i])
+        # if inference:
+        #     label = None
+        # else:
+        #     label = [labels[i]]
+        # feature = InputFeatures(**inputs, label=label)
 
-    return features
+    result['event_mask'] = event_tokens
+
+    if hierarchical:
+        result = cnlp_convert_features_to_hierarchical(
+            result,
+            chunk_len=chunk_len,
+            num_chunks=num_chunks,
+            cls_id=tokenizer.cls_token_id,
+            sep_id=tokenizer.sep_token_id,
+            pad_id=tokenizer.pad_token_id,
+            insert_empty_chunk_at_beginning=insert_empty_chunk_at_beginning,
+        )
+
+    # features.append(feature)
+
+
+    ## FIXME - doesn't work because this is called in batch mode - maybe move to dataset class initializer?
+    # for i in range(5):
+    #     logger.info("*** Example ***")
+    #     features = {x: result[x][i] for x in result.keys()}
+    #     # logger.info("guid: %s" % (example.guid))
+    #     logger.info("features: %s" % truncate_features(features) if truncate_examples else features)
+
+    return result
 
 
 def truncate_features(feature: Union[InputFeatures, HierarchicalInputFeatures]):
@@ -538,8 +572,6 @@ class ClinicalNlpDataset(Dataset):
     :param transformers.tokenization_utils.PreTrainedTokenizer tokenizer: the tokenizer
     :param typing.Optional[int] limit_length: if provided, the number of
         examples to include in the dataset
-    :param typing.Union[str, Split] mode: the data split mode of this dataset
-        (:obj:`"train"`, :obj:`"dev"`, :obj:`"test"`)
     :param typing.Optional[str] cache_dir: if provided, the directory to save/load a cache
         of this dataset
     :param bool hierarchical: whether to structure the data for the hierarchical
@@ -554,7 +586,6 @@ class ClinicalNlpDataset(Dataset):
         args: DataTrainingArguments,
         tokenizer: PreTrainedTokenizer,
         limit_length: Optional[int] = None,
-        mode: Union[str, Split] = Split.train,
         cache_dir: Optional[str] = None,
         hierarchical: bool = False,
     ):
@@ -562,122 +593,155 @@ class ClinicalNlpDataset(Dataset):
         self.processors = []
         self.output_mode = []
         self.class_weights = []
+        self.label_lists = []
         self.hierarchical = hierarchical
+        self.features = None
+        self.datasets = []
 
-        for task in args.task_name:
-            self.processors.append(cnlp_processors[task]())
-            self.output_mode.append(cnlp_output_modes[task])
-            if self.output_mode[-1] == mtl:
-                for subtask in range(self.processors[-1].get_num_tasks()):
+        # Load data features from cache or dataset file
+        # self.label_lists = [processor.get_labels() for processor in self.processors]
+        self.label_lists = []
+        self.num_train_instances = 0
+
+        if self.hierarchical:
+            implicit_max_len = self.args.chunk_len * self.args.num_chunks
+            if self.args.max_seq_length < implicit_max_len:
+                raise ValueError('For the hierarchical model, the max seq length should be equal to the chunk length * num_chunks, otherwise what is the point?')
+
+        for task_ind, data_dir in enumerate(args.data_dir):
+            task = args.task_name[task_ind]
+            task_processor = cnlp_processors[task](data_dir)
+            self.processors.append(task_processor)
+
+            if task_processor.get_output_mode() == mtl:
+                for subtask in range(task_processor.get_num_tasks()):
                     self.class_weights.append(None)
             else:
                 self.class_weights.append(None)
-        
-        self.features = None
 
-        if isinstance(mode, str):
-            try:
-                mode = Split[mode]
-            except KeyError:
-                raise KeyError("mode is not a valid split name")
-
-        # Load data features from cache or dataset file
-        self.label_lists = [processor.get_labels() for processor in self.processors]
-
-        for task_ind,data_dir in enumerate(args.data_dir):
             datadir = dirname(data_dir) if data_dir[-1] == '/' else data_dir
             domain = basename(datadir)
             dataconfig = basename(dirname(datadir))
-            num_subtasks = self.processors[task_ind].get_num_tasks()
 
-            cached_features_file = os.path.join(
-                cache_dir if cache_dir is not None else data_dir,
-                "cached_{}-{}_{}_{}_{}".format(
-                    dataconfig, domain, mode.value, tokenizer.__class__.__name__, str(args.max_seq_length),
-                ),
+            # cached_features_file = os.path.join(
+            #     cache_dir if cache_dir is not None else data_dir,
+            #     "cached_{}-{}_{}_{}_{}".format(
+            #         dataconfig, domain, mode.value, tokenizer.__class__.__name__, str(args.max_seq_length),
+            #     ),
+            # )
+
+            num_subtasks = task_processor.get_num_tasks()
+            self.label_lists.append(task_processor.get_labels())
+            task_dataset = task_processor.dataset.map(
+                cnlp_preprocess_data,
+                batched=True,
+                load_from_cache_file=not args.overwrite_cache,
+                desc="Running tokenizer on dataset, organizing labels, creating hierarchical segments if necessary",
+                fn_kwargs = {
+                    'tokenizer':tokenizer,
+                    'max_length':args.max_seq_length,
+                    'label_list':self.label_lists[task_ind],
+                    'output_mode':task_processor.get_output_mode(),
+                    'inference': not 'train' in task_processor.dataset,
+                    'hierarchical':self.hierarchical,
+                    'chunk_len':self.args.chunk_len,
+                    'num_chunks':self.args.num_chunks,
+                    'insert_empty_chunk_at_beginning':self.args.insert_empty_chunk_at_beginning,
+                    'truncate_examples':self.args.truncate_examples,
+                    'tasks': task_processor.get_classifiers(),
+                }
             )
-            if self.hierarchical:
-                cached_features_file += '_hier'
+
+            self.datasets.append(task_dataset)
+            
+            ## FIXME - this will be "wrong" for datasets with multiple layers of annotations because it
+            ## counts each instance once for each layer, when it really only requires one forward pass
+            self.num_train_instances += task_dataset['train'].num_rows
+
+            # if self.hierarchical:
+            #     cached_features_file += '_hier'
 
             # Make sure only the first process in distributed training processes the dataset,
             # and the others will use the cache.
-            lock_path = cached_features_file + ".lock"
-            with FileLock(lock_path):
+            # lock_path = cached_features_file + ".lock"
+            # with FileLock(lock_path):
 
-                if os.path.exists(cached_features_file) and not args.overwrite_cache:
-                    start = time.time()
-                    features = torch.load(cached_features_file)
-                    logger.info(
-                        f"Loading features from cached file {cached_features_file} [took %.3f s]", time.time() - start
-                    )
-                else:
-                    logger.info(f"Creating features from dataset file at {data_dir}")
+            #     if os.path.exists(cached_features_file) and not args.overwrite_cache:
+            #         start = time.time()
+            #         features = torch.load(cached_features_file)
+            #         logger.info(
+            #             f"Loading features from cached file {cached_features_file} [took %.3f s]", time.time() - start
+            #         )
+            #     else:
+            #         logger.info(f"Creating features from dataset file at {data_dir}")
 
-                    if mode == Split.dev:
-                        examples = self.processors[task_ind].get_dev_examples(data_dir)
-                    elif mode == Split.test:
-                        examples = self.processors[task_ind].get_test_examples(data_dir)
-                    else:
-                        examples = self.processors[task_ind].get_train_examples(data_dir)
-                    if limit_length is not None:
-                        examples = examples[:limit_length]
-                    features = cnlp_convert_examples_to_features(
-                        examples,
-                        tokenizer,
-                        max_length=args.max_seq_length,
-                        label_list=self.label_lists[task_ind],
-                        output_mode=self.output_mode[task_ind],
-                        inference=mode == Split.test,
-                        hierarchical=self.hierarchical,
-                        chunk_len=self.args.chunk_len,
-                        num_chunks=self.args.num_chunks,
-                        insert_empty_chunk_at_beginning=self.args.insert_empty_chunk_at_beginning,
-                        truncate_examples=self.args.truncate_examples,
-                    )
-                    start = time.time()
-                    torch.save(features, cached_features_file)
-                    # ^ This seems to take a lot of time so I want to investigate why and how we can improve.
-                    logger.info(
-                        "Saving features into cached file %s [took %.3f s]", cached_features_file, time.time() - start
-                    )
+            #         preprocessor_args = ()
 
-                if self.args.weight_classes and mode == Split.train:
-                    if num_subtasks == 1:
-                        class_counts = [0] * len(self.label_lists[task_ind])
-                        for feature in features:
-                            labels = feature.label[0]
-                            vals, counts = np.unique(labels, return_counts=True)
-                            for val_ind,val in enumerate(vals):
-                                if val >= 0:
-                                    class_counts[int(val)] += counts[val_ind]
+            #         # if mode == Split.dev:
+            #         #     examples = task_processor.get_dev_examples(data_dir)
+            #         # elif mode == Split.test:
+            #         #     examples = task_processor.get_test_examples(data_dir)
+            #         # else:
+            #         #     examples = task_processor.get_train_examples(data_dir)
+            #         # if limit_length is not None:
+            #         #     examples = examples[:limit_length]
+            #         # features = cnlp_convert_examples_to_features(
+            #         #     examples,
+            #         #     tokenizer,
+            #         #     max_length=args.max_seq_length,
+            #         #     label_list=self.label_lists[task_ind],
+            #         #     output_mode=task_processor.get_output_mode(),
+            #         #     inference=mode == Split.test,
+            #         #     hierarchical=self.hierarchical,
+            #         #     chunk_len=self.args.chunk_len,
+            #         #     num_chunks=self.args.num_chunks,
+            #         #     insert_empty_chunk_at_beginning=self.args.insert_empty_chunk_at_beginning,
+            #         #     truncate_examples=self.args.truncate_examples,
+            #         # )
+            #         start = time.time()
+            #         torch.save(features, cached_features_file)
+            #         # ^ This seems to take a lot of time so I want to investigate why and how we can improve.
+            #         logger.info(
+            #             "Saving features into cached file %s [took %.3f s]", cached_features_file, time.time() - start
+            #         )
 
-                        self.class_weights[task_ind] = min(class_counts) / class_counts
-                    else:
-                        class_counts = np.zeros( (num_subtasks, len(self.label_lists[task_ind])) )
-                        for feature in features:
-                            labels = feature.label[0]
-                            for subtask_ind,label in enumerate(labels):
-                                class_counts[subtask_ind][label] += 1
+                # if self.args.weight_classes and mode == Split.train:
+                #     if num_subtasks == 1:
+                #         class_counts = [0] * len(self.label_lists[task_ind])
+                #         for feature in features:
+                #             labels = feature.label[0]
+                #             vals, counts = np.unique(labels, return_counts=True)
+                #             for val_ind,val in enumerate(vals):
+                #                 if val >= 0:
+                #                     class_counts[int(val)] += counts[val_ind]
+
+                #         self.class_weights[task_ind] = min(class_counts) / class_counts
+                #     else:
+                #         class_counts = np.zeros( (num_subtasks, len(self.label_lists[task_ind])) )
+                #         for feature in features:
+                #             labels = feature.label[0]
+                #             for subtask_ind,label in enumerate(labels):
+                #                 class_counts[subtask_ind][label] += 1
                                 
-                        self.class_weights[subtask_ind] = min(class_counts[subtask_ind]) / class_counts[subtask_ind]
+                #         self.class_weights[subtask_ind] = min(class_counts[subtask_ind]) / class_counts[subtask_ind]
 
 
-                if self.features is None:
-                    self.features = features
-                else:
-                    assert len(features) == len(self.features)
-                    if self.features[0].label is None:
-                        assert features[0].label is None, 'Some of the tasks have None labels and others do not, they should be consistent!'
-                    else:
-                        # we should have all non-label features be the same, so we can essentially discard subsequent
-                        # datasets input features. So we'll append the labels from that features list and discard the duplicate input features.
-                        for feature_ind,feature in enumerate(features):
-                            if len(self.features[feature_ind].label[0].shape) == 1 and len(feature.label[0].shape) == 1:
-                                self.features[feature_ind].label[0] = np.stack([self.features[feature_ind].label[0],
-                                                                            feature.label[0]])
-                            else:
-                                self.features[feature_ind].label[0] = np.concatenate([self.features[feature_ind].label[0],
-                                                                            feature.label[0]])
+                # if self.features is None:
+                #     self.features = features
+                # else:
+                #     assert len(features) == len(self.features)
+                #     if self.features[0].label is None:
+                #         assert features[0].label is None, 'Some of the tasks have None labels and others do not, they should be consistent!'
+                #     else:
+                #         # we should have all non-label features be the same, so we can essentially discard subsequent
+                #         # datasets input features. So we'll append the labels from that features list and discard the duplicate input features.
+                #         for feature_ind,feature in enumerate(features):
+                #             if len(self.features[feature_ind].label[0].shape) == 1 and len(feature.label[0].shape) == 1:
+                #                 self.features[feature_ind].label[0] = np.stack([self.features[feature_ind].label[0],
+                #                                                             feature.label[0]])
+                #             else:
+                #                 self.features[feature_ind].label[0] = np.concatenate([self.features[feature_ind].label[0],
+                #                                                             feature.label[0]])
 
     def __len__(self) -> int:
         """
