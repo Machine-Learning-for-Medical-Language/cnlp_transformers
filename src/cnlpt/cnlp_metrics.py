@@ -1,8 +1,7 @@
 import numpy as np
-from transformers.data.metrics import simple_accuracy
-from sklearn.metrics import matthews_corrcoef, f1_score, recall_score, precision_score, classification_report
+from sklearn.metrics import matthews_corrcoef, f1_score, recall_score, precision_score, classification_report, accuracy_score
 from seqeval.metrics import f1_score as seq_f1, classification_report as seq_cls
-from .cnlp_processors import cnlp_processors
+from .cnlp_processors import cnlp_processors, classification, mtl
 
 def fix_np_types(input_variable):
     """
@@ -126,7 +125,7 @@ def acc_and_f1(preds, labels):
     :rtype: typing.Dict[str, typing.Any]
     :return: a dictionary containing evaluation metrics
     """
-    acc = simple_accuracy(preds, labels)
+    acc = accuracy_score(y_pred=preds, y_true=labels)
     recall = recall_score(y_true=labels, y_pred=preds, average=None)
     precision = precision_score(y_true=labels, y_pred=preds, average=None)
     f1 = f1_score(y_true=labels, y_pred=preds, average=None)
@@ -139,7 +138,7 @@ def acc_and_f1(preds, labels):
         "precision": fix_np_types(precision)
     }
 
-def cnlp_compute_metrics(task_name, preds, labels):
+def cnlp_compute_metrics(task_name, preds, labels, processor):
     """
     Function that defines and computes the metrics used for each task.
 
@@ -177,8 +176,10 @@ def cnlp_compute_metrics(task_name, preds, labels):
         return tagging_metrics(task_name, preds, labels)
     elif task_name.startswith('tlinkx'):
         return relation_metrics(task_name, preds, labels)
-    elif cnlp_output_modes[task_name] == classification:
-        logger.warn("Choosing accuracy and f1 as default metrics; modify cnlp_compute_metrics() to customize for this task.")
+    elif processor.get_output_mode() == classification:
+         logger.warn("Choosing accuracy and f1 as default metrics; modify cnlp_compute_metrics() to customize for this task.")
+         return acc_and_f1(preds, labels)
+    elif processor.get_output_mode() == mtl:
         return acc_and_f1(preds, labels)
     else:
         raise Exception('There is no metric defined for this task in function cnlp_compute_metrics()')

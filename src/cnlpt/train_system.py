@@ -324,6 +324,7 @@ def main(json_file=None, json_obj=None):
         output_mode = []
         tagger = []
         relations = []
+        tasks_to_processors = {}
         for task_ind, task_name in enumerate(data_args.task_name):
             processor = dataset.processors[task_ind]
             if processor.get_num_tasks() > 1:
@@ -333,6 +334,7 @@ def main(json_file=None, json_obj=None):
                     output_mode.append(classification)
                     tagger.append(False)
                     relations.append(False)
+                    tasks_to_processors[task_names[-1]] = processor
             else:
                 task_names.append(task_name)
                 num_labels.append(len(processor.get_labels()))
@@ -340,6 +342,7 @@ def main(json_file=None, json_obj=None):
                 output_mode.append(cnlp_output_modes[task_name])
                 tagger.append(cnlp_output_modes[task_name] == tagging)
                 relations.append(cnlp_output_modes[task_name] == relex)
+                tasks_to_processors[task_name] = processor
 
     except KeyError:
         raise ValueError("Task not found: %s" % (data_args.task_name))
@@ -533,7 +536,7 @@ def main(json_file=None, json_obj=None):
             logger.info('Evaluation strategy not specified so evaluating every epoch')
             training_args.evaluation_strategy = IntervalStrategy.EPOCH
 
-    def build_compute_metrics_fn(task_names: List[str], model) -> Callable[[EvalPrediction], Dict]:
+    def build_compute_metrics_fn(task_names: List[str], model, processors: Dict[str,DataProcessor]) -> Callable[[EvalPrediction], Dict]:
         def compute_metrics_fn(p: EvalPrediction):
 
             metrics = {}
@@ -550,8 +553,10 @@ def main(json_file=None, json_obj=None):
                     preds = np.argmax(p.predictions[task_ind], axis=1)
 
                 if len(task_names) == 1:
+                    # single task learning:
                     labels = p.label_ids[:,0]
                 elif relations[task_ind]:
+                    # relation labels
                     labels = p.label_ids[:,0,task_label_ind:task_label_ind+data_args.max_seq_length,:].squeeze()
                     task_label_ind += data_args.max_seq_length
                 elif p.label_ids.ndim == 4:
@@ -560,10 +565,14 @@ def main(json_file=None, json_obj=None):
                 elif p.label_ids.ndim == 3:
                     labels = p.label_ids[:,0,task_label_ind:task_label_ind+1].squeeze()
                     task_label_ind += 1
+                elif p.label_ids.ndim == 2:
+                    labels = p.label_ids[:,task_ind].squeeze()
 
-                metrics[task_name] = cnlp_compute_metrics(task_name, preds, labels)
-                processor = cnlp_processors.get(task_name, cnlp_processors.get(task_name.split('-')[0], None))()
-                task_scores.append(processor.get_one_score(metrics.get(task_name, metrics.get(task_name.split('-')[0], None))))
+                processor = processors[task_name]
+                metrics[task_name] = cnlp_compute_metrics(task_name, preds, labels, processor)
+                # processor = cnlp_processors.get(task_name, cnlp_processors.get(task_name.split('-')[0], None))()
+                task_scores.append( metrics[task_name].get('one_score', metrics[task_name].get('acc')))
+                #task_scores.append(processor.get_one_score(metrics.get(task_name, metrics.get(task_name.split('-')[0], None))))
 
             one_score = sum(task_scores) / len(task_scores)
 
@@ -594,7 +603,7 @@ def main(json_file=None, json_obj=None):
         args=training_args,
         train_dataset=dataset.datasets[0].get('train', None),
         eval_dataset=dataset.datasets[0].get('validation', None),
-        compute_metrics=build_compute_metrics_fn(task_names, model),
+        compute_metrics=build_compute_metrics_fn(task_names, model, tasks_to_processors),
     )
 
     # Training

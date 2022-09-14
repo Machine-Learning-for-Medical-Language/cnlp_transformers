@@ -13,6 +13,7 @@ from torch.utils.data.dataset import Dataset
 from transformers import BatchEncoding
 from transformers.data.processors.utils import DataProcessor, InputExample
 from transformers.tokenization_utils import PreTrainedTokenizer
+from datasets import Features
 from dataclasses import dataclass, field, asdict, astuple
 from enum import Enum
 
@@ -562,6 +563,10 @@ class DataTrainingArguments:
         "help": "Whether to truncate input examples when displaying them in the log"
     })
 
+    max_eval_items: Optional[int] = field(
+        default=-1, metadata={"help": "Set a number of validation instances to use during training (useful if a dataset has been created using dumb logic like 80/10/10 and 10\% takes forever to evaluate on. Default is evaluate on all validation data."}
+    )
+
 
 class ClinicalNlpDataset(Dataset):
     """
@@ -619,9 +624,9 @@ class ClinicalNlpDataset(Dataset):
             else:
                 self.class_weights.append(None)
 
-            datadir = dirname(data_dir) if data_dir[-1] == '/' else data_dir
-            domain = basename(datadir)
-            dataconfig = basename(dirname(datadir))
+            # datadir = dirname(data_dir) if data_dir[-1] == '/' else data_dir
+            # domain = basename(datadir)
+            # dataconfig = basename(dirname(datadir))
 
             # cached_features_file = os.path.join(
             #     cache_dir if cache_dir is not None else data_dir,
@@ -652,7 +657,12 @@ class ClinicalNlpDataset(Dataset):
                 }
             )
 
+            if args.max_eval_items > 0:
+                task_dataset['validation'].features = Features({ key:task_dataset['validation'][key][:args.max_eval_items] for key in task_dataset['validation'].features.keys()})
+
             self.datasets.append(task_dataset)
+
+                
             
             ## FIXME - this will be "wrong" for datasets with multiple layers of annotations because it
             ## counts each instance once for each layer, when it really only requires one forward pass
