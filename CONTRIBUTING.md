@@ -75,7 +75,7 @@ in certain circumstances:
   * a branch name starting with `vX`, where `X` is a digit 
   from 1 to 9 (e.g. `v0.3.0`)
 * Commits pushed to either of the above (for collaborators) or to:
-  * a branch name ending in `/testable`, e.g. `my-special-feature/testable`
+  * a branch name starting with `testable/`, e.g. `testable/my-special-feature`
 
 You can see the structure of these test runs in the 
 [**Actions**](https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers/actions) 
@@ -85,7 +85,7 @@ Linux, and in the case of commits or pull requests targeting `master`,
 they will run on Linux, macOS, and Windows.
 
 If you are developing in a public fork of the repository, you can use 
-the `/testable` naming convention for your branch to have the forked 
+the `testable/` naming convention for your branch to have the forked 
 actions run as you push to your fork. We recommend not tweaking the 
 actions in your fork as this may cause unexpected behavior when opening
 a pull request.
