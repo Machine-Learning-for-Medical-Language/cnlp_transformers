@@ -5,9 +5,14 @@ name: Python package (Ubuntu)
 
 on:
   push:
-    branches: [ "add-tests" ]
+    branches:
+      - master
+      - 'v[0-9]*'
+      - '**/testable'
   pull_request:
-    branches: [ "add-tests" ]
+    branches:
+      - master
+      - 'v[0-9]*'
 
 jobs:
   build:
@@ -16,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.8", "3.9", "3.10"]
+        python-version: ["3.7", "3.8", "3.9", "3.10"]
 
     steps:
     - uses: actions/checkout@v3

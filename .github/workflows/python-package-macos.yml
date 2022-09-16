@@ -5,9 +5,11 @@ name: Python package (macOS)
 
 on:
   push:
-    branches: [ "add-tests" ]
+    branches:
+      - master
   pull_request:
-    branches: [ "add-tests" ]
+    branches:
+      - master
 
 jobs:
   build:
@@ -16,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.8", "3.9", "3.10"]
+        python-version: ["3.7", "3.8", "3.9", "3.10"]
 
     steps:
     - uses: actions/checkout@v3
