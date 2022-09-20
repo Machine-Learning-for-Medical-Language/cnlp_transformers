@@ -12,6 +12,8 @@ on:
     paths:
       - 'src/**'
       - 'test/**'
+      - 'setup.cfg'
+      - 'pyproject.toml'
   pull_request:
     branches:
       - master
@@ -19,6 +21,8 @@ on:
     paths:
       - 'src/**'
       - 'test/**'
+      - 'setup.cfg'
+      - 'pyproject.toml'
 
 jobs:
   build:
