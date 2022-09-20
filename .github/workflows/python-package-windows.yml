@@ -10,12 +10,16 @@ on:
     paths:
       - 'src/**'
       - 'test/**'
+      - 'setup.cfg'
+      - 'pyproject.toml'
   pull_request:
     branches:
       - master
     paths:
       - 'src/**'
       - 'test/**'
+      - 'setup.cfg'
+      - 'pyproject.toml'
 
 jobs:
   build:
