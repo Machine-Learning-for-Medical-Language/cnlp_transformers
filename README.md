@@ -49,7 +49,9 @@ To use the library for fine-tuning, you'll need to take the following steps:
    3. don't distribute the data to anyone else
    4. cite us
 2. Run ```python -m cnlpt.data.transform_uci_drug <input dir> <output dir>``` to preprocess the data from the extract directory into a new directory. This will create {train,dev,test}.tsv in the output directory specified, where the sentiment labels have been collapsed into 3 categories.
+
 2.1 If you want to try joint training: Run ```python -m cnlpt.data.transform_uci_drug_rating <input dir> <output dir>``` to preprocess the data from the extract directory into a new directory. This will create {train,dev,test}.tsv in the output directory specified.
+
 3. Fine-tune with something like: 
 ```python -m cnlpt.train_system --task_name ucidrug --data_dir <data dir> --encoder_name roberta-base --do_train --cache cache/ --output_dir temp/ --overwrite_output_dir --evals_per_epoch 5 --do_eval --num_train_epochs 1 --learning_rate 1e-5```
 
