@@ -78,9 +78,9 @@ def main():
     dev = df.drop(train.index)
 
     #select column as desired
-    test = test[['rating', 'sentiment', 'review_clean']]
-    train = train[['rating', 'sentiment','review_clean']]
-    dev = dev[['rating', 'sentiment','review_clean']]
+    test = test[['sentiment','review_clean']]
+    train = train[['sentiment','review_clean']]
+    dev = dev[['sentiment','review_clean']]
     
     #output CSVs
     output_path.mkdir(parents=True, exist_ok=True)
