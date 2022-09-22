@@ -52,7 +52,10 @@ To use the library for fine-tuning, you'll need to take the following steps:
 3. Fine-tune with something like: 
 ```python -m cnlpt.train_system --task_name ucidrug --data_dir <data dir> --encoder_name roberta-base --do_train --cache cache/ --output_dir temp/ --overwrite_output_dir --evals_per_epoch 5 --do_eval --num_train_epochs 1 --learning_rate 1e-5```
 
-On our hardware, that command results in the following eval performance:
+4. If you want to fine tune for joint training with rating and sentiment:
+```!python -m cnlpt.train_system --task_name ucidrug ucirating --data_dir <data dir> --encoder_name roberta-base --do_train --cache cache/ --output_dir temp/ --overwrite_output_dir --evals_per_epoch 5 --do_eval --num_train_epochs 1 --learning_rate 1e-5```
+
+On our hardware, that command results in the following eval performance on finetuning sentiment only:
 ```ucidrug = {'acc': 0.8127712337259765, 'f1': [0.8030439829743325, 0.49202644885258656, 0.9018332042344437], 'acc_and_f1': [0.8079076083501545, 0.6523988412892815, 0.8573022189802101], 'recall': [0.788500506585613, 0.524896265560166, 0.8935734752353663], 'precision': [0.8181340341655716, 0.4630307467057101, 0.9102470551443761]}```
 
 For a demo of how to run the system in colab: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1IVT53DBwFxLKftpIn5iKtF0g4xb9yuxm?usp=sharing)
