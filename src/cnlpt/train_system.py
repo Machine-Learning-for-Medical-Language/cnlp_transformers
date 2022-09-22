@@ -221,10 +221,6 @@ class ModelArguments:
 
 
 def is_pretrained_model(model_name):
-    # check if it's a built-in pre-trained config:
-    if model_name in ALL_PRETRAINED_CONFIG_ARCHIVE_MAP:
-        return True
-    
     # check if it's a model on the huggingface model hub:
     url = hf_hub_url(model_name, CONFIG_NAME)
     r = requests.head(url)
