@@ -44,8 +44,7 @@ from transformers.data.processors.utils import DataProcessor, InputExample, Inpu
 from transformers import ALL_PRETRAINED_CONFIG_ARCHIVE_MAP
 from transformers.optimization import AdamW, get_scheduler
 from transformers.trainer_pt_utils import get_parameter_names
-from transformers.file_utils import CONFIG_NAME
-from huggingface_hub import hf_hub_url
+from transformers.file_utils import hf_bucket_url, CONFIG_NAME
 
 from .cnlp_processors import cnlp_processors, cnlp_output_modes, cnlp_compute_metrics, tagging, relex, classification
 from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
@@ -226,7 +225,7 @@ def is_pretrained_model(model_name):
         return True
     
     # check if it's a model on the huggingface model hub:
-    url = hf_hub_url(model_name, CONFIG_NAME)
+    url = hf_bucket_url(model_name, CONFIG_NAME)
     r = requests.head(url)
     if r.status_code == 200:
         return True
