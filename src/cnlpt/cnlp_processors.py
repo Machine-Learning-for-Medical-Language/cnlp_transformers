@@ -441,6 +441,14 @@ class UciDrugSentimentProcessor(LabeledSentenceProcessor):
 
     def get_one_score(self, results):
         return np.mean(results['f1'])
+ 
+class UciDrugRatingProcessor(LabeledSentenceProcessor):
+    """Processor for the UCI Drug Review rating classification dataset"""
+    def get_labels(self):
+        return [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+
+    def get_one_score(self, results):
+        return np.mean(results['f1'])
 
 class Mimic_7_Processor(LabeledSentenceProcessor):
     """TODO: docstring"""
@@ -697,7 +705,8 @@ cnlp_processors = {'polarity': NegationProcessor,
                    'mimic_radi': MimicRadiProcessor,
                    'mimic_3': Mimic_3_Processor,
                    'mimic_7': Mimic_7_Processor,
-                   'covid': CovidProcessor
+                   'covid': CovidProcessor,
+                   'ucirating': UciDrugRatingProcessor
                   }
 
 mtl = 'mtl'
@@ -729,6 +738,7 @@ cnlp_output_modes = {'polarity': classification,
                 'mimic_radi': mtl,
                 'mimic_3': classification,
                 'mimic_7': classification,
-                'covid': classification
+                'covid': classification,
+                'ucirating': classification
                 }
 
