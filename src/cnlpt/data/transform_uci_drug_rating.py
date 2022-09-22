@@ -35,15 +35,6 @@ TRAIN_FILE = "drugsComTrain_raw.tsv"
 TEST_FILE = "drugsComTest_raw.tsv"
 
 
-def to_sentiment(rating):
-  rating = int(rating)
-  if rating <= 4:
-    return 'Low'
-  elif rating > 4 and rating < 8:
-    return 'Medium'
-  else:
-    return 'High'
-
 def remove_newline(review):
     review = review.replace('&#039;', "'")
     review = review.replace('\n', ' <cr> ')
@@ -60,10 +51,6 @@ def main():
     #read-in files
     df = pd.read_csv(input_path / TRAIN_FILE, sep='\t', usecols = ['review','rating'])
     test = pd.read_csv(input_path / TEST_FILE, sep='\t', usecols = ['review','rating'])
-    
-    #split into sentiments categories
-    test['sentiment'] = test.rating.apply(to_sentiment)
-    df['sentiment'] = df.rating.apply(to_sentiment)
 
     #remove newlines:
     test['review'] = test.review.apply(remove_newline)
