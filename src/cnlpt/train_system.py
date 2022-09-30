@@ -48,7 +48,7 @@ from transformers.trainer_pt_utils import get_parameter_names
 from transformers.file_utils import CONFIG_NAME
 from huggingface_hub import hf_hub_url
 
-from .cnlp_processors import cnlp_processors, tagging, relex, classification
+from .cnlp_processors import tagging, relex, classification
 from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
 from .cnlp_metrics import cnlp_compute_metrics
 
@@ -224,8 +224,8 @@ class ModelArguments:
 
 def is_pretrained_model(model_name):
     # check if it's a built-in pre-trained config:
-    if model_name in ALL_PRETRAINED_CONFIG_ARCHIVE_MAP:
-        return True
+    # if model_name in ALL_PRETRAINED_CONFIG_ARCHIVE_MAP:
+    #     return True
     
     # check if it's a model on the huggingface model hub:
     url = hf_hub_url(model_name, CONFIG_NAME)
@@ -339,9 +339,10 @@ def main(json_file=None, json_obj=None):
                 task_names.append(task_name)
                 num_labels.append(len(processor.get_labels()))
 
-                output_mode.append(cnlp_output_modes[task_name])
-                tagger.append(cnlp_output_modes[task_name] == tagging)
-                relations.append(cnlp_output_modes[task_name] == relex)
+                task_output_mode = processor.get_output_mode()
+                output_mode.append(task_output_mode)
+                tagger.append(task_output_mode == tagging)
+                relations.append(task_output_mode == relex)
                 tasks_to_processors[task_name] = processor
 
     except KeyError:
@@ -554,7 +555,7 @@ def main(json_file=None, json_obj=None):
 
                 if len(task_names) == 1:
                     # single task learning:
-                    labels = p.label_ids[:,0]
+                    labels = p.label_ids
                 elif relations[task_ind]:
                     # relation labels
                     labels = p.label_ids[:,0,task_label_ind:task_label_ind+data_args.max_seq_length,:].squeeze()
@@ -570,7 +571,7 @@ def main(json_file=None, json_obj=None):
 
                 processor = processors[task_name]
                 metrics[task_name] = cnlp_compute_metrics(task_name, preds, labels, processor)
-                # processor = cnlp_processors.get(task_name, cnlp_processors.get(task_name.split('-')[0], None))()
+                # FIXME - Defaulting to accuracy for model selection score, when it should be task-specific
                 task_scores.append( metrics[task_name].get('one_score', metrics[task_name].get('acc')))
                 #task_scores.append(processor.get_one_score(metrics.get(task_name, metrics.get(task_name.split('-')[0], None))))
 
@@ -623,11 +624,11 @@ def main(json_file=None, json_obj=None):
     eval_results = {}
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
-
+        eval_dataset=dataset.datasets[0]['validation']
         try:
             eval_result = model.best_eval_results
         except:
-            eval_result = trainer.evaluate(eval_dataset=dataset['validation'])
+            eval_result = trainer.evaluate(eval_dataset=eval_dataset)
         
         if trainer.is_world_process_zero():
             with open(output_eval_file, "w") as writer:
@@ -638,7 +639,7 @@ def main(json_file=None, json_obj=None):
 
             with open(output_eval_predictions, 'w') as writer:
                 #Chen wrote the below but it doesn't work for all settings
-                predictions = trainer.predict(test_dataset=dataset['validation']).predictions
+                predictions = trainer.predict(test_dataset=eval_dataset).predictions
                 dataset_labels = dataset.get_labels()
                 for task_ind, task_name in enumerate(task_names):
                     if output_mode[task_ind] == classification:
@@ -657,9 +658,9 @@ def main(json_file=None, json_obj=None):
                             wpind_to_ind = {}
                             chunk_labels = []
 
-                            tokens = tokenizer.convert_ids_to_tokens(eval_dataset.features[index].input_ids)
+                            tokens = tokenizer.convert_ids_to_tokens(eval_dataset['input_ids'][index])
                             for token_ind in range(1,len(tokens)):
-                                if eval_dataset[index].input_ids[token_ind] <= 2:
+                                if eval_dataset['input_ids'][index][token_ind] <= 2:
                                     break
                                 if tokens[token_ind].startswith('Ġ'):
                                     wpind_to_ind[token_ind] = len(wpind_to_ind)

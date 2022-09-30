@@ -1,7 +1,11 @@
+import logging
 import numpy as np
 from sklearn.metrics import matthews_corrcoef, f1_score, recall_score, precision_score, classification_report, accuracy_score
 from seqeval.metrics import f1_score as seq_f1, classification_report as seq_cls
-from .cnlp_processors import cnlp_processors, classification, mtl
+from .cnlp_processors import classification, mtl, tagging, relex
+
+
+logger = logging.getLogger(__name__)
 
 def fix_np_types(input_variable):
     """
@@ -16,7 +20,7 @@ def fix_np_types(input_variable):
     
     return input_variable
 
-def tagging_metrics(task_name, preds, labels):
+def tagging_metrics(processor, preds, labels):
     """
     One of the metrics functions for use in :func:`cnlp_compute_metrics`.
 
@@ -33,13 +37,12 @@ def tagging_metrics(task_name, preds, labels):
             'report': seqeval classification report
         }
 
-    :param str task_name: the task name used to index into cnlp_processors
+    :param DataProcessor processor: the data processor that was used to read in the data files
     :param numpy.ndarray preds: the predicted labels from the model
     :param numpy.ndarray labels: the true labels
     :rtype: typing.Dict[str, typing.Any]
     :return: a dictionary containing evaluation metrics
     """
-    processor = cnlp_processors[task_name]()
     label_set = processor.get_labels()
 
     preds = preds.flatten()
@@ -59,7 +62,7 @@ def tagging_metrics(task_name, preds, labels):
 
     return {'acc': acc, 'token_f1': fix_np_types(f1), 'f1': fix_np_types(seq_f1([label_seq], [pred_seq])), 'report':'\n'+seq_cls([label_seq], [pred_seq])}
 
-def relation_metrics(task_name, preds, labels):
+def relation_metrics(processor, preds, labels):
     """
     One of the metrics functions for use in :func:`cnlp_compute_metrics`.
 
@@ -76,14 +79,13 @@ def relation_metrics(task_name, preds, labels):
             'precision': precision
         }
 
-    :param str task_name: the task name used to index into cnlp_processors
+    :param DataProcessor processor: the data processor that was used to read in the data files
     :param numpy.ndarray preds: the predicted labels from the model
     :param numpy.ndarray labels: the true labels
     :rtype: typing.Dict[str, typing.Any]
     :return: a dictionary containing evaluation metrics
     """
 
-    processor = cnlp_processors[task_name]()
     label_set = processor.get_labels()
 
     # If we are using the attention-based relation extractor, many impossible pairs
@@ -177,9 +179,14 @@ def cnlp_compute_metrics(task_name, preds, labels, processor):
     elif task_name.startswith('tlinkx'):
         return relation_metrics(task_name, preds, labels)
     elif processor.get_output_mode() == classification:
-         logger.warn("Choosing accuracy and f1 as default metrics; modify cnlp_compute_metrics() to customize for this task.")
-         return acc_and_f1(preds, labels)
-    elif processor.get_output_mode() == mtl:
+        logger.warn("Choosing accuracy and f1 as default metrics; modify cnlp_compute_metrics() to customize for this task.")
         return acc_and_f1(preds, labels)
+    elif processor.get_output_mode() == mtl:
+        logger.warn("Choosing accuracy and f1 as default metrics; modify cnlp_compute_metrics() to customize for this task.")
+        return acc_and_f1(preds, labels)
+    elif processor.get_output_mode() == tagging:
+        return tagging_metrics(processor, preds, labels)
+    elif processor.get_output_mode() == relex:
+        return relation_metrics(processor, preds, labels)
     else:
         raise Exception('There is no metric defined for this task in function cnlp_compute_metrics()')

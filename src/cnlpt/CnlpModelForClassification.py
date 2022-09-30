@@ -298,21 +298,29 @@ class CnlpModelForClassification(PreTrainedModel):
             loss_fct = CrossEntropyLoss(weight=class_weights)
 
             if self.relations[task_ind]:
-                task_labels = labels[:, 0, state['task_label_ind']:state['task_label_ind'] + seq_len, :]
+                # task_labels = labels[:, 0, state['task_label_ind']:state['task_label_ind'] + seq_len, :]
+                task_labels = labels
                 state['task_label_ind'] += seq_len
                 task_loss = loss_fct(task_logits.permute(0, 3, 1, 2),
                                      task_labels.type(torch.LongTensor).to(labels.device))
             elif self.tagger[task_ind]:
                 # in cases where we are only given a single task the HF code will have one fewer dimension in the labels, so just add a dummy dimension to make our indexing work:
-                if labels.ndim == 3:
-                    labels = labels.unsqueeze(1)
-                task_labels = labels[:, 0, state['task_label_ind'], :]
+                if labels.ndim == 2:
+                    task_labels = labels
+                elif labels.ndim == 3:
+                    # labels = labels.unsqueeze(1)
+                    task_labels = labels[:, state['task_label_ind'], :]
+                else:
+                    task_labels = labels[:, 0, state['task_label_ind'], :]
+
                 state['task_label_ind'] += 1
                 task_loss = loss_fct(task_logits.view(-1, task_num_labels),
                                      task_labels.reshape([batch_size * seq_len, ]).type(torch.LongTensor).to(
                                          labels.device))
             else:
-                if labels.ndim == 2:
+                if labels.ndim == 1:
+                    task_labels = labels
+                elif labels.ndim == 2:
                     task_labels = labels[:, 0]
                 elif labels.ndim == 3:
                     task_labels = labels[:, 0, task_ind]

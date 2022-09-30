@@ -17,7 +17,7 @@ from datasets import Features
 from dataclasses import dataclass, field, asdict, astuple
 from enum import Enum
 
-from .cnlp_processors import cnlp_processors, classification, tagging, relex, mtl
+from .cnlp_processors import classification, tagging, relex, mtl, AutoProcessor
 
 special_tokens = ['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>', '<neg>']
 
@@ -322,6 +322,29 @@ def cnlp_preprocess_data(
         for task_ind,task in enumerate(tasks):
             labels.append( [label_map[x] for x in raw_labels[task_ind]])
         labels = list(zip(*labels))
+        # labels is a list of tuples, where each tuple is the set of labels for that instance.
+    elif output_mode == classification:
+        labels = [label_map[label] for label in raw_labels[0]]
+        # labels is just a list of one label for each instance
+    elif output_mode == tagging:
+        labels = [ [label_map[label] for label in inst_labels.split()] for inst_labels in raw_labels[0]]
+        # labels is a list of lists, where each internal list is the set of tags for that instance.
+    elif output_mode == relex:
+        for inst_rels in raw_labels[0]:
+            if inst_rels == 'None':
+                labels.append(['None'])
+            else:
+                # The label for a sentence with multiple relations looks like this:
+                # (105,109,OVERLAP) , (64,66,CONTAINS) , (100,105,CONTAINS) , (81,88,CONTAINS) , (81,95,CONTAINS) , (105,106,OVERLAP) , (81,100,CONTAINS)
+                # Split into relations, then remove parens and split with commas into relation components (start offset, end offset, category)
+                inst_labels = []
+                for rel in inst_rels.split(' , '):
+                    start_token, end_token, category = rel[1:-1].split(',')
+                    inst_labels.append( (int(start_token), int(end_token), label_map.get(category, 0)))
+                labels.append(inst_labels)
+        # labels = [ [ (int(start_token),int(end_token),label_map.get(category, 0))] for inst_rels in raw_labels[0]] ]
+    else:
+        raise NotImplementedError('This method is not complete for output mode %s' % (output_mode,) )
 
     # Try to infer the structure based on column names
     if 'text' in examples.keys():
@@ -347,7 +370,7 @@ def cnlp_preprocess_data(
                 sent_labels = []
 
                 ## align word-piece tokens to the tokenization we got as input and only assign labels to input tokens
-                word_ids = batch_encoding.word_ids(batch_index=sent_ind)
+                word_ids = result.word_ids(batch_index=sent_ind)
                 previous_word_idx = None
                 label_ids = []
                 for word_idx in word_ids:
@@ -373,7 +396,7 @@ def cnlp_preprocess_data(
             out_of_bounds = 0
             num_relations = 0
             for sent_ind, sent in enumerate(sentences):
-                word_ids = batch_encoding.word_ids(batch_index=sent_ind)
+                word_ids = result.word_ids(batch_index=sent_ind)
                 num_relations += len(labels[sent_ind])
                 wpi_to_tokeni = {}
                 tokeni_to_wpi = {}
@@ -527,8 +550,7 @@ class DataTrainingArguments:
     )
 
     task_name: List[str] = field(default_factory=lambda: None, metadata={
-        "help": "A space-separated list of tasks to train on: " + ", ".join(cnlp_processors.keys())
-    })
+        "help": "A space-separated list of tasks to train on (mainly used as keys to internally track and display output)"})
     # field(
         
     #     metadata={"help": "A space-separated list of tasks to train on: " + ", ".join(cnlp_processors.keys())})
@@ -615,7 +637,7 @@ class ClinicalNlpDataset(Dataset):
 
         for task_ind, data_dir in enumerate(args.data_dir):
             task = args.task_name[task_ind]
-            task_processor = cnlp_processors[task](data_dir)
+            task_processor = AutoProcessor(data_dir)
             self.processors.append(task_processor)
 
             if task_processor.get_output_mode() == mtl:
@@ -642,6 +664,7 @@ class ClinicalNlpDataset(Dataset):
                 batched=True,
                 load_from_cache_file=not args.overwrite_cache,
                 desc="Running tokenizer on dataset, organizing labels, creating hierarchical segments if necessary",
+                batch_size=100,
                 fn_kwargs = {
                     'tokenizer':tokenizer,
                     'max_length':args.max_seq_length,
@@ -658,7 +681,8 @@ class ClinicalNlpDataset(Dataset):
             )
 
             if args.max_eval_items > 0:
-                task_dataset['validation'].features = Features({ key:task_dataset['validation'][key][:args.max_eval_items] for key in task_dataset['validation'].features.keys()})
+                for key in task_dataset['validation'].features.keys():
+                    task_dataset['validation'].features[key] = task_dataset['validation'][key][:args.max_eval_items]
 
             self.datasets.append(task_dataset)
 

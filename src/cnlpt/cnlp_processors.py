@@ -1,35 +1,6 @@
 """
-Module containing processor classes, evaluation metrics, and output
-modes for tasks defined in the library.
-
-Add custom classes here to add new tasks to the library with the following steps:
-
-#. Create a unique ``task_name`` for your task.
-#. :data:`cnlp_output_modes` -- Add a mapping from a task name to a
-   task type. Currently supported task types are sentence classification,
-   tagging, relation extraction, and multi-task sentence classification.
-#. Processor class -- Create a subclass of :class:`transformers.DataProcessor`
-   for your data source. There are multiple examples to base off of,
-   including intermediate abstractions like :class:`LabeledSentenceProcessor`,
-   :class:`RelationProcessor`, :class:`SequenceProcessor`, that simplify
-   the implementation.
-#. :data:`cnlp_processors` -- Add a mapping from your task name to the
-   "processor" class you created in the last step.
-#. (Optional) -- Modify :func:`cnlp_compute_metrics` to add
-   you task. If your task is classification a reasonable default will
-   be used so this step would be optional.
-
-.. data:: cnlp_processors
-
-    Mapping from task names to processor classes
-
-    :type: typing.Dict[str, transformers.DataProcessor]
-
-.. data:: cnlp_output_modes
-
-    Mapping from task names to output modes
-
-    :type: typing.Dict[str, str]
+Module containing auto processor class, which infers labels, task type, and output
+modes for tasks and datasets that use a few conventional formats.
 
 """
 import os
@@ -167,377 +138,13 @@ class CnlpProcessor(DataProcessor):
     def get_num_tasks(self):
         return 1
 
-class LabeledSentenceProcessor(CnlpProcessor):
-    """
-    Base class for labeled sentence dataset processors
-    """
-    def _create_examples(self, lines, set_type):
-        return super()._create_examples(lines, set_type, sequence=False)
 
-    def get_one_score(self, results):
-        return results['f1'].mean()
-
-    def get_output_mode(self):
-        return classification
-
-class NegationProcessor(LabeledSentenceProcessor):
-    """ Processor for the negation datasets """
-    def get_labels(self):
-        return ["-1", "1"]
-
-    def get_one_score(self, results):
-        return results['f1'][1]
-
-class UncertaintyProcessor(LabeledSentenceProcessor):
-    """ Processor for the negation datasets """
-    def get_labels(self):
-        return ["-1", "1"]
-
-    def get_one_score(self, results):
-        return results['f1'][1]
-
-class HistoryProcessor(LabeledSentenceProcessor):
-    """ Processor for the negation datasets """
-    def get_labels(self):
-        return ["-1", "1"]
-
-    def get_one_score(self, results):
-        return results['f1'][1]
-
-class DtrProcessor(LabeledSentenceProcessor):
-    """ Processor for DocTimeRel datasets """
-    def get_labels(self):
-        return ["BEFORE", "OVERLAP", "BEFORE/OVERLAP", "AFTER"]
-
-    def get_one_score(self, results):
-        return np.mean(results['acc'])
-
-class AlinkxProcessor(LabeledSentenceProcessor):
-    """Processor for an THYME ALINK dataset (links that describe change in temporal status of an event)
-    The classifier version of the task is _given_ an event known to have some aspectual status, label that status."""
-
-    def get_labels(self):
-        return ["None", "CONTINUES", "INITIATES", "REINITIATES", "TERMINATES"]
-
-    def get_one_score(self, results):
-        return np.mean(results['f1'][1:])
-
-class AlinkProcessor(LabeledSentenceProcessor):
-    """Processor for an THYME ALINK dataset (links that describe change in temporal status of an event)
-    The classifier version of the task is _given_ an event known to have some aspectual status, label that status."""
-    def get_labels(self):
-        return ["CONTINUES", "INITIATES", "REINITIATES", "TERMINATES"]
-
-    def get_one_score(self, results):
-        return np.mean(results['f1'])
-
-class ContainsProcessor(LabeledSentenceProcessor):
-    """ Processor for narrative container relation (THYME). Describes the contains relation status between the 
-    two highlighted temporal entities (event or timex). NONE - no relation, CONTAINS - arg 1 contains arg2, 
-    CONTAINS-1 - arg 2 contains arg 1"""
-    def get_labels(self):
-        return ["NONE", "CONTAINS", "CONTAINS-1"]
-
-class TlinkProcessor(LabeledSentenceProcessor):
-    """ Processor for narrative container relation (THYME). Describes the contains relation status between the 
-    two highlighted temporal entities (event or timex). NONE - no relation, CONTAINS - arg 1 contains arg2, 
-    CONTAINS-1 - arg 2 contains arg 1"""
-    def get_labels(self):
-        return ["BEFORE", "BEGINS-ON", "CONTAINS", "ENDS-ON", "OVERLAP" ]
-
-    def get_one_score(self, results):
-        return np.mean(results['f1'])
-
-class TimeCatProcessor(LabeledSentenceProcessor):
-    """Processor for a THYME time expression dataset
-    The classifier version of the task is _given_ a time class, label its time category (see labels below)."""
-    def get_labels(self):
-        return ["DATE", "DOCTIME", "DURATION", "PREPOSTEXP", "QUANTIFIER", "SECTIONTIME", "SET", "TIME"]
-
-    def get_one_score(self, results):
-        return results['acc']
-
-class ContextualModalityProcessor(LabeledSentenceProcessor):
-    """Processor for a contextual modality dataset """
-    def get_labels(self):
-        return ["ACTUAL", "HYPOTHETICAL", "HEDGED", "GENERIC"]
-
-    def get_one_score(self, results):
-        # actual is the default and it's very common so we use the macro f1 of non-default categories for model selection.
-        return np.mean(results['f1'][1:])
-
-class UciDrugSentimentProcessor(LabeledSentenceProcessor):
-    """Processor for the UCI Drug Review sentiment classification dataset"""
-    def get_labels(self):
-        return ['Low', 'Medium', 'High']
-
-    def get_one_score(self, results):
-        return np.mean(results['f1'])
-
-class Mimic_7_Processor(LabeledSentenceProcessor):
-    """TODO: docstring"""
-    def get_labels(self):
-        return ['7+', '7-']
-
-    def get_one_score(self, results):
-        return np.mean(results['f1'])
-
-class Mimic_3_Processor(LabeledSentenceProcessor):
-    """TODO: docstring"""
-    def get_labels(self):
-        return ['3+', '3-']
-
-    def get_one_score(self, results):
-        return np.mean(results['f1'])
-
-class CovidProcessor(LabeledSentenceProcessor):
-    """TODO: docstring"""
-    def get_labels(self):
-        return ['negative', 'positive']
-    
-    def get_one_score(self, results):
-        return results['f1'][1]
-
-class RelationProcessor(CnlpProcessor):
-    """
-    Base class for relation extraction dataset processors
-    """
-    def _create_examples(self, lines, set_type):
-        return super()._create_examples(lines, set_type, relations=True)
-
-    def get_output_mode(self):
-        return relex
-
-class Thyme1ContainsRelationProcessor(RelationProcessor):
-    """TODO: docstring"""
-    def get_one_score(self, results):
-        # the 0th category is None
-        return np.mean(results['f1'][1:])
-    
-    def get_labels(self):
-        return ['None', 'CONTAINS']
-
-class Thyme1AllRelationProcessor(RelationProcessor):
-    """TODO: docstring"""
-    def get_one_score(self, results):
-        # the 0th category is None
-        return np.mean(results['f1'][1:])
-    def get_labels(self):
-        return ['None', 'CONTAINS', 'OVERLAP', 'BEFORE', 'BEGINS-ON', 'ENDS-ON']
-
-class SequenceProcessor(CnlpProcessor):
-    """
-    Base class for sequence tagging dataset processors
-    """
-    def _create_examples(self, lines, set_type):
-        return super()._create_examples(lines, set_type, sequence=True)
-
-    def get_output_mode(self):
-        return tagging
-
-class TimexProcessor(SequenceProcessor):
-    """TODO: docstring"""
-    def get_one_score(self, results):
-        return results['f1']
-
-    def get_labels(self):
-        return ["O", "B-DATE","B-DURATION","B-PREPOSTEXP","B-QUANTIFIER","B-SET","B-TIME","B-SECTIONTIME","B-DOCTIME",
-                "I-DATE","I-DURATION","I-PREPOSTEXP","I-QUANTIFIER","I-SET","I-TIME","I-SECTIONTIME","I-DOCTIME",
-                ]
-
-class EventProcessor(SequenceProcessor):
-    """TODO: docstring"""
-    def get_one_score(self, results):
-        return results['f1']
-    
-    def get_labels(self):
-        return ["O", "B-AFTER","B-BEFORE","B-BEFORE/OVERLAP","B-OVERLAP","I-AFTER","I-BEFORE"
-                ,"I-BEFORE/OVERLAP","I-OVERLAP"]
-        # return ['B-EVENT', 'I-EVENT', 'O']
-
-class DpheProcessor(SequenceProcessor):
-    """TODO: docstring"""
-    def get_one_score(self, results):
-        return results['f1']
-
-    def get_labels(self):
-        return ["O", "B-drug","B-dosage","B-duration","B-frequency","B-form","B-route","B-strength",
-                "I-drug","I-dosage","I-duration","I-frequency","I-form","I-route","I-strength"
-                ]
-
-class MTLClassifierProcessor(DataProcessor):
-    """
-    Base class for multi-task learning classification dataset processors. 
-    This class can be used in the specific multi-task setting where there are multiple tasks with the same
-    labels for each data instance. For the more general case of just wanting to have the model
-    do multiple different tasks with different datasets and different label sets, they can all
-    just be given as separate tasks/data directories at the command line.
-    """
-
-    def get_classifiers(self):
-        """
-        Get the list of classification subtasks in this multi-task setting
-
-        :rtype: typing.List[str]
-        :return: a list of task names
-        """
-        return NotImplemented
-
-    def get_num_tasks(self):
-        """
-        Get the number of subtasks in this multi-task setting.
-
-        Equivalent to :obj:`len(self.get_classifiers())`.
-
-        :rtype: int
-        :return: the number of subtasks
-        """
-        return len(self.get_classifiers())
-
-    def get_classifier_id(self):
-        """
-        Get the classifier ID name used in building the GUIDs for the
-        :class:`transformers.InputExample` instances.
-
-        Not necessarily equal to the ``task_name`` used as keys for
-        :data:`cnlp_processors` and :data:`cnlp_output_modes`.
-
-        :rtype: str
-        :return: the value of the classifier ID
-        """
-        pass
-
-    def get_default_label(self):
-        """
-        Get the default label to assign to unlabeled instances in the dataset.
-
-        :rtype: str
-        :return: the value of the default label
-        """
-        pass
-
-    def get_example_from_tensor_dict(self, tensor_dict):
-        """
-        Not used.
-        """
-        return RuntimeError("not implemented for MTL tasks")
-
-    def get_output_mode(self):
-        return mtl
-
-    def get_train_examples(self, data_dir):
-        return self._get_json_examples(os.path.join(data_dir, 'training.json'), 'train')
-
-    def get_dev_examples(self, data_dir):
-        return self._get_json_examples(os.path.join(data_dir, 'dev.json'), 'dev')
-
-    def get_test_examples(self, data_dir):
-        return self._get_json_examples(os.path.join(data_dir, 'test.json'), 'test')
-
-    def _get_json_examples(self, fn, set_type):
-        """
-        **This is an internal function, but it is included in the documentation
-        to illustrate the input format for MTL datasets.**
-
-        ----
-
-        Creates examples for the training, dev and test sets
-        from a JSON file with the following structure::
-
-            {
-                "<guid_1>": {
-                    "text": "<text>",
-                    "labels: {
-                        "<task_1>": "<label>",
-                        ...
-                    }
-                },
-                ...
-            }
-
-        :param str fn: the path to the dataset file to load
-        :param str set_type: the type of split the file contains (e.g. train, dev, test)
-        :rtype: typing.List[transformers.InputExample]
-        :return: the examples loaded from the file
-        :meta public:
-        """
-        test_mode = set_type == "test"
-        examples = []
-
-        with open(fn, 'rt') as f:
-            data = json.load(f)
-        
-        for inst_id, instance in data.items():
-            guid = '%s-%s' % (self.get_classifier_id(), inst_id)
-            text_a = instance['text']
-            label_dict = instance['labels']
-            labels = [label_dict.get(x, self.get_default_label()) for x in self.get_classifiers()]
-            examples.append(InputExample(guid=guid, text_a=text_a, text_b=None, label=labels))
-        
-        return examples
-
-class MimicRadiProcessor(MTLClassifierProcessor):
-    """TODO: docstring"""
-    def get_classifiers(self):
-        return ["3-", "7-"]
-
-    def get_labels(self):
-        return ["Y", "N"]
-    
-    def get_one_score(self, results):
-        print(results)
-        return np.mean(results['f1'])
-
-    def get_classifier_id(self):
-        return 'mimic_radi'
-
-    def get_default_label(self):
-        return 'N'
-
-class i2b22008Processor(MTLClassifierProcessor):
-    """
-    Processor for the i2b2-2008 disease classification dataset
-    """
-    def get_classifiers(self):
-        return ['Asthma', 'CAD', 'CHF', 'Depression', 'Diabetes', 'Gallstones', 'GERD', 'Gout', 'Hypertension',
-                'Hypertriglyceridemia', 'Hypercholesterolemia', 'OA', 'Obesity', 'OSA', 'PVD', 'Venous Insufficiency']
-
-    def get_labels(self):
-        # return [ ["Unlabeled", "Y", "N", "Q", "U"] for x in range(len(self.get_classifiers()))]
-        return ["Unlabeled", "Y", "N", "Q", "U"]
-
-    def get_default_label(self):
-        return 'Unlabeled'
-    
-    def get_classifier_id(self):
-        return 'i2b2-2008'
-    
-    def get_one_score(self, results):
-        return np.mean(results['f1'][1:2])
-
-class PsychDomainProcessor(MTLClassifierProcessor):
-    """
-    Processor for the McLean Hospital readmission risk factor domain dataset. Each sentence has a binary label for 7 different readmission risk factors representing whether that risk factor is present in the sentence.
-    """
-    def get_classifiers(self):
-        return ["Appearance", "Content (Thought Content)", "Interpersonal", "Mood", "Occupation", "Process (Thought Process)", "Substance"]
-    
-    def get_labels(self):
-        return ["No", "Yes"]
-    
-    def get_default_label(self):
-        return "No"
-    
-    def get_classifier_id(self):
-        return 'psych_domain'
-
-    def get_one_score(self, results):
-        return results['f1'][1]
-
-class InferringProcessor(DataProcessor):
+class AutoProcessor(DataProcessor):
     """
     A special type of processor that tries to infer the details about the dataset from the
     artifacts that are present in the data directory.
+
+    TODO - add documentation of the expected file formats for json and csv defaults
     """
     def __init__(self, data_dir):
         super().__init__()
@@ -568,28 +175,59 @@ class InferringProcessor(DataProcessor):
         else:
             ext_check_file = test_file
 
-        if ext_check_file.endswith('csv'):
-            file_type = 'csv'
+        if ext_check_file.endswith('csv') or ext_check_file.endswith('tsv'):
+            self.dataset = load_dataset('csv', data_files=data_files, sep='\t', column_names=['label', 'text'])
+            metadata = {'tasks': ['label']}
         elif ext_check_file.endswith('json'):
-            file_type = 'json'
-        else:
-            raise ValueError('Data file %s has an extension that we cannot handle (tried csv and json)' % (train_file))
-
-        if not train_file is None:
-            self.dataset = load_dataset(file_type, data_files=data_files, field='data')
-
-        if file_type == 'json':
+            self.dataset = load_dataset('json', data_files=data_files, field='data')
             with open(join(data_dir, ext_check_file), 'rt', encoding="utf-8") as f:
                 json_file = json.load(f)
                 metadata = json_file['metadata']
-        elif file_type == 'csv':
-            # TODO - get the metadata (task names) from the CSV header (column 0)
-            metadata = {}
+        else:
+            raise ValueError('Data file %s has an extension that we cannot handle (tried csv and json)' % (train_file))
 
         self.dataset.metadata = metadata
 
         any_split = next(iter(self.dataset.values()))
+
+        ## FIXME - this will assume that all tasks have the same labelset
         unique_labels = list(set( any_split[self.dataset.metadata['tasks'][0]]) )
+
+        # Probably a reasonable default, and then we'll check for the other cases
+        output_mode = classification
+
+        ## Check if any unique label has a space in it, then we know we are actually 
+        ## dealing with a tagging dataset (FIXME to expand logic to handle relations which ## also have spaces as well as other characters)
+        for label in unique_labels:
+            if label[-1] == ')':
+                output_mode = relex
+                break
+            elif ' ' in str(label):
+                assert 'output_mode' not in metadata or metadata['output_mode'] == tagging, 'Output mode is ambiguous because we inferred tagging due to spaces in labels, but data file has another output mode.'
+                output_mode = tagging
+                break
+        
+        
+        ## get the complete set of unique tags by splitting each set of tags seen so far
+        if output_mode == tagging:
+            unique_tags = set()
+            for label in unique_labels:
+                tags = label.split(' ')
+                unique_tags.update(tags)
+            unique_labels = list(unique_tags)
+        elif output_mode == relex:
+            unique_relations = set()
+            for label in unique_labels:
+                inst_rels = label.split(' , ')
+                for rel in inst_rels:
+                    rel_cat = rel.split(',')[-1]
+                    if rel_cat[-1] == ')':
+                        rel_cat = rel_cat[:-1]
+                    unique_relations.add(rel_cat)
+            unique_labels = list(unique_relations)
+
+
+        metadata['output_mode'] = output_mode
         unique_labels.sort()
         self.labels = unique_labels
         self.classifiers = metadata['tasks']
@@ -616,61 +254,3 @@ class InferringProcessor(DataProcessor):
     
     def get_classifiers(self):
         return self.classifiers
-
-"""
-Add processor classes for new tasks here.
-"""
-cnlp_processors = {'polarity': NegationProcessor,
-                   'uncertainty': UncertaintyProcessor,
-                   'history': HistoryProcessor,
-                   'dtr': DtrProcessor,
-                   'alink': AlinkProcessor,
-                   'alinkx': AlinkxProcessor,
-                   'tlink': TlinkProcessor,
-                   'nc': ContainsProcessor,
-                   'timecat': TimeCatProcessor,
-                   'conmod': ContextualModalityProcessor,
-                   'timex': TimexProcessor,
-                   'event': EventProcessor,
-                   'tlinkx-nc': Thyme1ContainsRelationProcessor,
-                   'tlinkx': Thyme1AllRelationProcessor,
-                   'dphe': DpheProcessor,
-                   'i2b22008': i2b22008Processor,
-                   'ucidrug': UciDrugSentimentProcessor,
-                   'mimic_radi': MimicRadiProcessor,
-                   'mimic_3': Mimic_3_Processor,
-                   'mimic_7': Mimic_7_Processor,
-                   'covid': CovidProcessor,
-                   'psych_domain': PsychDomainProcessor,
-                   'infer': InferringProcessor
-                  }
-
-
-
-"""
-Add output modes for new tasks here.
-"""
-# cnlp_output_modes = {'polarity': classification,
-#                 'uncertainty': classification,
-#                 'history': classification,
-#                 'dtr': classification,
-#                 'alink': classification,
-#                 'alinkx': classification,
-#                 'tlink': classification,
-#                 'nc': classification,
-#                 'timecat': classification,
-#                 'conmod': classification,
-#                 'timex': tagging,
-#                 'event': tagging,
-#                 'dphe': tagging,
-#                 'tlinkx-nc': relex,
-#                 'tlinkx': relex,
-#                 'i2b22008': mtl,
-#                 'ucidrug': classification,
-#                 'mimic_radi': mtl,
-#                 'mimic_3': classification,
-#                 'mimic_7': classification,
-#                 'covid': classification,
-#                 'psych_domain': mtl
-#                 }
-
