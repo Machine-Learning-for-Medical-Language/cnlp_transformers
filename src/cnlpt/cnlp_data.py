@@ -238,7 +238,7 @@ def cnlp_preprocess_data(
     tokenizer: PreTrainedTokenizer,
     max_length: Optional[int] = None,
     tasks: List[str] = None,
-    label_list: Optional[List[str]] = None,
+    label_lists: Optional[List[List[str]]] = None,
     output_mode: Optional[str] = None,
     inference: bool = False,
     hierarchical: bool = False,
@@ -279,72 +279,48 @@ def cnlp_preprocess_data(
     :rtype: typing.Union[typing.List[InputFeatures], typing.List[HierarchicalInputFeatures]]
     :return: the list of converted input features
     """
-    event_start_ind = tokenizer.convert_tokens_to_ids('<e>')
-    event_end_ind = tokenizer.convert_tokens_to_ids('</e>')
     
     if max_length is None:
         max_length = tokenizer.max_len
 
-    label_map = {label: i for i, label in enumerate(label_list)}
+    # Create a label map for each task in this dataset: { task1 => {label_0: 0, label_1: 1, label_2:, 2}, task2 => {label_0: 0, label_1:1} }
+    label_map = {task: {label: i for i, label in enumerate(label_lists[task_ind])} for task_ind,task in enumerate(tasks)}
 
-    # def label_from_example(example: InputExample) -> Union[int, float, None]:
-    #     if example.label is None:
-    #         # give it a random label, if we didn't specify a label with the data we won't be comparing it.
-    #         # return list(label_map.values())[0]
-    #         return None
-    #     if output_mode == classification:
-    #         try:
-    #             return label_map[example.label]
-    #         except:
-    #             logger.error('Error with example %s' % (example.guid))
-    #             raise Exception()
-
-    #     elif output_mode == "regression":
-    #         return float(example.label)
-    #     elif output_mode == tagging:
-    #         return [ label_map[label] for label in example.label]
-    #     elif output_mode == relex:
-    #         # If the data has more categories than the label map (e.g. we focus on CONTAINS), any label that is not in the
-    #         # label map gets mapped to 0, which is equivalent to no relation.
-    #         return [ (int(start_token),int(end_token),label_map.get(category, 0)) for (start_token,end_token,category) in example.label]
-    #     elif output_mode == mtl:
-    #         return [ label_map[x] for x in example.label]
-
-    #     raise KeyError(output_mode)
-
-    # labels = [label_from_example(example) for example in examples[task]]
     raw_labels = []
-    for task in tasks:
+    labels = []
+
+    # Create a list of mapped labels for every task in this dataset, with different mapping tactics for different types,
+    # classification vs tagging vs. relations.
+    for task_ind,task in enumerate(tasks):
+        task_labels = []
         raw_labels.append(examples[task])
 
-    labels = []
-    if output_mode == mtl:
-        for task_ind,task in enumerate(tasks):
-            labels.append( [label_map[x] for x in raw_labels[task_ind]])
-        labels = list(zip(*labels))
-        # labels is a list of tuples, where each tuple is the set of labels for that instance.
-    elif output_mode == classification:
-        labels = [label_map[label] for label in raw_labels[0]]
-        # labels is just a list of one label for each instance
-    elif output_mode == tagging:
-        labels = [ [label_map[label] for label in inst_labels.split()] for inst_labels in raw_labels[0]]
-        # labels is a list of lists, where each internal list is the set of tags for that instance.
-    elif output_mode == relex:
-        for inst_rels in raw_labels[0]:
-            if inst_rels == 'None':
-                labels.append(['None'])
-            else:
-                # The label for a sentence with multiple relations looks like this:
-                # (105,109,OVERLAP) , (64,66,CONTAINS) , (100,105,CONTAINS) , (81,88,CONTAINS) , (81,95,CONTAINS) , (105,106,OVERLAP) , (81,100,CONTAINS)
-                # Split into relations, then remove parens and split with commas into relation components (start offset, end offset, category)
-                inst_labels = []
-                for rel in inst_rels.split(' , '):
-                    start_token, end_token, category = rel[1:-1].split(',')
-                    inst_labels.append( (int(start_token), int(end_token), label_map.get(category, 0)))
-                labels.append(inst_labels)
-        # labels = [ [ (int(start_token),int(end_token),label_map.get(category, 0))] for inst_rels in raw_labels[0]] ]
-    else:
-        raise NotImplementedError('This method is not complete for output mode %s' % (output_mode,) )
+        if output_mode[task_ind] == classification:
+            task_labels = [label_map[task][label] for label in raw_labels[task_ind]]
+            # labels is just a list of one label for each instance
+        elif output_mode[task_ind] == tagging:
+            task_labels = [ [label_map[task][label] for label in inst_labels.split()] for inst_labels in raw_labels[task_ind]]
+            # labels is a list of lists, where each internal list is the set of tags for that instance.
+        elif output_mode[task_ind] == relex:
+            for inst_rels in raw_labels[task_ind]:
+                if inst_rels == 'None':
+                    task_labels.append(['None'])
+                else:
+                    # The label for a sentence with multiple relations looks like this:
+                    # (105,109,OVERLAP) , (64,66,CONTAINS) , (100,105,CONTAINS) , (81,88,CONTAINS) , (81,95,CONTAINS) , (105,106,OVERLAP) , (81,100,CONTAINS)
+                    # Split into relations, then remove parens and split with commas into relation components (start offset, end offset, category)
+                    inst_labels = []
+                    for rel in inst_rels.split(' , '):
+                        start_token, end_token, category = rel[1:-1].split(',')
+                        inst_labels.append( (int(start_token), int(end_token), label_map[task].get(category, 0)))
+                    task_labels.append(inst_labels)
+        else:
+            raise NotImplementedError('This method is not complete for output mode %s' % (output_mode,) )
+        labels.append(task_labels)
+
+    # Convert the labels to column format that arrow prefers
+    labels = list(zip(*labels))
+    num_instances = len(labels)
 
     # Try to infer the structure based on column names
     if 'text' in examples.keys():
@@ -362,11 +338,45 @@ def cnlp_preprocess_data(
         is_split_into_words=True,
     )
 
-    # This code has to solve the problem of properly setting labels for word pieces that do not actually need to be tagged.
+    # Now that we have the labels for each instances, and we've tokenized the input sentences, 
+    # we need to solve the problem of aligning labels with word piece indexes for the tasks of tagging
+    # (which has one label per pre-wordpiece token) and relations (which are defined as tuples which
+    # contain pre-wordpiece token indices)
     if not inference:
+        ## FIXME -- arrow wants the label to be the same size as the sentences, so instead of [task_ind][sents] you would index [sents][task_ind].
+        result['label'] = _build_pytorch_labels(result, tasks, labels, output_mode, num_instances, max_length)
+
+    result['event_mask'] = _build_event_mask(result, 
+                                            num_instances,
+                                            tokenizer.convert_tokens_to_ids('<e>'),
+                                            tokenizer.convert_tokens_to_ids('</e>'))
+
+    if hierarchical:
+        result = cnlp_convert_features_to_hierarchical(
+            result,
+            chunk_len=chunk_len,
+            num_chunks=num_chunks,
+            cls_id=tokenizer.cls_token_id,
+            sep_id=tokenizer.sep_token_id,
+            pad_id=tokenizer.pad_token_id,
+            insert_empty_chunk_at_beginning=insert_empty_chunk_at_beginning,
+        )
+
+    ## FIXME - doesn't work because this is called in batch mode - maybe move to dataset class initializer?
+    # for i in range(5):
+    #     logger.info("*** Example ***")
+    #     features = {x: result[x][i] for x in result.keys()}
+    #     # logger.info("guid: %s" % (example.guid))
+    #     logger.info("features: %s" % truncate_features(features) if truncate_examples else features)
+
+    return result
+
+def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, output_mode:List[str], num_instances:int, max_length:int):
+    labels_out = []
+    for task_ind, task in enumerate(tasks):
         encoded_labels = []
-        if output_mode == tagging:
-            for sent_ind,sent in enumerate(sentences):
+        if output_mode[task_ind] == tagging:
+            for sent_ind in range(num_instances):
                 sent_labels = []
 
                 ## align word-piece tokens to the tokenization we got as input and only assign labels to input tokens
@@ -380,7 +390,7 @@ def cnlp_preprocess_data(
                         label_ids.append(-100)
                     # We set the label for the first token of each word.
                     elif word_idx != previous_word_idx:
-                        label_ids.append(labels[sent_ind][word_idx])
+                        label_ids.append(labels[sent_ind][task_ind][word_idx])
                     # For the other tokens in a word, we set the label to either the current label or -100, depending on
                     # the label_all_tokens flag.
                     else:
@@ -389,15 +399,15 @@ def cnlp_preprocess_data(
 
                 encoded_labels.append(np.array(label_ids))
 
-            labels = encoded_labels
-        elif output_mode == relex:
+            labels_out.append(encoded_labels)
+        elif output_mode[task_ind] == relex:
             # start by building a matrix that's N' x N' (word-piece length) with "None" as the default
             # for word pairs, and -100 (mask) as the default if one of word pair is a suffix token
             out_of_bounds = 0
             num_relations = 0
-            for sent_ind, sent in enumerate(sentences):
+            for sent_ind in range(num_instances):
                 word_ids = result.word_ids(batch_index=sent_ind)
-                num_relations += len(labels[sent_ind])
+                num_relations += len(labels[sent_ind][task_ind])
                 wpi_to_tokeni = {}
                 tokeni_to_wpi = {}
                 sent_labels = np.zeros( (max_length, max_length)) - 100
@@ -421,7 +431,7 @@ def cnlp_preprocess_data(
                         if wpi != wpi2:
                             sent_labels[wpi,wpi2] = 0.0
 
-                for label in labels[sent_ind]:
+                for label in labels[sent_ind][task_ind]:
                     if not label[0] in tokeni_to_wpi or not label[1] in tokeni_to_wpi:
                         out_of_bounds +=1
                         continue
@@ -432,23 +442,23 @@ def cnlp_preprocess_data(
                     sent_labels[wpi1][wpi2] = label[2]
 
                 encoded_labels.append(sent_labels)
-            labels = encoded_labels
+            labels_out.append(encoded_labels)
             if out_of_bounds > 0:
                 logging.warn('During relation processing, there were %d relations (out of %d total relations) where at least one argument was truncated so the relation could not be trained/predicted.' % (out_of_bounds, num_relations) )
+    return list(zip(*labels_out))
 
-    result['label'] = labels
+def _build_event_mask(result:BatchEncoding, num_insts:int, event_start_token_id, event_end_token_id):
 
-    # features = []
     event_tokens = []
-    for i in range(len(labels)):
+    for i in range(num_insts):
         input_ids = result['input_ids'][i]
         try:
-            event_start = input_ids.index(event_start_ind)
+            event_start = input_ids.index(event_start_token_id)
         except:
             event_start = -1
 
         try:
-            event_end = input_ids.index(event_end_ind)
+            event_end = input_ids.index(event_end_token_id)
         except:
             event_end = len(input_ids)-1
 
@@ -459,37 +469,7 @@ def cnlp_preprocess_data(
 
         event_tokens.append(inst_event_tokens)
 
-        # if inference:
-        #     label = None
-        # else:
-        #     label = [labels[i]]
-        # feature = InputFeatures(**inputs, label=label)
-
-    result['event_mask'] = event_tokens
-
-    if hierarchical:
-        result = cnlp_convert_features_to_hierarchical(
-            result,
-            chunk_len=chunk_len,
-            num_chunks=num_chunks,
-            cls_id=tokenizer.cls_token_id,
-            sep_id=tokenizer.sep_token_id,
-            pad_id=tokenizer.pad_token_id,
-            insert_empty_chunk_at_beginning=insert_empty_chunk_at_beginning,
-        )
-
-    # features.append(feature)
-
-
-    ## FIXME - doesn't work because this is called in batch mode - maybe move to dataset class initializer?
-    # for i in range(5):
-    #     logger.info("*** Example ***")
-    #     features = {x: result[x][i] for x in result.keys()}
-    #     # logger.info("guid: %s" % (example.guid))
-    #     logger.info("features: %s" % truncate_features(features) if truncate_examples else features)
-
-    return result
-
+    return event_tokens
 
 def truncate_features(feature: Union[InputFeatures, HierarchicalInputFeatures]):
     """
@@ -635,31 +615,19 @@ class ClinicalNlpDataset(Dataset):
             if self.args.max_seq_length < implicit_max_len:
                 raise ValueError('For the hierarchical model, the max seq length should be equal to the chunk length * num_chunks, otherwise what is the point?')
 
-        for task_ind, data_dir in enumerate(args.data_dir):
-            task = args.task_name[task_ind]
-            task_processor = AutoProcessor(data_dir)
-            self.processors.append(task_processor)
+        tasks = set(args.task_name)
+        for data_dir_ind, data_dir in enumerate(args.data_dir):
+            dataset_processor = AutoProcessor(data_dir, tasks)
+            self.processors.append(dataset_processor)
 
-            if task_processor.get_output_mode() == mtl:
-                for subtask in range(task_processor.get_num_tasks()):
-                    self.class_weights.append(None)
-            else:
+            ## TODO get this working again
+            for classifier in range(dataset_processor.get_num_tasks()):
                 self.class_weights.append(None)
 
-            # datadir = dirname(data_dir) if data_dir[-1] == '/' else data_dir
-            # domain = basename(datadir)
-            # dataconfig = basename(dirname(datadir))
 
-            # cached_features_file = os.path.join(
-            #     cache_dir if cache_dir is not None else data_dir,
-            #     "cached_{}-{}_{}_{}_{}".format(
-            #         dataconfig, domain, mode.value, tokenizer.__class__.__name__, str(args.max_seq_length),
-            #     ),
-            # )
-
-            num_subtasks = task_processor.get_num_tasks()
-            self.label_lists.append(task_processor.get_labels())
-            task_dataset = task_processor.dataset.map(
+            num_subtasks = dataset_processor.get_num_tasks()
+            self.label_lists.append(dataset_processor.get_labels())
+            task_dataset = dataset_processor.dataset.map(
                 cnlp_preprocess_data,
                 batched=True,
                 load_from_cache_file=not args.overwrite_cache,
@@ -668,15 +636,15 @@ class ClinicalNlpDataset(Dataset):
                 fn_kwargs = {
                     'tokenizer':tokenizer,
                     'max_length':args.max_seq_length,
-                    'label_list':self.label_lists[task_ind],
-                    'output_mode':task_processor.get_output_mode(),
-                    'inference': not 'train' in task_processor.dataset,
+                    'label_lists':self.label_lists[data_dir_ind],
+                    'output_mode':dataset_processor.get_output_mode(),
+                    'inference': not 'train' in dataset_processor.dataset,
                     'hierarchical':self.hierarchical,
                     'chunk_len':self.args.chunk_len,
                     'num_chunks':self.args.num_chunks,
                     'insert_empty_chunk_at_beginning':self.args.insert_empty_chunk_at_beginning,
                     'truncate_examples':self.args.truncate_examples,
-                    'tasks': task_processor.get_classifiers(),
+                    'tasks': dataset_processor.get_classifiers(),
                 }
             )
 
@@ -685,97 +653,8 @@ class ClinicalNlpDataset(Dataset):
                     task_dataset['validation'].features[key] = task_dataset['validation'][key][:args.max_eval_items]
 
             self.datasets.append(task_dataset)
-
-                
-            
-            ## FIXME - this will be "wrong" for datasets with multiple layers of annotations because it
-            ## counts each instance once for each layer, when it really only requires one forward pass
             self.num_train_instances += task_dataset['train'].num_rows
 
-            # if self.hierarchical:
-            #     cached_features_file += '_hier'
-
-            # Make sure only the first process in distributed training processes the dataset,
-            # and the others will use the cache.
-            # lock_path = cached_features_file + ".lock"
-            # with FileLock(lock_path):
-
-            #     if os.path.exists(cached_features_file) and not args.overwrite_cache:
-            #         start = time.time()
-            #         features = torch.load(cached_features_file)
-            #         logger.info(
-            #             f"Loading features from cached file {cached_features_file} [took %.3f s]", time.time() - start
-            #         )
-            #     else:
-            #         logger.info(f"Creating features from dataset file at {data_dir}")
-
-            #         preprocessor_args = ()
-
-            #         # if mode == Split.dev:
-            #         #     examples = task_processor.get_dev_examples(data_dir)
-            #         # elif mode == Split.test:
-            #         #     examples = task_processor.get_test_examples(data_dir)
-            #         # else:
-            #         #     examples = task_processor.get_train_examples(data_dir)
-            #         # if limit_length is not None:
-            #         #     examples = examples[:limit_length]
-            #         # features = cnlp_convert_examples_to_features(
-            #         #     examples,
-            #         #     tokenizer,
-            #         #     max_length=args.max_seq_length,
-            #         #     label_list=self.label_lists[task_ind],
-            #         #     output_mode=task_processor.get_output_mode(),
-            #         #     inference=mode == Split.test,
-            #         #     hierarchical=self.hierarchical,
-            #         #     chunk_len=self.args.chunk_len,
-            #         #     num_chunks=self.args.num_chunks,
-            #         #     insert_empty_chunk_at_beginning=self.args.insert_empty_chunk_at_beginning,
-            #         #     truncate_examples=self.args.truncate_examples,
-            #         # )
-            #         start = time.time()
-            #         torch.save(features, cached_features_file)
-            #         # ^ This seems to take a lot of time so I want to investigate why and how we can improve.
-            #         logger.info(
-            #             "Saving features into cached file %s [took %.3f s]", cached_features_file, time.time() - start
-            #         )
-
-                # if self.args.weight_classes and mode == Split.train:
-                #     if num_subtasks == 1:
-                #         class_counts = [0] * len(self.label_lists[task_ind])
-                #         for feature in features:
-                #             labels = feature.label[0]
-                #             vals, counts = np.unique(labels, return_counts=True)
-                #             for val_ind,val in enumerate(vals):
-                #                 if val >= 0:
-                #                     class_counts[int(val)] += counts[val_ind]
-
-                #         self.class_weights[task_ind] = min(class_counts) / class_counts
-                #     else:
-                #         class_counts = np.zeros( (num_subtasks, len(self.label_lists[task_ind])) )
-                #         for feature in features:
-                #             labels = feature.label[0]
-                #             for subtask_ind,label in enumerate(labels):
-                #                 class_counts[subtask_ind][label] += 1
-                                
-                #         self.class_weights[subtask_ind] = min(class_counts[subtask_ind]) / class_counts[subtask_ind]
-
-
-                # if self.features is None:
-                #     self.features = features
-                # else:
-                #     assert len(features) == len(self.features)
-                #     if self.features[0].label is None:
-                #         assert features[0].label is None, 'Some of the tasks have None labels and others do not, they should be consistent!'
-                #     else:
-                #         # we should have all non-label features be the same, so we can essentially discard subsequent
-                #         # datasets input features. So we'll append the labels from that features list and discard the duplicate input features.
-                #         for feature_ind,feature in enumerate(features):
-                #             if len(self.features[feature_ind].label[0].shape) == 1 and len(feature.label[0].shape) == 1:
-                #                 self.features[feature_ind].label[0] = np.stack([self.features[feature_ind].label[0],
-                #                                                             feature.label[0]])
-                #             else:
-                #                 self.features[feature_ind].label[0] = np.concatenate([self.features[feature_ind].label[0],
-                #                                                             feature.label[0]])
 
     def __len__(self) -> int:
         """

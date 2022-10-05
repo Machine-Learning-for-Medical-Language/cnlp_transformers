@@ -20,7 +20,7 @@ def fix_np_types(input_variable):
     
     return input_variable
 
-def tagging_metrics(processor, preds, labels):
+def tagging_metrics(processor, preds, labels, task_ind):
     """
     One of the metrics functions for use in :func:`cnlp_compute_metrics`.
 
@@ -43,7 +43,7 @@ def tagging_metrics(processor, preds, labels):
     :rtype: typing.Dict[str, typing.Any]
     :return: a dictionary containing evaluation metrics
     """
-    label_set = processor.get_labels()
+    label_set = processor.get_labels()[task_ind]
 
     preds = preds.flatten()
     labels = labels.flatten().astype('int')
@@ -62,7 +62,7 @@ def tagging_metrics(processor, preds, labels):
 
     return {'acc': acc, 'token_f1': fix_np_types(f1), 'f1': fix_np_types(seq_f1([label_seq], [pred_seq])), 'report':'\n'+seq_cls([label_seq], [pred_seq])}
 
-def relation_metrics(processor, preds, labels):
+def relation_metrics(processor, preds, labels, task_ind):
     """
     One of the metrics functions for use in :func:`cnlp_compute_metrics`.
 
@@ -86,13 +86,14 @@ def relation_metrics(processor, preds, labels):
     :return: a dictionary containing evaluation metrics
     """
 
-    label_set = processor.get_labels()
+    label_set = processor.get_labels()[task_ind]
 
     # If we are using the attention-based relation extractor, many impossible pairs
     # are set to -100 so pytorch loss functions ignore them. We need to make sure the
     # scorer also ignores them.
-    relevant_inds = np.where(labels != -100)
-    relevant_labels = labels[relevant_inds]
+    task_labels = labels[:, task_ind, :, :].squeeze()
+    relevant_inds = np.where(task_labels != -100)
+    relevant_labels = task_labels[relevant_inds]
     relevant_preds = preds[relevant_inds]
 
     num_correct = (relevant_labels == relevant_preds).sum()
@@ -140,7 +141,7 @@ def acc_and_f1(preds, labels):
         "precision": fix_np_types(precision)
     }
 
-def cnlp_compute_metrics(task_name, preds, labels, processor):
+def cnlp_compute_metrics(task_name, task_ind, preds, labels, processor, output_mode):
     """
     Function that defines and computes the metrics used for each task.
 
@@ -158,35 +159,12 @@ def cnlp_compute_metrics(task_name, preds, labels, processor):
     assert len(preds) == len(
         labels
     ), f"Predictions and labels have mismatched lengths {len(preds)} and {len(labels)}"
-    if task_name == "polarity" or task_name == "uncertainty" or task_name == "history" or task_name == "subject":
-        return acc_and_f1(preds, labels)
-    elif task_name == "dtr":
-        return acc_and_f1(preds, labels)
-    elif task_name == "alink":
-        return acc_and_f1(preds, labels)
-    elif task_name == "alinkx":
-        return acc_and_f1(preds, labels)
-    elif task_name == 'tlink':
-        return acc_and_f1(preds, labels)
-    elif task_name == 'conmod':
-        return acc_and_f1(preds, labels)
-    elif task_name == 'timecat':
-        return acc_and_f1(preds, labels)
-    elif task_name.startswith('i2b22008') or task_name.startswith('mimic_radi') or task_name.startswith('psych_domain'):
-        return { 'f1': fix_np_types(f1_score(y_true=labels, y_pred=preds, average=None))} #acc_and_f1(preds, labels)
-    elif task_name == 'timex' or task_name == 'event' or task_name == 'dphe':
-        return tagging_metrics(task_name, preds, labels)
-    elif task_name.startswith('tlinkx'):
-        return relation_metrics(task_name, preds, labels)
-    elif processor.get_output_mode() == classification:
+    if output_mode == classification:
         logger.warn("Choosing accuracy and f1 as default metrics; modify cnlp_compute_metrics() to customize for this task.")
-        return acc_and_f1(preds, labels)
-    elif processor.get_output_mode() == mtl:
-        logger.warn("Choosing accuracy and f1 as default metrics; modify cnlp_compute_metrics() to customize for this task.")
-        return acc_and_f1(preds, labels)
-    elif processor.get_output_mode() == tagging:
-        return tagging_metrics(processor, preds, labels)
-    elif processor.get_output_mode() == relex:
-        return relation_metrics(processor, preds, labels)
+        return acc_and_f1(preds=preds, labels=labels)
+    elif output_mode == tagging:
+        return tagging_metrics(processor, preds=preds, labels=labels, task_ind=task_ind)
+    elif output_mode == relex:
+        return relation_metrics(processor, preds=preds, labels=labels, task_ind=task_ind)
     else:
         raise Exception('There is no metric defined for this task in function cnlp_compute_metrics()')

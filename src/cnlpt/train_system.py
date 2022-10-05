@@ -279,7 +279,7 @@ def main(json_file=None, json_obj=None):
 
     # FIXME - goal is to eliminate task names and just infer them from data directories and automatically do data processing.
     # but for now maybe just create a dummy task called 'infer' meaning, 'just infer the task properties'
-    assert len(data_args.task_name) == len(data_args.data_dir), 'Number of tasks and data directories should be the same!'
+    # assert len(data_args.task_name) == len(data_args.data_dir), 'Number of tasks and data directories should be the same!'
 
     # Setup logging
     logging.basicConfig(
@@ -325,25 +325,22 @@ def main(json_file=None, json_obj=None):
         tagger = []
         relations = []
         tasks_to_processors = {}
-        for task_ind, task_name in enumerate(data_args.task_name):
-            processor = dataset.processors[task_ind]
-            if processor.get_num_tasks() > 1:
-                for subtask_num in range(processor.get_num_tasks()):
-                    task_names.append(task_name + "-" + processor.get_classifiers()[subtask_num])
-                    num_labels.append(len(processor.get_labels()))
-                    output_mode.append(classification)
-                    tagger.append(False)
-                    relations.append(False)
-                    tasks_to_processors[task_names[-1]] = processor
-            else:
-                task_names.append(task_name)
-                num_labels.append(len(processor.get_labels()))
-
-                task_output_mode = processor.get_output_mode()
+        for dataset_ind in range(len(data_args.data_dir)):
+            processor = dataset.processors[dataset_ind]
+            # if processor.get_num_tasks() > 1:
+            for subtask_num in range(processor.get_num_tasks()):
+                task_names.append(processor.get_classifiers()[subtask_num])
+                num_labels.append(len(processor.get_labels()[subtask_num]))
+                task_output_mode = processor.get_output_mode()[subtask_num]
                 output_mode.append(task_output_mode)
                 tagger.append(task_output_mode == tagging)
                 relations.append(task_output_mode == relex)
-                tasks_to_processors[task_name] = processor
+                tasks_to_processors[task_names[-1]] = processor
+
+                # tagger.append(False)
+                # relations.append(False)
+
+                tasks_to_processors[task_names[-1]] = processor
 
     except KeyError:
         raise ValueError("Task not found: %s" % (data_args.task_name))
@@ -553,10 +550,10 @@ def main(json_file=None, json_obj=None):
                 else:
                     preds = np.argmax(p.predictions[task_ind], axis=1)
 
-                if len(task_names) == 1:
-                    # single task learning:
-                    labels = p.label_ids
-                elif relations[task_ind]:
+                # if len(task_names) == 1:
+                #     # single task learning:
+                #     labels = p.label_ids
+                if relations[task_ind]:
                     # relation labels
                     labels = p.label_ids[:,0,task_label_ind:task_label_ind+data_args.max_seq_length,:].squeeze()
                     task_label_ind += data_args.max_seq_length
@@ -564,13 +561,13 @@ def main(json_file=None, json_obj=None):
                     labels = p.label_ids[:,0,task_label_ind:task_label_ind+1,:].squeeze()
                     task_label_ind += 1
                 elif p.label_ids.ndim == 3:
-                    labels = p.label_ids[:,0,task_label_ind:task_label_ind+1].squeeze()
+                    labels = p.label_ids[:,task_label_ind:task_label_ind+1,:].squeeze()
                     task_label_ind += 1
                 elif p.label_ids.ndim == 2:
                     labels = p.label_ids[:,task_ind].squeeze()
 
                 processor = processors[task_name]
-                metrics[task_name] = cnlp_compute_metrics(task_name, preds, labels, processor)
+                metrics[task_name] = cnlp_compute_metrics(task_name, task_ind, preds, labels, processor, processor.get_output_mode()[task_ind])
                 # FIXME - Defaulting to accuracy for model selection score, when it should be task-specific
                 task_scores.append( metrics[task_name].get('one_score', metrics[task_name].get('acc')))
                 #task_scores.append(processor.get_one_score(metrics.get(task_name, metrics.get(task_name.split('-')[0], None))))
@@ -641,48 +638,52 @@ def main(json_file=None, json_obj=None):
                 #Chen wrote the below but it doesn't work for all settings
                 predictions = trainer.predict(test_dataset=eval_dataset).predictions
                 dataset_labels = dataset.get_labels()
-                for task_ind, task_name in enumerate(task_names):
-                    if output_mode[task_ind] == classification:
-                        task_predictions = np.argmax(predictions[task_ind], axis=1)
-                        for index, item in enumerate(task_predictions):
-                            if len(task_names) > len(dataset_labels):
-                                subtask_ind = 0
-                            else:
-                                subtask_ind = task_ind
-                            item = dataset_labels[subtask_ind][item]
-                            writer.write("Task %d (%s) - Index %d - %s\n" % (task_ind, task_name, index, item))
-                    elif output_mode[task_ind] == tagging:
-                        task_predictions = np.argmax(predictions[task_ind], axis=2)
-                        task_labels = dataset_labels[task_ind]
-                        for index, pred_seq in enumerate(task_predictions):
-                            wpind_to_ind = {}
-                            chunk_labels = []
+                for dataset_ind in range(len(data_args.data_dir)):
+                    processor = dataset.processors[dataset_ind]
+                    for task_ind in range(processor.get_num_tasks()):
+                        task_name = processor.get_classifiers()[task_ind]
+                # for task_ind, task_name in enumerate(task_names):
+                        if output_mode[task_ind] == classification:
+                            task_predictions = np.argmax(predictions[task_ind], axis=1)
+                            for index, item in enumerate(task_predictions):
+                                if len(task_names) > len(dataset_labels):
+                                    subtask_ind = 0
+                                else:
+                                    subtask_ind = task_ind
+                                item = dataset_labels[dataset_ind][task_ind][item]
+                                writer.write("Task %d (%s) - Index %d - %s\n" % (task_ind, task_name, index, item))
+                        elif output_mode[task_ind] == tagging:
+                            task_predictions = np.argmax(predictions[task_ind], axis=2)
+                            task_labels = dataset_labels[dataset_ind][task_ind]
+                            for index, pred_seq in enumerate(task_predictions):
+                                wpind_to_ind = {}
+                                chunk_labels = []
 
-                            tokens = tokenizer.convert_ids_to_tokens(eval_dataset['input_ids'][index])
-                            for token_ind in range(1,len(tokens)):
-                                if eval_dataset['input_ids'][index][token_ind] <= 2:
-                                    break
-                                if tokens[token_ind].startswith('Ġ'):
-                                    wpind_to_ind[token_ind] = len(wpind_to_ind)
-                                    chunk_labels.append(task_labels[task_predictions[index][token_ind]])
+                                tokens = tokenizer.convert_ids_to_tokens(eval_dataset['input_ids'][index])
+                                for token_ind in range(1,len(tokens)):
+                                    if eval_dataset['input_ids'][index][token_ind] <= 2:
+                                        break
+                                    if tokens[token_ind].startswith('Ġ'):
+                                        wpind_to_ind[token_ind] = len(wpind_to_ind)
+                                        chunk_labels.append(task_labels[task_predictions[index][token_ind]])
 
-                            entities = get_entities(chunk_labels)
-                            writer.write('Task %d (%s) - Index %d: %s\n' % (task_ind, task_name, index, str(entities)))
-                    elif output_mode[task_ind] == relex:
-                        task_predictions = np.argmax(predictions[task_ind], axis=3)
-                        task_labels = dataset_labels[task_ind]
-                        assert task_labels[0] == 'None', 'The first labeled relation category should always be "None" but for task %s it is %s' % (task_names[task_ind], task_labels[0])
-                        
-                        for inst_ind in range(task_predictions.shape[0]):
-                            inst_preds = task_predictions[inst_ind]
-                            a1s, a2s = np.where(inst_preds > 0)
-                            for arg_ind in range(len(a1s)):
-                                a1_ind = a1s[arg_ind]
-                                a2_ind = a2s[arg_ind]
-                                cat = task_labels[ inst_preds[a1_ind][a2_ind] ]
-                                writer.write("Task %d (%s) - Index %d - %s(%d, %d)\n" % (task_ind, task_name, inst_ind, cat, a1_ind, a2_ind))
-                    else:
-                        raise NotImplementedError('Writing predictions is not implemented for this output_mode!')
+                                entities = get_entities(chunk_labels)
+                                writer.write('Task %d (%s) - Index %d: %s\n' % (task_ind, task_name, index, str(entities)))
+                        elif output_mode[task_ind] == relex:
+                            task_predictions = np.argmax(predictions[task_ind], axis=3)
+                            task_labels = dataset_labels[dataset_ind][task_ind]
+                            # assert task_labels[0] == 'None', 'The first labeled relation category should always be "None" but for task %s it is %s' % (task_names[task_ind], task_labels[0])
+                            
+                            for inst_ind in range(task_predictions.shape[0]):
+                                inst_preds = task_predictions[inst_ind]
+                                a1s, a2s = np.where(inst_preds > 0)
+                                for arg_ind in range(len(a1s)):
+                                    a1_ind = a1s[arg_ind]
+                                    a2_ind = a2s[arg_ind]
+                                    cat = task_labels[ inst_preds[a1_ind][a2_ind] ]
+                                    writer.write("Task %d (%s) - Index %d - %s(%d, %d)\n" % (task_ind, task_name, inst_ind, cat, a1_ind, a2_ind))
+                        else:
+                            raise NotImplementedError('Writing predictions is not implemented for this output_mode!')
 
         eval_results.update(eval_result)
 
