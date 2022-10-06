@@ -445,6 +445,10 @@ def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, ou
             labels_out.append(encoded_labels)
             if out_of_bounds > 0:
                 logging.warn('During relation processing, there were %d relations (out of %d total relations) where at least one argument was truncated so the relation could not be trained/predicted.' % (out_of_bounds, num_relations) )
+        elif output_mode[task_ind] == classification:
+            for sent_ind in range(num_instances):
+                encoded_labels.append(labels[sent_ind][task_ind])
+            labels_out.append(encoded_labels)
     return list(zip(*labels_out))
 
 def _build_event_mask(result:BatchEncoding, num_insts:int, event_start_token_id, event_end_token_id):
