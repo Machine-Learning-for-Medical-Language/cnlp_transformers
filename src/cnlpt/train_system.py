@@ -689,6 +689,7 @@ def main(json_file=None, json_obj=None):
 
     if training_args.do_predict:
         logging.info("*** Test ***")
+        test_dataset=dataset.datasets[0]['test']
         # FIXME: this part hasn't been updated for the MTL setup so it doesn't work anymore since
         # predictions is generalized to be a list of predictions and the output needs to be different for each kin.
         # maybe it's ok to only handle classification since it has a very straightforward output format and evaluation,
