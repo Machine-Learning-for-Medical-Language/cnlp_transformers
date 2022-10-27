@@ -50,7 +50,7 @@ class TestTemporal:
             {'events': [[{'begin': 3, 'dtr': 'BEFORE', 'end': 3},
                          {'begin': 5, 'dtr': 'BEFORE', 'end': 5},
                          {'begin': 13, 'dtr': 'AFTER', 'end': 13},
-                         {'begin': 15, 'dtr': 'BEFORE', 'end': 15}]],
+                         {'begin': 15, 'dtr': 'AFTER', 'end': 15}]],
              'relations': [[{'arg1': 'EVENT-0', 'arg2': 'EVENT-1', 'category': 'OVERLAP', 'arg1_start': 3, 'arg2_start': 5}, 
                             {'arg1': 'TIMEX-0', 'arg2': 'EVENT-0', 'category': 'CONTAINS', 'arg1_start': 6, 'arg2_start': 3}, 
                             {'arg1': 'EVENT-3', 'arg2': 'EVENT-2', 'category': 'BEGINS-ON', 'arg1_start': 15, 'arg2_start': 13}, 
