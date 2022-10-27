@@ -50,6 +50,8 @@ repository, please follow these steps.
    ```
 
 3. Make a new branch and set your fork as the upstream remote:
+   > **Note:** see the section on testing below for information 
+   > on how you may want to name your branch.
    ```sh
    $ git switch -c your-branch-name  # or git checkout -b
    $ git push --set-upstream fork your-branch-name
@@ -61,6 +63,40 @@ repository, please follow these steps.
 5. Make your changes in `your-branch-name` on your fork.
 
 6. Open a PR to close the issue.
+
+### Testing your code
+
+This repository has GitHub Actions set up to automatically run the test 
+suite in `test` whenever a commit is pushed or a pull request is opened 
+in certain circumstances:
+
+* Pull requests targeting:
+  * the `master` branch
+  * a branch name starting with `vX`, where `X` is a digit 
+  from 1 to 9 (e.g. `v0.3.0`)
+* Commits pushed to either of the above (for collaborators) or to:
+  * a branch name starting with `testable/`, e.g. `testable/my-special-feature`
+
+You can see the structure of these test runs in the 
+[**Actions**](https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers/actions) 
+tab of this repository. In short, they will build and test the project
+on Python 3.7, 3.8, 3.9, and 3.10; these will always run at least on 
+Linux, and in the case of commits or pull requests targeting `master`,
+they will run on Linux, macOS, and Windows.
+
+If you are developing in a public fork of the repository, you can use 
+the `testable/` naming convention for your branch to have the forked 
+actions run as you push to your fork. We recommend not tweaking the 
+actions in your fork as this may cause unexpected behavior when opening
+a pull request.
+
+> **Note:** for collaborators, the same applies for work done directly 
+> in branches in this repository that follow this naming convention.
+
+Once you open a pull request targeting `master` or a version branch in
+this repository, the test runs will be triggered on creation and any 
+time you add new commits to the base branch in your fork. You do not
+need to name your branch anything special in this case.
 
 ## For Maintainers: Building and uploading new package version
 
