@@ -19,30 +19,20 @@ from pydantic import BaseModel
 
 from typing import List, Tuple, Dict
 
-from .cnlp_rest import EntityDocument, ClassificationDocumentDataset, create_instance_string, initialize_cnlpt_model
-from ..cnlp_processors import NegationProcessor
+from .cnlp_rest import EntityDocument, create_instance_string, initialize_cnlpt_model, get_dataset
 from ..CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
-
-from transformers import (
-    AutoConfig,
-    AutoModel,
-    AutoTokenizer,
-    HfArgumentParser,
-    Trainer,
-    TrainingArguments,
-)
-from transformers.data.processors.utils import InputFeatures, InputExample
-from torch.utils.data.dataset import Dataset
 import numpy as np
 
 import logging
 from time import time
-import torch
 
 app = FastAPI()
 model_name = "tmills/cnlpt-negation-roberta-sharpseed"
 logger = logging.getLogger('Negation_REST_Processor')
 logger.setLevel(logging.DEBUG)
+
+task = 'Negation'
+labels = [-1, 1]
 
 max_length = 128
 
@@ -67,10 +57,9 @@ async def process(doc: EntityDocument):
         logger.debug('Instance string is %s' % (inst_str))
         instances.append(inst_str)
 
-    dataset = ClassificationDocumentDataset.from_instance_list(instances, 
-                                                               app.state.tokenizer, 
-                                                               label_list=NegationProcessor().get_labels())
+    dataset = get_dataset(instances, app.state.tokenizer, [labels,], [task,], max_length)
     preproc_end = time()
+
 
     output = app.state.trainer.predict(test_dataset=dataset)
     predictions = output.predictions[0]
@@ -80,7 +69,7 @@ async def process(doc: EntityDocument):
 
     results = []
     for ent_ind in range(len(dataset)):
-        results.append(dataset.get_labels()[predictions[ent_ind]])
+        results.append(labels[predictions[ent_ind]])
 
     output = NegationResults(statuses=results)
 
