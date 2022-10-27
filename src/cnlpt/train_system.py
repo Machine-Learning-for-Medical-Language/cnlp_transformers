@@ -584,9 +584,9 @@ def main(json_file=None, json_obj=None):
                             tokenizer.save_pretrained(training_args.output_dir)
                         for task_ind,task_name in enumerate(metrics):
                             with open(output_eval_file, "w") as writer:
-                                logger.info("***** Eval results for task %s *****" % (task_name))
+                                # logger.info("***** Eval results for task %s *****" % (task_name))
                                 for key, value in metrics[task_name].items():
-                                    logger.info("  %s = %s", key, value)
+                                    # logger.info("  %s = %s", key, value)
                                     writer.write("%s = %s\n" % (key, value))
                     model.best_score = one_score
                     model.best_eval_results = metrics

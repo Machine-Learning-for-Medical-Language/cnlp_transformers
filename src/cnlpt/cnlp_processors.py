@@ -34,7 +34,7 @@ class AutoProcessor(DataProcessor):
 
     TODO - add documentation of the expected file formats for json and csv defaults
     """
-    def __init__(self, data_dir:str, tasks:Set[str]):
+    def __init__(self, data_dir:str, tasks:Set[str]=None):
         super().__init__()
 
         train_file = dev_file = test_file = None
@@ -86,6 +86,12 @@ class AutoProcessor(DataProcessor):
                 json_file = json.load(f)
                 metadata = json_file['metadata']
                 output_mode = metadata['output_mode']
+            if not tasks is None:
+                dataset_tasks = tasks.intersection(metadata['tasks'])
+                tasks -= dataset_tasks
+                dataset_tasks = list(dataset_tasks)
+                dataset_tasks.sort()
+                metadata['tasks'] = dataset_tasks
         else:
             raise ValueError('Data file %s has an extension that we cannot handle (tried csv and json)' % (train_file))
 

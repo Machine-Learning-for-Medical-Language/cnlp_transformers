@@ -20,10 +20,10 @@ library in CPU-only mode or with a newer version of CUDA, [install PyTorch
 to your desired specifications](https://pytorch.org/get-started/locally/) 
 in your virtual environment first before installing `cnlp-transformers`.
 
-If you are installing just to run the REST APIs, you can just install without cloning with:
+If you are installing just to fine-tune or run the REST APIs, you can just install without cloning with:
 ```pip install cnlp_transformers```
 
-If you want to modify code (for fine-tuning), then install locally with:
+If you want to modify code (e.g., for developing new models), then install locally with:
 1. ```git clone https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers.git```
 2. ```cd cnlp_transformers```
 3. ```pip install -e .```
@@ -33,14 +33,35 @@ The main entry point for fine-tuning is the ```train_system.py``` script. Run wi
 
 ### Workflow
 To use the library for fine-tuning, you'll need to take the following steps:
-1. Write your dataset to a convenient format in a folder with train, dev, and test files.
-2. Create a new entry for your dataset in ```src/cnlpt/cnlp_processors.py``` in the following places:
-    1. Create a unique ```task_name``` for your task.
-    2. ```cnlp_output_modes``` -- Add a mapping from a task name to a task type. Currently supported task types are sentence classification, tagging, relation extraction, and multi-task sentence classification.
-    3. Processor class -- Create a subclass of DataProcessor for your data source. There are multiple examples to base off of, including intermediate abstractions like LabeledSentenceProcessor, RelationProcessor, SequenceProcessor, that simplify the implementation.
-    4. ```cnlp_processors``` -- Add a mapping from your task name to the "processor" class you created in the last step.
-    5. (Optional) -- Modify cnlp_processors.cnlp_compute_metrics() to add you task. If your task is classification a reasonable default will be used so this step would be optional.
-3. Run train_system.py with the ```--task_name``` argument from Step 2.1 and the ```--data-dir``` argument from Step 1.
+1. Write your dataset to one of the following formats in a folder with train, dev, and test files:
+  1. csv or tsv: The first row should have column names separated by comma or tab. The name ```text``` has special meaning as the input string. Likewise if there are columns named ```text_a``` and ```text_b``` it will be interpreted as two parts of a transformer input string separated by a <sep>-token equivalent. All other columns are treated as potential targets -- their names can be passed to the ```train_system.py``` script as ```--task_name``` arguments. For tagging targets, the field must consist of space-delimited labels, one per space-delimited token in the ```text``` field. For relation extraction targets, the field must be a ``` , ``` delimited list of relation tuples, where each relation tuple is (<offset 1>, <offset 2>,label), where offset 1 and 2 are token indices into the space-delimited tokens in the ```text``` field.
+  2. json: The file format must be the following:
+  ```
+    { 'data': [
+        { 'text': <text of instance>,
+          'id': <instance id>
+          '<sub-task 1 name>': <instance label>,
+          '<sub-task 2 name>: <instance label>,
+          ... // other labels
+          }
+        { }, // instance 2
+        ...  // instances 3...N
+    ],
+      'metadata': {
+        'output_mode': [<list of output modes (e.g. tagging, relex, classification)>],
+        'task': <overall task/dataset name>,
+        'tasks': [<list of sub-task names>],
+        'version': '<optional dataset versioning>',
+        '<sub-task 1 name>': '<sub-task 1 description>',
+        ...,
+        '<sub-task n name>': '<sub-task n description>'
+      }
+    }
+``` 
+Instance labels should be formatted the same way as in the csv/tsv example above, see specifically the formats for tagging and relations.
+
+
+2. Run train_system.py with a ```--task_name``` from your data files and the ```--data-dir``` argument from Step 1.
 
 ### End-to-end example
 1. Download data from [Drug Review Dataset (Drugs.com) Data Set](https://archive.ics.uci.edu/ml/datasets/Drug+Review+Dataset+%28Drugs.com%29) and extract. Pay attention to their terms:
@@ -48,12 +69,14 @@ To use the library for fine-tuning, you'll need to take the following steps:
    2. don't use the data for any commerical purposes
    3. don't distribute the data to anyone else
    4. cite us
-2. Run ```python -m cnlpt.data.transform_uci_drug <input dir> <output dir>``` to preprocess the data from the extract directory into a new directory. This will create {train,dev,test}.tsv in the output directory specified, where the sentiment labels have been collapsed into 3 categories.
-3. Fine-tune with something like: 
-```python -m cnlpt.train_system --task_name ucidrug --data_dir ~/mnt/r/DeepLearning/mmtl/drug-sentiment/ --encoder_name roberta-base --do_train --cache cache/ --output_dir temp/ --overwrite_output_dir --evals_per_epoch 5 --do_eval --num_train_epochs 1 --learning_rate 1e-5```
 
-On our hardware, that command results in the following eval performance:
-```ucidrug = {'acc': 0.8127712337259765, 'f1': [0.8030439829743325, 0.49202644885258656, 0.9018332042344437], 'acc_and_f1': [0.8079076083501545, 0.6523988412892815, 0.8573022189802101], 'recall': [0.788500506585613, 0.524896265560166, 0.8935734752353663], 'precision': [0.8181340341655716, 0.4630307467057101, 0.9102470551443761]}```
+2. Run ```python -m cnlpt.data.transform_uci_drug <input dir> <output dir>``` to preprocess the data from the extract directory into a new directory. This will create {train,dev,test}.tsv in the output directory specified, where the sentiment ratings have been collapsed into 3 categories.
+
+3. Fine-tune with something like: 
+```python -m cnlpt.train_system --task_name sentiment --data_dir ~/mnt/r/DeepLearning/mmtl/drug-sentiment/ --encoder_name roberta-base --do_train --cache cache/ --output_dir temp/ --overwrite_output_dir --evals_per_epoch 5 --do_eval --num_train_epochs 1 --learning_rate 1e-5 --report_to none```
+
+On our hardware, that command results in eval performance like the following:
+```'eval_sentiment': {'acc': 0.8115933044017359, 'f1': [0.8981458951773809, 0.8000984130889407, 0.34115019542155217], 'acc_and_f1': [0.8548695997895583, 0.8058458587453383, 0.5763717499116441], 'recall': [0.9443307408923455, 0.8237082066869301, 0.25352697095435683], 'precision': [0.8562679781015125, 0.7778043530255919, 0.5213310580204779]}```
 
 For a demo of how to run the system in colab: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1IVT53DBwFxLKftpIn5iKtF0g4xb9yuxm?usp=sharing)
 
@@ -62,7 +85,7 @@ Run ```python -m cnlpt.train_system -h``` to see all the available options. In a
 * Run simple baselines (use ``--model cnn --tokenizer_name roberta-base`` -- since there is no HF model then you must specify the tokenizer explicitly)
 * Use a different layer's CLS token for the classification (e.g., ```--layer 10```)
 * Only update the weights of the classifier head and leave the encoder weights alone (```--freeze```)
-* Classify based on a token embedding instead of the CLS embedding (```--token``` -- requires the input to have xml-style tags (<e>, </e>) around the tokens of interest)
+* Classify based on a token embedding instead of the CLS embedding (```--token``` -- applies to the event/entity classification setting only, and requires the input to have xml-style tags (<e>, </e>) around the tokens representing the event/entity)
 * Use class-weighted loss function (```--class_weights```)
 
 ## Running REST APIs
@@ -137,9 +160,9 @@ This output indicates the token spans of events and timexes, and relations betwe
 
 To run only the time expression or event taggers, change the run command to:
 
-```uvicorn api.timex_rest:app --host 0.0.0.0``` or
+```uvicorn cnlpt.api.timex_rest:app --host 0.0.0.0``` or
 
-```uvicorn api.event_rest:app --host 0.0.0.0```
+```uvicorn cnlpt.api.event_rest:app --host 0.0.0.0```
 
-then run the same init and process commands as above. You will get similar json output, but only one of the dictionary elements (timexes or events) will be populated.
+then run the same process commands as above (including the same URL). You will get similar json output, but only one of the dictionary elements (timexes or events) will be populated.
 

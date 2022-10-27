@@ -11,7 +11,7 @@ import numpy as np
 import torch
 from torch.utils.data.dataset import Dataset
 from transformers import BatchEncoding
-from transformers.data.processors.utils import DataProcessor, InputExample
+# from transformers.data.processors.utils import DataProcessor, InputExample
 from transformers.tokenization_utils import PreTrainedTokenizer
 from datasets import Features
 from dataclasses import dataclass, field, asdict, astuple
@@ -234,7 +234,7 @@ def cnlp_convert_features_to_hierarchical(
 
 
 def cnlp_preprocess_data(
-    examples: List[InputExample],
+    examples,
     tokenizer: PreTrainedTokenizer,
     max_length: Optional[int] = None,
     tasks: List[str] = None,
@@ -283,48 +283,10 @@ def cnlp_preprocess_data(
     if max_length is None:
         max_length = tokenizer.max_len
 
-    # Create a label map for each task in this dataset: { task1 => {label_0: 0, label_1: 1, label_2:, 2}, task2 => {label_0: 0, label_1:1} }
-    label_map = {task: {label: i for i, label in enumerate(label_lists[task_ind])} for task_ind,task in enumerate(tasks)}
-
-    raw_labels = []
-    labels = []
-
-    # Create a list of mapped labels for every task in this dataset, with different mapping tactics for different types,
-    # classification vs tagging vs. relations.
-    for task_ind,task in enumerate(tasks):
-        task_labels = []
-        raw_labels.append(examples[task])
-
-        if output_mode[task_ind] == classification:
-            task_labels = [label_map[task][label] for label in raw_labels[task_ind]]
-            # labels is just a list of one label for each instance
-        elif output_mode[task_ind] == tagging:
-            task_labels = [ [label_map[task][label] for label in inst_labels.split()] for inst_labels in raw_labels[task_ind]]
-            # labels is a list of lists, where each internal list is the set of tags for that instance.
-        elif output_mode[task_ind] == relex:
-            for inst_rels in raw_labels[task_ind]:
-                if inst_rels == 'None':
-                    task_labels.append(['None'])
-                else:
-                    # The label for a sentence with multiple relations looks like this:
-                    # (105,109,OVERLAP) , (64,66,CONTAINS) , (100,105,CONTAINS) , (81,88,CONTAINS) , (81,95,CONTAINS) , (105,106,OVERLAP) , (81,100,CONTAINS)
-                    # Split into relations, then remove parens and split with commas into relation components (start offset, end offset, category)
-                    inst_labels = []
-                    for rel in inst_rels.split(' , '):
-                        start_token, end_token, category = rel[1:-1].split(',')
-                        inst_labels.append( (int(start_token), int(end_token), label_map[task].get(category, 0)))
-                    task_labels.append(inst_labels)
-        else:
-            raise NotImplementedError('This method is not complete for output mode %s' % (output_mode,) )
-        labels.append(task_labels)
-
-    # Convert the labels to column format that arrow prefers
-    labels = list(zip(*labels))
-    num_instances = len(labels)
-
     # Try to infer the structure based on column names
     if 'text' in examples.keys():
         sentences = [example.split(' ') for example in examples['text']]
+        num_instances = len(examples['text'])
     elif 'text_b' in examples.keys():
         # FIXME - not sure if this is right but doesn't get used much in our data
         raise NotImplementedError("2-sentence classification has not been re-implemented yet.")
@@ -343,8 +305,47 @@ def cnlp_preprocess_data(
     # (which has one label per pre-wordpiece token) and relations (which are defined as tuples which
     # contain pre-wordpiece token indices)
     if not inference:
-        ## FIXME -- arrow wants the label to be the same size as the sentences, so instead of [task_ind][sents] you would index [sents][task_ind].
+        # Create a label map for each task in this dataset: { task1 => {label_0: 0, label_1: 1, label_2:, 2}, task2 => {label_0: 0, label_1:1} }
+        label_map = {task: {label: i for i, label in enumerate(label_lists[task_ind])} for task_ind,task in enumerate(tasks)}
+
+        raw_labels = []
+        labels = []
+
+        # Create a list of mapped labels for every task in this dataset, with different mapping tactics for different types,
+        # classification vs tagging vs. relations.
+        for task_ind,task in enumerate(tasks):
+            task_labels = []
+            raw_labels.append(examples[task])
+
+            if output_mode[task_ind] == classification:
+                task_labels = [label_map[task][label] for label in raw_labels[task_ind]]
+                # labels is just a list of one label for each instance
+            elif output_mode[task_ind] == tagging:
+                task_labels = [ [label_map[task][label] for label in inst_labels.split()] for inst_labels in raw_labels[task_ind]]
+                # labels is a list of lists, where each internal list is the set of tags for that instance.
+            elif output_mode[task_ind] == relex:
+                for inst_rels in raw_labels[task_ind]:
+                    if inst_rels == 'None':
+                        task_labels.append(['None'])
+                    else:
+                        # The label for a sentence with multiple relations looks like this:
+                        # (105,109,OVERLAP) , (64,66,CONTAINS) , (100,105,CONTAINS) , (81,88,CONTAINS) , (81,95,CONTAINS) , (105,106,OVERLAP) , (81,100,CONTAINS)
+                        # Split into relations, then remove parens and split with commas into relation components (start offset, end offset, category)
+                        inst_labels = []
+                        for rel in inst_rels.split(' , '):
+                            start_token, end_token, category = rel[1:-1].split(',')
+                            inst_labels.append( (int(start_token), int(end_token), label_map[task].get(category, 0)))
+                        task_labels.append(inst_labels)
+            else:
+                raise NotImplementedError('This method is not complete for output mode %s' % (output_mode,) )
+            labels.append(task_labels)
+
+        # Convert the labels to column format that arrow prefers
+        labels = list(zip(*labels))
+
         result['label'] = _build_pytorch_labels(result, tasks, labels, output_mode, num_instances, max_length)
+    # else:
+        # result['label'] =  [ (0,) for i in range(num_instances)]
 
     result['event_mask'] = _build_event_mask(result, 
                                             num_instances,
@@ -619,7 +620,7 @@ class ClinicalNlpDataset(Dataset):
             if self.args.max_seq_length < implicit_max_len:
                 raise ValueError('For the hierarchical model, the max seq length should be equal to the chunk length * num_chunks, otherwise what is the point?')
 
-        tasks = set(args.task_name)
+        tasks = None if args.task_name is None else set(args.task_name)
         for data_dir_ind, data_dir in enumerate(args.data_dir):
             dataset_processor = AutoProcessor(data_dir, tasks)
             self.processors.append(dataset_processor)

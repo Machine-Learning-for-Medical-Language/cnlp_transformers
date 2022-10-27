@@ -70,23 +70,23 @@ def main():
     df['review'] = df.review.apply(remove_newline)
 
     # remove quotes
-    df['review_clean']=df['review'].str.replace('"', '')
-    test['review_clean']=test['review'].str.replace('"', '')
+    df['text']=df['review'].str.replace('"', '')
+    test['text']=test['review'].str.replace('"', '')
 
     #split train and dev into 9:1 ratio
     train = df.sample(frac=0.9,random_state=200)
     dev = df.drop(train.index)
 
     #select column as desired
-    test = test[['sentiment','review_clean']]
-    train = train[['sentiment','review_clean']]
-    dev = dev[['sentiment','review_clean']]
+    test = test[['sentiment','text']]
+    train = train[['sentiment','text']]
+    dev = dev[['sentiment','text']]
     
     #output CSVs
     output_path.mkdir(parents=True, exist_ok=True)
-    test.to_csv(output_path / 'test.tsv', sep='\t', encoding='utf-8', index=False, header=False, quoting=csv.QUOTE_NONE, escapechar=None)
-    train.to_csv(output_path / 'train.tsv', sep='\t', encoding='utf-8', index=False, header=False, quoting=csv.QUOTE_NONE, escapechar=None)
-    dev.to_csv(output_path / 'dev.tsv', sep='\t', encoding='utf-8', index=False, header=False, quoting=csv.QUOTE_NONE, escapechar=None)
+    test.to_csv(output_path / 'test.tsv', sep='\t', encoding='utf-8', index=False, header=True, quoting=csv.QUOTE_NONE, escapechar=None)
+    train.to_csv(output_path / 'train.tsv', sep='\t', encoding='utf-8', index=False, header=True, quoting=csv.QUOTE_NONE, escapechar=None)
+    dev.to_csv(output_path / 'dev.tsv', sep='\t', encoding='utf-8', index=False, header=True, quoting=csv.QUOTE_NONE, escapechar=None)
 
 
 if __name__ == '__main__':
