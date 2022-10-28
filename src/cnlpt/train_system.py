@@ -565,7 +565,7 @@ def main(json_file=None, json_obj=None):
                 processor = processors[task_name]
                 metrics[task_name] = cnlp_compute_metrics(task_name, task_ind, preds, labels, processor, processor.get_output_mode()[task_ind])
                 # FIXME - Defaulting to accuracy for model selection score, when it should be task-specific
-                task_scores.append( metrics[task_name].get('one_score', metrics[task_name].get('acc')))
+                task_scores.append( metrics[task_name].get('one_score', np.mean(metrics[task_name].get('f1'))))
                 #task_scores.append(processor.get_one_score(metrics.get(task_name, metrics.get(task_name.split('-')[0], None))))
 
             one_score = sum(task_scores) / len(task_scores)

@@ -320,7 +320,7 @@ class CnlpModelForClassification(PreTrainedModel):
                 if labels.ndim == 1:
                     task_labels = labels
                 elif labels.ndim == 2:
-                    task_labels = labels[:, 0]
+                    task_labels = labels[:, task_ind]
                 elif labels.ndim == 3:
                     task_labels = labels[:, 0, task_ind]
                 else:
