@@ -20,13 +20,16 @@ clone this repository and set up your Python environment.
    it.
 
 4. Install the development dependencies: 
-   ```
+   ```sh
    $ pip install -r dev-requirements.txt
    ```
+   
+5. See [README.md](README.md) for the note about PyTorch; 
+   if needed, manually install it now.
 
-5. Install `cnlp-transformers` in editable mode: 
-   ```
-   pip install -e .
+6. Install `cnlp-transformers` in editable mode: 
+   ```sh
+   $ pip install -e .
    ```
 
 **The remainder of the instructions on this document will assume that
