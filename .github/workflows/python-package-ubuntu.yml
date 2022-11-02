@@ -6,7 +6,7 @@ name: Python package (Ubuntu)
 on:
   push:
     branches:
-      - master
+      - main
       - 'v[0-9]*'
       - 'testable/**'
     paths:
@@ -16,7 +16,7 @@ on:
       - 'pyproject.toml'
   pull_request:
     branches:
-      - master
+      - main
       - 'v[0-9]*'
     paths:
       - 'src/**'

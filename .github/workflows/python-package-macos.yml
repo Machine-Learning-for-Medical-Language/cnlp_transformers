@@ -6,7 +6,7 @@ name: Python package (macOS)
 on:
   push:
     branches:
-      - master
+      - main
     paths:
       - 'src/**'
       - 'test/**'
@@ -14,7 +14,7 @@ on:
       - 'pyproject.toml'
   pull_request:
     branches:
-      - master
+      - main
     paths:
       - 'src/**'
       - 'test/**'
