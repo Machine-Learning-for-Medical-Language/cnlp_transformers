@@ -14,19 +14,47 @@ This library is _not_ intended to serve as a place for clinical NLP applications
 support macOS on Apple Silicon. If you want to install it on Apple Silicon,
 you are on your own; we unofficially recommend trying it with Python 3.10.**
 
-When installing the library's dependencies, `pip` will probably install 
+**Note:** When installing the library's dependencies, `pip` will probably install 
 PyTorch with CUDA 10.2 support by default. If you would like to run the 
 library in CPU-only mode or with a newer version of CUDA, [install PyTorch 
 to your desired specifications](https://pytorch.org/get-started/locally/) 
 in your virtual environment first before installing `cnlp-transformers`.
 
-If you are installing just to fine-tune or run the REST APIs, you can just install without cloning with:
-```pip install cnlp_transformers```
+### Static installation
 
-If you want to modify code (e.g., for developing new models), then install locally with:
-1. ```git clone https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers.git```
-2. ```cd cnlp_transformers```
-3. ```pip install -e .```
+If you are installing just to fine-tune or run the REST APIs,
+you can install without cloning:
+
+```sh
+$ # Note: if needed, install PyTorch first (see above)
+$ pip install cnlp_transformers
+```
+
+### Editable installation
+
+If you want to modify code (e.g., for developing new models), then install locally:
+
+1. Clone this repository:
+   ```sh
+   # Either the HTTPS method...
+   $ git clone https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers.git
+   # ...or the SSH method
+   $ git clone git@github.com:Machine-Learning-for-Medical-Language/cnlp_transformers.git
+   ```
+
+2. Enter the repo: `cd cnlp_transformers`
+
+3. Install the development dependencies: 
+   ```sh
+   $ pip install -r dev-requirements.txt
+   ```
+
+4. See above for the note about PyTorch; if needed, manually install it now.
+
+5. Install `cnlp-transformers` in editable mode: 
+   ```sh
+   $ pip install -e .
+   ```
 
 ## Fine-tuning
 The main entry point for fine-tuning is the ```train_system.py``` script. Run with no arguments to show an extensive list of options that are allowed, inheriting from and extending the Huggingface training options.

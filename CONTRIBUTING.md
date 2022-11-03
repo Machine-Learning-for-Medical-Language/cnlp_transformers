@@ -20,13 +20,16 @@ clone this repository and set up your Python environment.
    it.
 
 4. Install the development dependencies: 
-   ```
+   ```sh
    $ pip install -r dev-requirements.txt
    ```
+   
+5. See [README.md](README.md) for the note about PyTorch; 
+   if needed, manually install it now.
 
-5. Install `cnlp-transformers` in editable mode: 
-   ```
-   pip install -e .
+6. Install `cnlp-transformers` in editable mode: 
+   ```sh
+   $ pip install -e .
    ```
 
 **The remainder of the instructions on this document will assume that
@@ -71,7 +74,7 @@ suite in `test` whenever a commit is pushed or a pull request is opened
 in certain circumstances:
 
 * Pull requests targeting:
-  * the `master` branch
+  * the `main` branch
   * a branch name starting with `vX`, where `X` is a digit 
   from 1 to 9 (e.g. `v0.3.0`)
 * Commits pushed to either of the above (for collaborators) or to:
@@ -81,7 +84,7 @@ You can see the structure of these test runs in the
 [**Actions**](https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers/actions) 
 tab of this repository. In short, they will build and test the project
 on Python 3.7, 3.8, 3.9, and 3.10; these will always run at least on 
-Linux, and in the case of commits or pull requests targeting `master`,
+Linux, and in the case of commits or pull requests targeting `main`,
 they will run on Linux, macOS, and Windows.
 
 If you are developing in a public fork of the repository, you can use 
@@ -93,7 +96,7 @@ a pull request.
 > **Note:** for collaborators, the same applies for work done directly 
 > in branches in this repository that follow this naming convention.
 
-Once you open a pull request targeting `master` or a version branch in
+Once you open a pull request targeting `main` or a version branch in
 this repository, the test runs will be triggered on creation and any 
 time you add new commits to the base branch in your fork. You do not
 need to name your branch anything special in this case.
@@ -131,10 +134,10 @@ In preparation, set up your PyPI API key if you haven't already:
    ```
 
 **Only follow these steps after merging the new version branch into 
-`master`.**
+`main`.**
 
 1. Checkout the merge commit for the new version; this will usually
-   be the latest commit in `master`.
+   be the latest commit in `main`.
 
 2. Before continuing, **ensure the version number in `src/cnlpt/VERSION`
    has been incremented** from the previous version on PyPI.
