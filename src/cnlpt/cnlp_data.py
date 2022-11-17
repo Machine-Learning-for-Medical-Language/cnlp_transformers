@@ -291,11 +291,16 @@ def cnlp_preprocess_data(
         # FIXME - not sure if this is right but doesn't get used much in our data
         raise NotImplementedError("2-sentence classification has not been re-implemented yet.")
         sentences = (examples['text_a'], examples['text_b'])        
+    
+    if hierarchical:
+        padding = False
+    else:
+        padding = True
 
     result = tokenizer(
         sentences,
         max_length=max_length,
-        padding="max_length",
+        padding=padding,
         truncation=True,
         is_split_into_words=True,
     )
@@ -654,8 +659,8 @@ class ClinicalNlpDataset(Dataset):
             )
 
             if args.max_eval_items > 0:
-                for key in task_dataset['validation'].features.keys():
-                    task_dataset['validation'].features[key] = task_dataset['validation'][key][:args.max_eval_items]
+                new_validation = task_dataset['validation'].train_test_split(test_size=args.max_eval_items)['test']
+                task_dataset['validation'] = new_validation
 
             self.datasets.append(task_dataset)
             self.num_train_instances += task_dataset['train'].num_rows
