@@ -15,14 +15,13 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
-from transformers.data.processors.utils import InputFeatures, InputExample
-from torch.utils.data.dataset import Dataset
+from datasets import Dataset
 import torch
 import logging
 
 # intra-library imports
 from ..CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
-from ..cnlp_data import cnlp_convert_examples_to_features
+from ..cnlp_data import cnlp_preprocess_data
 
 class EntityDocument(BaseModel):
     ''' doc_text: The raw text of the document
@@ -30,36 +29,29 @@ class EntityDocument(BaseModel):
     doc_text: str
     entities: List[List[int]]
 
-class ClassificationDocumentDataset(Dataset):
-    def __init__(self, features, label_list):
-        self.features = features
-        self.label_list = label_list
-
-    def __len__(self):
-        return len(self.features)
-
-    def __getitem__(self, i) -> InputFeatures:
-        return self.features[i]
-
-    def get_labels(self):
-        return self.label_list
-
-    @classmethod
-    def from_instance_list(cls, inst_list, tokenizer, label_list, max_length=128):
-        examples = []
-        for (ind,inst) in enumerate(inst_list):
-            guid = 'instance-%d' % (ind)
-            examples.append(InputExample(guid=guid, text_a=inst, text_b='', label=None))
-
-        features = cnlp_convert_examples_to_features(
-            examples,
-            tokenizer,
-            max_length=max_length,
-            label_list = label_list,
-            output_mode='classification',
-            inference=True
-        )
-        return cls(features, label_list)
+def get_dataset(inst_list, tokenizer, label_lists, tasks, max_length=128):
+    dataset = Dataset.from_dict({'text':inst_list})
+    task_dataset = dataset.map(
+                    cnlp_preprocess_data,
+                    batched=True,
+                    load_from_cache_file=False,
+                    desc="Running tokenizer on dataset, organizing labels, creating hierarchical segments if necessary",
+                    batch_size=100,
+                    fn_kwargs = {
+                        'tokenizer':tokenizer,
+                        'max_length':max_length,
+                        'label_lists':label_lists,
+                        'inference': True,
+                        # TODO: need to get this from the model if necessary
+                        #'hierarchical':self.hierarchical,
+                        # 'chunk_len':self.args.chunk_len,
+                        # 'num_chunks':self.args.num_chunks,
+                        # 'insert_empty_chunk_at_beginning':self.args.insert_empty_chunk_at_beginning,
+                        'truncate_examples': True,
+                        'tasks': tasks,
+                }
+    )
+    return task_dataset
 
 def create_instance_string(doc_text: str, offsets : List[int]):
     start = max(0, offsets[0]-100)
@@ -95,6 +87,3 @@ def initialize_cnlpt_model(app, model_name, cuda=True, batch_size=8):
         args=app.state.training_args,
         compute_metrics=None,
     )
-
-
-

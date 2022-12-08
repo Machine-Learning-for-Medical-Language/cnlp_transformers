@@ -19,19 +19,8 @@ import os
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List, Tuple, Dict, Union
-from transformers import (
-    AutoConfig,
-    AutoModel,
-    AutoTokenizer,
-    HfArgumentParser,
-    Trainer,
-    TrainingArguments,
-)
-from transformers.data.processors.utils import InputFeatures, InputExample
-from torch.utils.data.dataset import Dataset
 import numpy as np
-from .cnlp_rest import initialize_cnlpt_model
-from ..cnlp_data import cnlp_convert_examples_to_features
+from .cnlp_rest import create_instance_string, initialize_cnlpt_model, get_dataset
 from ..CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
 from seqeval.metrics.sequence_labeling import get_entities
 import logging
@@ -39,8 +28,7 @@ from time import time
 from nltk.tokenize import wordpunct_tokenize as tokenize
 
 app = FastAPI()
-# model_name = "tmills/clinical_tempeval_roberta-base"
-model_name = "tmills/clinical_tempeval_pubmedbert"
+model_name = "tmills/thyme1-e2e"
 logger = logging.getLogger('Temporal_REST_Processor')
 logger.setLevel(logging.INFO)
 
@@ -52,9 +40,11 @@ event_label_list = ["O", "B-AFTER","B-BEFORE","B-BEFORE/OVERLAP","B-OVERLAP","I-
     ,"I-BEFORE/OVERLAP","I-OVERLAP"]
 event_label_dict = { val:ind for ind,val in enumerate(event_label_list)}
 
-relation_label_list = ['None', 'CONTAINS']
+relation_label_list = ['None', 'CONTAINS', 'OVERLAP', 'BEFORE', 'BEGINS-ON', 'ENDS-ON']
 relation_label_dict = { val:ind for ind,val in enumerate(relation_label_list)}
 
+tasks = ['timex', 'event', 'tlinkx']
+labels = [ timex_label_list, event_label_list, relation_label_list]
 max_length = 128
 
 class SentenceDocument(BaseModel):
@@ -90,29 +80,6 @@ class TemporalResults(BaseModel):
     events: List[List[Event]]
     relations: List[List[Relation]]
 
-class TemporalDocumentDataset(Dataset):
-    def __init__(self, features):
-        self.features = features
-    def __len__(self):
-        return len(self.features)
-    def __getitem__(self, i) -> InputFeatures:
-        return self.features[i]
-
-    @classmethod
-    def from_instance_list(cls, inst_list, tokenizer):
-        examples = []
-        for (ind,inst) in enumerate(inst_list):
-            guid = 'instance-%d' % (ind)
-            examples.append(InputExample(guid=guid, text_a=inst, text_b=None, label=None))
-        features = cnlp_convert_examples_to_features(
-            examples,
-            tokenizer,
-            max_length=max_length,
-            label_list = labels,
-            output_mode='classification',
-            inference=True
-        )
-        return cls(features)
 
 def create_instance_string(tokens: List[str]):
     return ' '.join(tokens)
@@ -144,7 +111,7 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
         logger.debug('Instance string is %s' % (inst_str))
         instances.append(inst_str)
 
-    dataset = TemporalDocumentDataset.from_instance_list(instances, app.state.tokenizer)
+    dataset = get_dataset(instances, app.state.tokenizer, labels, tasks, max_length)
     preproc_end = time()
 
     output = app.state.trainer.predict(test_dataset=dataset)

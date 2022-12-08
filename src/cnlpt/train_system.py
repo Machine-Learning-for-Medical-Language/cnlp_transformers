@@ -42,13 +42,15 @@ from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.data.metrics import acc_and_f1
 from transformers.data.processors.utils import DataProcessor, InputExample, InputFeatures
 from transformers import ALL_PRETRAINED_CONFIG_ARCHIVE_MAP
-from transformers.optimization import AdamW, get_scheduler
+from transformers.optimization import get_scheduler
+from torch.optim import AdamW
 from transformers.trainer_pt_utils import get_parameter_names
 from transformers.file_utils import CONFIG_NAME
 from huggingface_hub import hf_hub_url
 
-from .cnlp_processors import cnlp_processors, cnlp_output_modes, cnlp_compute_metrics, tagging, relex, classification
+from .cnlp_processors import tagging, relex, classification
 from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
+from .cnlp_metrics import cnlp_compute_metrics
 
 from .CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
 from .BaselineModels import CnnSentenceClassifier, LstmSentenceClassifier
@@ -271,9 +273,10 @@ def main(json_file=None, json_obj=None):
             f"Output directory ({training_args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overcome."
         )
 
-    assert len(data_args.task_name) == len(data_args.data_dir), 'Number of tasks and data directories should be the same!'
+    # FIXME - goal is to eliminate task names and just infer them from data directories and automatically do data processing.
+    # but for now maybe just create a dummy task called 'infer' meaning, 'just infer the task properties'
+    # assert len(data_args.task_name) == len(data_args.data_dir), 'Number of tasks and data directories should be the same!'
 
-    
     # Setup logging
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
@@ -294,31 +297,6 @@ def main(json_file=None, json_obj=None):
     # Set seed
     set_seed(training_args.seed)
 
-    try:
-        task_names = []
-        num_labels = []
-        output_mode = []
-        tagger = []
-        relations = []
-        for task_name in data_args.task_name:
-            processor = cnlp_processors[task_name]()
-            if processor.get_num_tasks() > 1:
-                for subtask_num in range(processor.get_num_tasks()):
-                    task_names.append(task_name + "-" + processor.get_classifiers()[subtask_num])
-                    num_labels.append(len(processor.get_labels()))
-                    output_mode.append(classification)
-                    tagger.append(False)
-                    relations.append(False)
-            else:
-                task_names.append(task_name)
-                num_labels.append(len(processor.get_labels()))
-
-                output_mode.append(cnlp_output_modes[task_name])
-                tagger.append(cnlp_output_modes[task_name] == tagging)
-                relations.append(cnlp_output_modes[task_name] == relex)
-
-    except KeyError:
-        raise ValueError("Task not found: %s" % (data_args.task_name))
 
     # Load tokenizer: Need this first for loading the datasets
     tokenizer = AutoTokenizer.from_pretrained(
@@ -332,19 +310,36 @@ def main(json_file=None, json_obj=None):
     hierarchical = model_name == 'hier'
 
     # Get datasets
-    train_dataset = (
-        ClinicalNlpDataset(data_args, tokenizer=tokenizer, cache_dir=model_args.cache_dir, hierarchical=hierarchical) if training_args.do_train else None
+    dataset = (
+        ClinicalNlpDataset(data_args, tokenizer=tokenizer, cache_dir=model_args.cache_dir, hierarchical=hierarchical,)
     )
-    eval_dataset = (
-        ClinicalNlpDataset(data_args, tokenizer=tokenizer, mode="dev", cache_dir=model_args.cache_dir, hierarchical=hierarchical)
-        if training_args.do_eval
-        else None
-    )
-    test_dataset = (
-        ClinicalNlpDataset(data_args, tokenizer=tokenizer, mode="test", cache_dir=model_args.cache_dir, hierarchical=hierarchical)
-        if training_args.do_predict
-        else None
-    )
+
+    try:
+        task_names = []
+        num_labels = []
+        output_mode = []
+        tagger = []
+        relations = []
+        tasks_to_processors = {}
+        for dataset_ind in range(len(data_args.data_dir)):
+            processor = dataset.processors[dataset_ind]
+            # if processor.get_num_tasks() > 1:
+            for subtask_num in range(processor.get_num_tasks()):
+                task_names.append(processor.get_classifiers()[subtask_num])
+                num_labels.append(len(processor.get_labels()[subtask_num]))
+                task_output_mode = processor.get_output_mode()[subtask_num]
+                output_mode.append(task_output_mode)
+                tagger.append(task_output_mode == tagging)
+                relations.append(task_output_mode == relex)
+                tasks_to_processors[task_names[-1]] = processor
+
+                # tagger.append(False)
+                # relations.append(False)
+
+                tasks_to_processors[task_names[-1]] = processor
+
+    except KeyError:
+        raise ValueError("Task not found: %s" % (data_args.task_name))
 
     # Load pretrained model and tokenizer
     #
@@ -412,7 +407,7 @@ def main(json_file=None, json_obj=None):
         model = HierarchicalModel(
             config=config,
             transformer_head_config=transformer_head_config,
-            class_weights=None if train_dataset is None else train_dataset.class_weights,
+            class_weights=dataset.class_weights,
             final_task_weight=training_args.final_task_weight,
             freeze=training_args.freeze,
             argument_regularization=training_args.arg_reg,
@@ -463,7 +458,7 @@ def main(json_file=None, json_obj=None):
                         cache_dir=model_args.cache_dir,
                         tagger=tagger,
                         relations=relations,
-                        class_weights=None if train_dataset is None else train_dataset.class_weights,
+                        class_weights=dataset.class_weights,
                         final_task_weight=training_args.final_task_weight,
                         use_prior_tasks=model_args.use_prior_tasks,
                         argument_regularization=model_args.arg_reg)
@@ -478,7 +473,7 @@ def main(json_file=None, json_obj=None):
                 model = CnlpModelForClassification.from_pretrained(
                     model_args.encoder_name,
                     config=config,
-                    class_weights=None if train_dataset is None else train_dataset.class_weights,
+                    class_weights=dataset.class_weights,
                     final_task_weight=training_args.final_task_weight,
                     freeze=training_args.freeze,
                     bias_fit=training_args.bias_fit,
@@ -503,7 +498,7 @@ def main(json_file=None, json_obj=None):
             pretrained = True
             model = CnlpModelForClassification(
                 config=config,
-                class_weights=None if train_dataset is None else train_dataset.class_weights,
+                class_weights=dataset.class_weights,
                 final_task_weight=training_args.final_task_weight,
                 freeze=training_args.freeze,
                 bias_fit=training_args.bias_fit,
@@ -518,7 +513,9 @@ def main(json_file=None, json_obj=None):
     )
 
     if training_args.do_train:
-        batches_per_epoch = math.ceil(len(train_dataset) / training_args.train_batch_size)
+        # TODO: This assumes that if there are multiple training sets, they all have the same length, but
+        # in the future it would be nice to be able to have multiple heterogeneous datasets
+        batches_per_epoch = math.ceil(dataset.num_train_instances / training_args.train_batch_size)
         total_steps = int(training_args.num_train_epochs * batches_per_epoch // training_args.gradient_accumulation_steps)
 
         if training_args.evals_per_epoch > 0:
@@ -533,15 +530,12 @@ def main(json_file=None, json_obj=None):
             logger.info('Evaluation strategy not specified so evaluating every epoch')
             training_args.evaluation_strategy = IntervalStrategy.EPOCH
 
-    def build_compute_metrics_fn(task_names: List[str], model) -> Callable[[EvalPrediction], Dict]:
+    def build_compute_metrics_fn(task_names: List[str], model, processors: Dict[str,DataProcessor]) -> Callable[[EvalPrediction], Dict]:
         def compute_metrics_fn(p: EvalPrediction):
 
             metrics = {}
             task_scores = []
             task_label_ind = 0
-
-            # if not p is list:
-            #     p = [p]
 
             for task_ind,task_name in enumerate(task_names):
                 if tagger[task_ind]:
@@ -552,21 +546,21 @@ def main(json_file=None, json_obj=None):
                 else:
                     preds = np.argmax(p.predictions[task_ind], axis=1)
 
-                if len(task_names) == 1:
-                    labels = p.label_ids[:,0]
-                elif relations[task_ind]:
-                    labels = p.label_ids[:,0,task_label_ind:task_label_ind+data_args.max_seq_length,:].squeeze()
+                if relations[task_ind]:
+                    # relation labels
+                    labels = p.label_ids[:,:,task_label_ind:task_label_ind+data_args.max_seq_length].squeeze()
                     task_label_ind += data_args.max_seq_length
-                elif p.label_ids.ndim == 4:
-                    labels = p.label_ids[:,0,task_label_ind:task_label_ind+1,:].squeeze()
-                    task_label_ind += 1
                 elif p.label_ids.ndim == 3:
-                    labels = p.label_ids[:,0,task_label_ind:task_label_ind+1].squeeze()
+                    labels = p.label_ids[:,:, task_label_ind:task_label_ind+1].squeeze()
                     task_label_ind += 1
+                elif p.label_ids.ndim == 2:
+                    labels = p.label_ids[:,task_ind].squeeze()
 
-                metrics[task_name] = cnlp_compute_metrics(task_name, preds, labels)
-                processor = cnlp_processors.get(task_name, cnlp_processors.get(task_name.split('-')[0], None))()
-                task_scores.append(processor.get_one_score(metrics.get(task_name, metrics.get(task_name.split('-')[0], None))))
+                processor = processors[task_name]
+                metrics[task_name] = cnlp_compute_metrics(task_name, task_ind, preds, labels, processor, processor.get_output_mode()[task_ind])
+                # FIXME - Defaulting to accuracy for model selection score, when it should be task-specific
+                task_scores.append( metrics[task_name].get('one_score', np.mean(metrics[task_name].get('f1'))))
+                #task_scores.append(processor.get_one_score(metrics.get(task_name, metrics.get(task_name.split('-')[0], None))))
 
             one_score = sum(task_scores) / len(task_scores)
 
@@ -580,9 +574,9 @@ def main(json_file=None, json_obj=None):
                             tokenizer.save_pretrained(training_args.output_dir)
                         for task_ind,task_name in enumerate(metrics):
                             with open(output_eval_file, "w") as writer:
-                                logger.info("***** Eval results for task %s *****" % (task_name))
+                                # logger.info("***** Eval results for task %s *****" % (task_name))
                                 for key, value in metrics[task_name].items():
-                                    logger.info("  %s = %s", key, value)
+                                    # logger.info("  %s = %s", key, value)
                                     writer.write("%s = %s\n" % (key, value))
                     model.best_score = one_score
                     model.best_eval_results = metrics
@@ -595,9 +589,9 @@ def main(json_file=None, json_obj=None):
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
-        compute_metrics=build_compute_metrics_fn(task_names, model),
+        train_dataset=dataset.datasets[0].get('train', None),
+        eval_dataset=dataset.datasets[0].get('validation', None),
+        compute_metrics=build_compute_metrics_fn(task_names, model, tasks_to_processors),
     )
 
     # Training
@@ -617,7 +611,7 @@ def main(json_file=None, json_obj=None):
     eval_results = {}
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
-
+        eval_dataset=dataset.datasets[0]['validation']
         try:
             eval_result = model.best_eval_results
         except:
@@ -633,54 +627,60 @@ def main(json_file=None, json_obj=None):
             with open(output_eval_predictions, 'w') as writer:
                 #Chen wrote the below but it doesn't work for all settings
                 predictions = trainer.predict(test_dataset=eval_dataset).predictions
-                dataset_labels = eval_dataset.get_labels()
-                for task_ind, task_name in enumerate(task_names):
-                    if output_mode[task_ind] == classification:
-                        task_predictions = np.argmax(predictions[task_ind], axis=1)
-                        for index, item in enumerate(task_predictions):
-                            if len(task_names) > len(dataset_labels):
-                                subtask_ind = 0
-                            else:
-                                subtask_ind = task_ind
-                            item = dataset_labels[subtask_ind][item]
-                            writer.write("Task %d (%s) - Index %d - %s\n" % (task_ind, task_name, index, item))
-                    elif output_mode[task_ind] == tagging:
-                        task_predictions = np.argmax(predictions[task_ind], axis=2)
-                        task_labels = dataset_labels[task_ind]
-                        for index, pred_seq in enumerate(task_predictions):
-                            wpind_to_ind = {}
-                            chunk_labels = []
+                dataset_labels = dataset.get_labels()
+                for dataset_ind in range(len(data_args.data_dir)):
+                    processor = dataset.processors[dataset_ind]
+                    for task_ind in range(processor.get_num_tasks()):
+                        task_name = processor.get_classifiers()[task_ind]
+                # for task_ind, task_name in enumerate(task_names):
+                        if output_mode[task_ind] == classification:
+                            task_predictions = np.argmax(predictions[task_ind], axis=1)
+                            for index, item in enumerate(task_predictions):
+                                if len(task_names) > len(dataset_labels):
+                                    subtask_ind = 0
+                                else:
+                                    subtask_ind = task_ind
+                                item = dataset_labels[dataset_ind][task_ind][item]
+                                writer.write("Task %d (%s) - Index %d - %s\n" % (task_ind, task_name, index, item))
+                        elif output_mode[task_ind] == tagging:
+                            task_predictions = np.argmax(predictions[task_ind], axis=2)
+                            task_labels = dataset_labels[dataset_ind][task_ind]
+                            for index, pred_seq in enumerate(task_predictions):
+                                wpind_to_ind = {}
+                                chunk_labels = []
 
-                            tokens = tokenizer.convert_ids_to_tokens(eval_dataset.features[index].input_ids)
-                            for token_ind in range(1,len(tokens)):
-                                if eval_dataset[index].input_ids[token_ind] <= 2:
-                                    break
-                                if tokens[token_ind].startswith('Ġ'):
-                                    wpind_to_ind[token_ind] = len(wpind_to_ind)
-                                    chunk_labels.append(task_labels[task_predictions[index][token_ind]])
+                                token_inds = eval_dataset['input_ids'][index]
+                                tokens = tokenizer.convert_ids_to_tokens(token_inds)
+                                for token_ind in range(1,len(tokens)):
+                                    if token_inds[token_ind] <= 2:
+                                        break
+                                    if tokens[token_ind].startswith('Ġ'):
+                                        wpind_to_ind[token_ind] = len(wpind_to_ind)
+                                        chunk_labels.append(task_labels[task_predictions[index][token_ind]])
 
-                            entities = get_entities(chunk_labels)
-                            writer.write('Task %d (%s) - Index %d: %s\n' % (task_ind, task_name, index, str(entities)))
-                    elif output_mode[task_ind] == relex:
-                        task_predictions = np.argmax(predictions[task_ind], axis=3)
-                        task_labels = dataset_labels[task_ind]
-                        assert task_labels[0] == 'None', 'The first labeled relation category should always be "None" but for task %s it is %s' % (task_names[task_ind], task_labels[0])
-                        
-                        for inst_ind in range(task_predictions.shape[0]):
-                            inst_preds = task_predictions[inst_ind]
-                            a1s, a2s = np.where(inst_preds > 0)
-                            for arg_ind in range(len(a1s)):
-                                a1_ind = a1s[arg_ind]
-                                a2_ind = a2s[arg_ind]
-                                cat = task_labels[ inst_preds[a1_ind][a2_ind] ]
-                                writer.write("Task %d (%s) - Index %d - %s(%d, %d)\n" % (task_ind, task_name, inst_ind, cat, a1_ind, a2_ind))
-                    else:
-                        raise NotImplementedError('Writing predictions is not implemented for this output_mode!')
+                                entities = get_entities(chunk_labels)
+                                writer.write('Task %d (%s) - Index %d: %s\n' % (task_ind, task_name, index, str(entities)))
+                        elif output_mode[task_ind] == relex:
+                            task_predictions = np.argmax(predictions[task_ind], axis=3)
+                            task_labels = dataset_labels[dataset_ind][task_ind]
+                            # assert task_labels[0] == 'None', 'The first labeled relation category should always be "None" but for task %s it is %s' % (task_names[task_ind], task_labels[0])
+                            
+                            for inst_ind in range(task_predictions.shape[0]):
+                                inst_preds = task_predictions[inst_ind]
+                                a1s, a2s = np.where(inst_preds > 0)
+                                for arg_ind in range(len(a1s)):
+                                    a1_ind = a1s[arg_ind]
+                                    a2_ind = a2s[arg_ind]
+                                    cat = task_labels[ inst_preds[a1_ind][a2_ind] ]
+                                    writer.write("Task %d (%s) - Index %d - %s(%d, %d)\n" % (task_ind, task_name, inst_ind, cat, a1_ind, a2_ind))
+                        else:
+                            raise NotImplementedError('Writing predictions is not implemented for this output_mode!')
 
         eval_results.update(eval_result)
 
     if training_args.do_predict:
         logging.info("*** Test ***")
+        test_dataset=dataset.datasets[0]['test']
         # FIXME: this part hasn't been updated for the MTL setup so it doesn't work anymore since
         # predictions is generalized to be a list of predictions and the output needs to be different for each kin.
         # maybe it's ok to only handle classification since it has a very straightforward output format and evaluation,

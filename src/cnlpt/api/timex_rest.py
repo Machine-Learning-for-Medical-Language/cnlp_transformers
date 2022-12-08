@@ -19,25 +19,18 @@ import os
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List, Tuple, Dict
-from transformers import (
-    AutoConfig,
-    AutoModel,
-    AutoTokenizer,
-    HfArgumentParser,
-    Trainer,
-    TrainingArguments,
-)
+
 from transformers.data.processors.utils import InputFeatures, InputExample
 from torch.utils.data.dataset import Dataset
 import numpy as np
-from .cnlp_rest import initialize_cnlpt_model
+from .cnlp_rest import initialize_cnlpt_model, get_dataset
 from ..CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
 from seqeval.metrics.sequence_labeling import get_entities
 import logging
 from time import time
 from nltk.tokenize import wordpunct_tokenize as tokenize
 
-from .temporal_rest import timex_label_list, timex_label_dict, TokenizedSentenceDocument, SentenceDocument, Timex, TemporalResults, TemporalDocumentDataset, create_instance_string
+from .temporal_rest import timex_label_list, TokenizedSentenceDocument, SentenceDocument, Timex, TemporalResults,  create_instance_string
 
 app = FastAPI()
 model_name = "tmills/timex-thyme-colon-pubmedbert"
@@ -73,7 +66,7 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
         logger.debug('Instance string is %s' % (inst_str))
         instances.append(inst_str)
 
-    dataset = TemporalDocumentDataset.from_instance_list(instances, app.state.tokenizer)
+    dataset = get_dataset(instances, app.state.tokenizer, label_lists=[timex_label_list], tasks=['timex'], max_length=max_length)
     logger.warn('Dataset is as follows: %s' % (str(dataset.features)))
 
     preproc_end = time()
