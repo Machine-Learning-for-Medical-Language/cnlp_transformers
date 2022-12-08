@@ -546,18 +546,12 @@ def main(json_file=None, json_obj=None):
                 else:
                     preds = np.argmax(p.predictions[task_ind], axis=1)
 
-                # if len(task_names) == 1:
-                #     # single task learning:
-                #     labels = p.label_ids
                 if relations[task_ind]:
                     # relation labels
-                    labels = p.label_ids[:,0,task_label_ind:task_label_ind+data_args.max_seq_length,:].squeeze()
+                    labels = p.label_ids[:,:,task_label_ind:task_label_ind+data_args.max_seq_length].squeeze()
                     task_label_ind += data_args.max_seq_length
-                elif p.label_ids.ndim == 4:
-                    labels = p.label_ids[:,0,task_label_ind:task_label_ind+1,:].squeeze()
-                    task_label_ind += 1
                 elif p.label_ids.ndim == 3:
-                    labels = p.label_ids[:,task_label_ind:task_label_ind+1,:].squeeze()
+                    labels = p.label_ids[:,:, task_label_ind:task_label_ind+1].squeeze()
                     task_label_ind += 1
                 elif p.label_ids.ndim == 2:
                     labels = p.label_ids[:,task_ind].squeeze()
@@ -655,9 +649,10 @@ def main(json_file=None, json_obj=None):
                                 wpind_to_ind = {}
                                 chunk_labels = []
 
-                                tokens = tokenizer.convert_ids_to_tokens(eval_dataset['input_ids'][index])
+                                token_inds = eval_dataset['input_ids'][index]
+                                tokens = tokenizer.convert_ids_to_tokens(token_inds)
                                 for token_ind in range(1,len(tokens)):
-                                    if eval_dataset['input_ids'][index][token_ind] <= 2:
+                                    if token_inds[token_ind] <= 2:
                                         break
                                     if tokens[token_ind].startswith('Ġ'):
                                         wpind_to_ind[token_ind] = len(wpind_to_ind)

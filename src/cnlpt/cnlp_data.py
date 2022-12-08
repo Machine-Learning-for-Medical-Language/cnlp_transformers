@@ -348,7 +348,7 @@ def cnlp_preprocess_data(
         # Convert the labels to column format that arrow prefers
         labels = list(zip(*labels))
 
-        result['label'] = _build_pytorch_labels(result, tasks, labels, output_mode, num_instances, max_length)
+        result['label'] = _build_pytorch_labels(result, tasks, labels, output_mode, num_instances, max_length, label_lists)
     # else:
         # result['label'] =  [ (0,) for i in range(num_instances)]
 
@@ -377,7 +377,7 @@ def cnlp_preprocess_data(
 
     return result
 
-def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, output_mode:List[str], num_instances:int, max_length:int):
+def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, output_mode:List[str], num_instances:int, max_length:int, label_lists: List[List[str]]):
     labels_out = []
     for task_ind, task in enumerate(tasks):
         encoded_labels = []
@@ -403,7 +403,7 @@ def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, ou
                         label_ids.append(-100)
                     previous_word_idx = word_idx
 
-                encoded_labels.append(np.array(label_ids))
+                encoded_labels.append(np.expand_dims(np.array(label_ids), 1))
 
             labels_out.append(encoded_labels)
         elif output_mode[task_ind] == relex:
@@ -435,7 +435,7 @@ def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, ou
                         # don't want to consider it because it may screw up the learning to have 2 such similar
                         # tokens not involved in a relation.
                         if wpi != wpi2:
-                            sent_labels[wpi,wpi2] = 0.0
+                            sent_labels[wpi,wpi2] = label_lists[task_ind].index('None')
 
                 for label in labels[sent_ind][task_ind]:
                     if not label[0] in tokeni_to_wpi or not label[1] in tokeni_to_wpi:
@@ -453,9 +453,18 @@ def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, ou
                 logging.warn('During relation processing, there were %d relations (out of %d total relations) where at least one argument was truncated so the relation could not be trained/predicted.' % (out_of_bounds, num_relations) )
         elif output_mode[task_ind] == classification:
             for sent_ind in range(num_instances):
-                encoded_labels.append(labels[sent_ind][task_ind])
-            labels_out.append(encoded_labels)
-    return list(zip(*labels_out))
+                encoded_labels.append( (labels[sent_ind][task_ind],) )
+            labels_out.append(np.array(encoded_labels))
+    
+    labels_unshaped =  list(zip(*labels_out))
+    labels_shaped = []
+    for ind in range(len(labels_unshaped)):
+        if labels_unshaped[ind][0].ndim == 2:
+            labels_shaped.append( np.concatenate( labels_unshaped[ind], axis=1 ) )
+        elif labels_unshaped[ind][0].ndim == 1:
+            labels_shaped.append( np.concatenate( labels_unshaped[ind], axis=0 ) )
+    
+    return labels_shaped
 
 def _build_event_mask(result:BatchEncoding, num_insts:int, event_start_token_id, event_end_token_id):
 

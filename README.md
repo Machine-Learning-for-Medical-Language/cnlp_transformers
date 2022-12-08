@@ -91,7 +91,7 @@ Instance labels should be formatted the same way as in the csv/tsv example above
 
 2. Run train_system.py with a ```--task_name``` from your data files and the ```--data-dir``` argument from Step 1.
 
-### End-to-end example
+### Fine-tuning for classification: End-to-end example
 1. Download data from [Drug Review Dataset (Drugs.com) Data Set](https://archive.ics.uci.edu/ml/datasets/Drug+Review+Dataset+%28Drugs.com%29) and extract. Pay attention to their terms:
    1. only use the data for research purposes
    2. don't use the data for any commerical purposes

@@ -91,9 +91,8 @@ def relation_metrics(processor, preds, labels, task_ind):
     # If we are using the attention-based relation extractor, many impossible pairs
     # are set to -100 so pytorch loss functions ignore them. We need to make sure the
     # scorer also ignores them.
-    task_labels = labels[:, task_ind, :, :].squeeze()
-    relevant_inds = np.where(task_labels != -100)
-    relevant_labels = task_labels[relevant_inds]
+    relevant_inds = np.where(labels != -100)
+    relevant_labels = labels[relevant_inds]
     relevant_preds = preds[relevant_inds]
 
     num_correct = (relevant_labels == relevant_preds).sum()

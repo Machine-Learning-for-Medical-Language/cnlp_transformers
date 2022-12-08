@@ -14,7 +14,7 @@ done
 ## thyme colon event attribute tasks:
 for task in dtr Negation Conmod alinkcat alinkb; do
     echo "************ Testing ${task} thyme colon (classification) *************"
-    python -m cnlpt.train_system --task ${task} --data_dir ~/mnt/r/DeepLearning/mmtl/event-atts/colon/ --output_dir outputs/${task}_colon_regression_test --do_train --do_eval --num_train_epochs 1 --overwrite_output_dir --learning_rate 5e-5 --run_name ${task}_colon_regression_test --per_device_train_batch_size 32 --report_to none --overwrite_cache
+    python -m cnlpt.train_system --task ${task} --data_dir ~/mnt/r/DeepLearning/mmtl/thyme-event-atts/colon/ --output_dir outputs/${task}_colon_regression_test --do_train --do_eval --num_train_epochs 1 --overwrite_output_dir --learning_rate 5e-5 --run_name ${task}_colon_regression_test --per_device_train_batch_size 32 --report_to none --overwrite_cache
 done
 
 ## Multi-task classification:
@@ -39,8 +39,7 @@ python -m cnlpt.train_system --task event timex --data_dir ~/mnt/r/DeepLearning/
 python -m cnlpt.train_system --task tlinkx --data_dir ~/mnt/r/DeepLearning/mmtl/thyme/colon/ --output_dir outputs/tlinkx_colon_regression_test --do_train --do_eval --num_train_epochs 1 --overwrite_output_dir --learning_rate 5e-5 --run_name tlinkx_colon_regression_test --per_device_train_batch_size 8 --report_to none --overwrite_cache
 
 # Relations + Timexes + Events joint training:
-# FIXME - not working
-#python -m cnlpt.train_system --task event timex tlinkx --data_dir ~/mnt/r/DeepLearning/mmtl/thyme/colon/ --output_dir outputs/thyme_e2e_regression_test --do_train --do_eval --num_train_epochs 1 --overwrite_output_dir --learning_rate 5e-5 --run_name thyme_e2e_regression_test --per_device_train_batch_size 8 --report_to none --overwrite_cache
+python -m cnlpt.train_system --task event timex tlinkx --data_dir ~/mnt/r/DeepLearning/mmtl/thyme/colon/ --output_dir outputs/thyme_e2e_regression_test --do_train --do_eval --num_train_epochs 1 --overwrite_output_dir --learning_rate 5e-5 --run_name thyme_e2e_regression_test --per_device_train_batch_size 8 --report_to none --overwrite_cache
 
 # hier model
 ## i2b2 2008

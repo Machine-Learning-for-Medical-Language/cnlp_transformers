@@ -298,7 +298,7 @@ class CnlpModelForClassification(PreTrainedModel):
             loss_fct = CrossEntropyLoss(weight=class_weights)
 
             if self.relations[task_ind]:
-                task_labels = labels[:, task_ind, state['task_label_ind']:state['task_label_ind'] + seq_len, :]
+                task_labels = labels[:, :, state['task_label_ind']:state['task_label_ind'] + seq_len]
                 state['task_label_ind'] += seq_len
                 task_loss = loss_fct(task_logits.permute(0, 3, 1, 2),
                                      task_labels.type(torch.LongTensor).to(labels.device))
@@ -308,7 +308,7 @@ class CnlpModelForClassification(PreTrainedModel):
                     task_labels = labels
                 elif labels.ndim == 3:
                     # labels = labels.unsqueeze(1)
-                    task_labels = labels[:, state['task_label_ind'], :]
+                    task_labels = labels[:, :, state['task_label_ind']]
                 else:
                     task_labels = labels[:, 0, state['task_label_ind'], :]
 
