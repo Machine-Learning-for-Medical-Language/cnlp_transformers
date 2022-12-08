@@ -295,7 +295,7 @@ def cnlp_preprocess_data(
     if hierarchical:
         padding = False
     else:
-        padding = True
+        padding = 'max_length'
 
     result = tokenizer(
         sentences,
