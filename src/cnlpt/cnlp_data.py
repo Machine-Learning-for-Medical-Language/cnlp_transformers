@@ -444,7 +444,9 @@ def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, ou
                     if not label[0] in tokeni_to_wpi or not label[1] in tokeni_to_wpi:
                         out_of_bounds +=1
                         print(f"CULPRIT {label}")
-                        print(labels)
+                        print(labels[sent_ind][task_ind])
+                        print(tokeni_to_wpi)
+                        print(wpi_to_tokeni)
                         continue
                     
 
