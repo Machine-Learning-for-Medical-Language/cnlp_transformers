@@ -440,6 +440,10 @@ def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, ou
                 for label in labels[sent_ind][task_ind]:
                     if not label[0] in tokeni_to_wpi or not label[1] in tokeni_to_wpi:
                         out_of_bounds +=1
+                        print(f"CULPRIT: {label}")
+                        print(f"labels {labels[sent_ind][task_ind]}")
+                        print(f"\n\n{tokeni_to_wpi}")
+                        print(f"\n\n{wpi_to_tokeni}")
                         continue
 
                     wpi1 = tokeni_to_wpi[label[0]]
@@ -453,9 +457,7 @@ def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, ou
                 logging.warn(
                     'During relation processing, there were %d relations (out of %d total relations) where at least one argument was truncated so the relation could not be trained/predicted.' % (out_of_bounds, num_relations)
                 )
-                print(f"labels {labels[sent_ind][task_ind]}")
-                print(f"\n\n{tokeni_to_wpi}")
-                print(f"\n\n{wpi_to_tokeni}")
+                
         elif output_mode[task_ind] == classification:
             for sent_ind in range(num_instances):
                 encoded_labels.append( (labels[sent_ind][task_ind],) )
