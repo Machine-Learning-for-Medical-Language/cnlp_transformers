@@ -129,7 +129,7 @@ class AutoProcessor(DataProcessor):
             elif output_mode == relex:
                 unique_relations = set()
                 for label in unique_labels:
-                    inst_rels = [] if label.strip().lower() == 'none' else label.split(' , ')
+                    inst_rels = label.split(' , ')
                     for rel in inst_rels:
                         rel_cat = rel.split(',')[-1]
                         if rel_cat[-1] == ')':
