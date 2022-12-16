@@ -103,7 +103,7 @@ def build_rel_dictionary(filename, mode="drugprot"):
             else:
                 article_id, rel_group, eval_q, rel_type, raw_arg1, raw_arg2 = row
                 print(row)
-            if eval_q == "Y":
+            if eval_q.strip() == "Y":
                 print("Entered!")
                 entity_1 = raw_arg1.split(":")[-1]
                 entity_2 = raw_arg2.split(":")[-1]
