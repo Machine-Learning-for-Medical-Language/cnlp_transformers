@@ -444,9 +444,11 @@ def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, ou
                     if not label[0] in tokeni_to_wpi or not label[1] in tokeni_to_wpi:
                         out_of_bounds +=1
                         print(f"CULPRIT {label}")
-                        print(labels[sent_ind][task_ind])
-                        print(tokeni_to_wpi)
-                        print(wpi_to_tokeni)
+                        print(f"Full labels:\n\n {labels[sent_ind][task_ind]} \n\n")
+                        print(f"Token to wordpiece: \n\n {tokeni_to_wpi} \n\n")
+                        print(f"Wordpiece to token: \n\n {wpi_to_tokeni} \n\n")
+                        print(f"Original word ids: \n\n {word_ids} \n\n")
+                        print(f"max length: {max_length}")
                         continue
                     
 
