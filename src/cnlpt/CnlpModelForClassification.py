@@ -17,6 +17,7 @@ from torch.nn import CrossEntropyLoss, MSELoss
 from transformers.modeling_outputs import SequenceClassifierOutput
 from torch.nn.functional import softmax, relu
 import math
+import random
 
 logger = logging.getLogger(__name__)
 
