@@ -33,7 +33,8 @@ def file_type(filename):
 
 def order_files(file_dir):
     file_list = os.listdir(file_dir)
-    # their spelling of 'abstract'
+    # ChemProt spells it correctly and DrugProt doesn't
+    abs_endings = {"abstracs", "abstracts"} 
     abs_file = [*filter(lambda s: file_type(s) == "abstracs", file_list)][0]
 
     ents_file = [*filter(lambda s: file_type(s) == "entities", file_list)][0]
