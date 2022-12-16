@@ -448,6 +448,7 @@ def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, ou
                         print(f"Token to wordpiece: \n\n {tokeni_to_wpi} \n\n")
                         print(f"Wordpiece to token: \n\n {wpi_to_tokeni} \n\n")
                         print(f"Original word ids: \n\n {word_ids} \n\n")
+                        print(f"\n\n {result(batch_index=sent_ind)}")
                         print(f"max length: {max_length}")
                         continue
                     
