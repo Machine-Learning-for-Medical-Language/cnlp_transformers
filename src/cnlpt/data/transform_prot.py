@@ -102,7 +102,9 @@ def build_rel_dictionary(filename, mode="drugprot"):
                 eval_q = "Y"
             else:
                 article_id, rel_group, eval_q, rel_type, raw_arg1, raw_arg2 = row
+                print(row)
             if eval_q == "Y":
+                print("Entered!")
                 entity_1 = raw_arg1.split(":")[-1]
                 entity_2 = raw_arg2.split(":")[-1]
                 identifier_to_rel[int(article_id)][(entity_1, entity_2)] = rel_type
