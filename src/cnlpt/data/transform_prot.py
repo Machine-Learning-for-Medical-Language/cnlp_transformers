@@ -294,7 +294,7 @@ def chemprot_ner_data_dict(entity_to_info, stanza_sents):
         entity_type = info_dict["type"]
         sent_idx_to_tags[sent_idx].append((ent_begin, ent_end, entity_type))
     for sent_idx, tags in sent_idx_to_tags.items():
-        sorted_tags = sorted(tags, lambda s: s[:2])
+        sorted_tags = sorted(tags, key=lambda s: s[:2])
         final_tags = []
         for i in range(0, len(sorted_tags)):
             prev = (-1, -1) if i == 0 else final_tags[-1]
