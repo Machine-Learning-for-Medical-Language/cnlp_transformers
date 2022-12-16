@@ -289,7 +289,7 @@ def drugprot_ner_data_dict(entity_to_info, stanza_sents):
 
 def chemprot_ner_data_dict(entity_to_info, stanza_sents):
     sent_idx_to_tags = defaultdict(lambda: [])
-    for entity, info_dict in entity_to_info.item():
+    for entity, info_dict in entity_to_info.items():
         sent_idx, ent_begin, end_end = info_dict["stanza_location"]
         entity_type = info_dict["type"]
         sent_idx_to_tags[sent_idx].append((ent_begin, ent_end, entity_type))
