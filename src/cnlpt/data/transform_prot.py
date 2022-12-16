@@ -66,14 +66,17 @@ def build_abstract_dictionary(filename):
     return identifier_to_processed_article
 
 
-def build_entity_dictionary(filename):
+def build_entity_dictionary(filename, mode="drugprot"):
     identifier_to_entity = defaultdict(lambda: {})
     with open(filename) as fd:
         rd = csv.reader(fd, delimiter="\t")
         for row in rd:
             article_id, entity_id, raw_entity_type, begin, end, text = row
             # Since GENE-Y and GENE-N both become GENE in dev
-            entity_type = raw_entity_type.split("-")[0]
+            if mode == "drugprot":
+                entity_type = raw_entity_type.split("-")[0]
+            else:
+                entity_type = raw_entity_type
             identifier_to_entity[int(article_id)][entity_id] = {
                 "id": entity_id,
                 "type": entity_type,
@@ -88,15 +91,20 @@ def build_entity_dictionary(filename):
     return identifier_to_entity
 
 
-def build_rel_dictionary(filename):
+def build_rel_dictionary(filename, mode="drugprot"):
     identifier_to_rel = defaultdict(lambda: {})
     with open(filename) as fd:
         rd = csv.reader(fd, delimiter="\t")
         for row in rd:
-            article_id, rel_type, raw_arg1, raw_arg2 = row
-            entity_1 = raw_arg1.split(":")[-1]
-            entity_2 = raw_arg2.split(":")[-1]
-            identifier_to_rel[int(article_id)][(entity_1, entity_2)] = rel_type
+            if mode == "drugprot":
+                article_id, rel_type, raw_arg1, raw_arg2 = row
+                eval_q = "Y"
+            else:
+                article_id, rel_group, eval_q, rel_type, raw_arg1, raw_arg2 = row
+            if eval_q == "Y":
+                entity_1 = raw_arg1.split(":")[-1]
+                entity_2 = raw_arg2.split(":")[-1]
+                identifier_to_rel[int(article_id)][(entity_1, entity_2)] = rel_type
 
     print("Relations Loaded")
     return identifier_to_rel
@@ -212,7 +220,17 @@ def build_e2e_data_dict(entity_to_info, rel_ents_to_type):
     return sent_idx_to_rels
 
 
-def intervals_to_tags(intervals_dict, sent_len):
+def intervals_to_tags(intervals_dict, sent_len, mode):
+    if mode == "chemprot":
+        tags = ["O"] * sent_len
+        for interval in intervals:
+            begin, end, tag = interval
+            for local_i, list_i in enumerate(range(begin, end + 1)):
+                if local_i == 0:
+                    tags[list_i] = "B-" + tag.upper()
+                else:
+                    tags[list_i] = "I-" + tag.upper()
+        return " ".join(tags)
     final_tag_dict = {}
     for tag in ["CHEMICAL", "GENE"]:
         intervals = intervals_dict[tag]
@@ -228,7 +246,13 @@ def intervals_to_tags(intervals_dict, sent_len):
     return final_tag_dict
 
 
-def build_ner_data_dict(entity_to_info, stanza_sents):
+def build_ner_data_dict(entity_to_info, stanza_sents, mode):
+    if mode == "drugprot":
+        return drugprot_ner_data_dict(entity_to_info, stanza_sents)
+    return chemprot_ner_data_dict(entity_to_info, stanza_sents)
+
+
+def drugprot_ner_data_dict(entity_to_info, stanza_sents):
     sent_idx_to_tags = defaultdict(lambda: [])
     for entity, info_dict in entity_to_info.items():
         sent_idx, ent_begin, ent_end = info_dict["stanza_location"]
@@ -255,13 +279,48 @@ def build_ner_data_dict(entity_to_info, stanza_sents):
 
                 final_tags[curr_type].append((curr_begin, curr_end, curr_type))
 
-        sent_idx_to_tags[sent_idx] = intervals_to_tags(final_tags, len(stanza_sent))
+        sent_idx_to_tags[sent_idx] = intervals_to_tags(
+            final_tags, len(stanza_sent), mode="drugprot"
+        )
 
     return sent_idx_to_tags
 
 
-def coalesce(abs_dict, ent_dict, rel_dict):
-    columns = ["end_to_end", "chemical_ner", "gene_ner", "text"]
+def chemprot_ner_data_dict(entity_to_info, stanza_sents):
+    sent_idx_to_tags = defaultdict(lambda: [])
+    for entity, info_dict in entity_to_info.item():
+        sent_idx, ent_begin, end_end = info_dict["stanza_location"]
+        entity_type = info_dict["type"]
+        sent_idx_to_tags[sent_idx].append((ent_begin, ent_end, entity_type))
+    for sent_idx, tags in sent_idx_to_tags.items():
+        sorted_tags = sorted(tags, lambda s: s[:2])
+        final_tags = []
+        for i in range(0, len(sorted_tags)):
+            prev = (-1, -1) if i == 0 else final_tags[-1]
+            curr = sorted_tags[i]
+            # print(f"{i} {(prev['begin'], prev['end'])} {(curr['begin'], curr['end'])}")
+            # if (prev["begin"] <= curr["begin"]) and (curr["end"] <= prev["end"]):
+            if (prev[0] >= curr[0]) and (curr[1] >= prev[1]):
+                # remove prev
+                # print("main case")
+                print("Overlap problem!")
+                final_tags = [*final_tags[:-1], curr]
+                # print(f"{to_str_ls(final_tags)}")
+            elif prev[1] < curr[0]:
+                # print("second case")
+                final_tags = [*final_tags, curr]
+                # print(f"{to_str_ls(final_tags)}")
+        sent_idx_to_tags[sent_idx] = intervals_to_tags(
+            final_tags, len(stanza_sents[sent_idx], mode="chemprot")
+        )
+    return sent_idx_to_tags
+
+
+def coalesce(abs_dict, ent_dict, rel_dict, mode="drugprot"):
+    if mode == "drugprot":
+        columns = ["end_to_end", "chemical_ner", "gene_ner", "text"]
+    else:
+        columns = ["end_to_end", "chemical_ner", "gene_ner", "text"]
 
     build_entity_data(abs_dict, ent_dict)
 
@@ -270,17 +329,18 @@ def coalesce(abs_dict, ent_dict, rel_dict):
         ent_info_dict = ent_dict.get(abs_id, {})
 
         rel_info_dict = rel_dict.get(abs_id, {})
-        ner_data_dict = build_ner_data_dict(ent_info_dict, stanza_sents)
+        ner_data_dict = build_ner_data_dict(ent_info_dict, stanza_sents, mode)
         e2e_data_dict = build_e2e_data_dict(ent_info_dict, rel_info_dict)
 
         def to_list(stanza_ls, sent_index):
             tok_sent = " ".join(elem["text"] for elem in stanza_ls)
             raw_e2e_cell = e2e_data_dict[sent_index]
             e2e_cell = raw_e2e_cell if len(raw_e2e_cell) > 0 else "None"
-            print(ner_data_dict[sent_index].keys())
-            chemical_tags = ner_data_dict[sent_index]["CHEMICAL"]
-            gene_tags = ner_data_dict[sent_index]["GENE"]
-            return [e2e_cell, chemical_tags, gene_tags, tok_sent]
+            if mode == "drugprot":
+                chemical_tags = ner_data_dict[sent_index]["CHEMICAL"]
+                gene_tags = ner_data_dict[sent_index]["GENE"]
+                return [e2e_cell, chemical_tags, gene_tags, tok_sent]
+            return [e2e_cell, ner_data_dict[sent_index], tok_sent]
 
         return [
             to_list(stanza_sent, idx) for idx, stanza_sent in enumerate(stanza_sents)
@@ -296,25 +356,26 @@ def coalesce(abs_dict, ent_dict, rel_dict):
     )
 
 
-def get_dataframe(tsv_dir):
+def get_dataframe(tsv_dir, mode="drugprot"):
     abs_file, ents_file, rels_file = order_files(tsv_dir)
     abs_dict = build_abstract_dictionary(abs_file)
-    entity_dict = build_entity_dictionary(ents_file)
-    rel_dict = build_rel_dictionary(rels_file)
-    return coalesce(abs_dict, entity_dict, rel_dict)
+    entity_dict = build_entity_dictionary(ents_file, mode)
+    rel_dict = build_rel_dictionary(rels_file, mode)
+    return coalesce(abs_dict, entity_dict, rel_dict, mode)
 
 
 def main():
 
     input_path = Path(sys.argv[1])
-    output_path = Path(sys.argv[-1])
+    output_path = Path(sys.argv[2])
+    mode = sys.argv[3]
     print("Generating Training Data")
     train_path = os.path.join(input_path, "training")
     print("Generating Development Data")
     dev_path = os.path.join(input_path, "development")
 
-    train_df = get_dataframe(train_path)
-    dev_df = get_dataframe(dev_path)
+    train_df = get_dataframe(train_path, mode=mode.lower())
+    dev_df = get_dataframe(dev_path, mode=mode.lower())
 
     # newline removal
     train_df["text"] = train_df["text"].apply(remove_newline)
