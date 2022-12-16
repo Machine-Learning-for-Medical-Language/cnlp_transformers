@@ -312,7 +312,7 @@ def chemprot_ner_data_dict(entity_to_info, stanza_sents):
                 final_tags = [*final_tags, curr]
                 # print(f"{to_str_ls(final_tags)}")
         sent_idx_to_tags[sent_idx] = intervals_to_tags(
-            final_tags, len(stanza_sents[sent_idx], mode="chemprot")
+            final_tags, len(stanza_sents[sent_idx]), mode="chemprot")
         )
     return sent_idx_to_tags
 
