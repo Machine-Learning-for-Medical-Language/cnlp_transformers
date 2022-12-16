@@ -221,39 +221,24 @@ def build_e2e_data_dict(entity_to_info, rel_ents_to_type):
     return sent_idx_to_rels
 
 
-def intervals_to_tags(intervals_dict, sent_len, mode):
-    if mode == "chemprot":
-        tags = ["O"] * sent_len
-        for interval in intervals_dict:
-            begin, end, tag = interval
-            for local_i, list_i in enumerate(range(begin, end + 1)):
-                if local_i == 0:
-                    tags[list_i] = "B-" + tag.upper()
-                else:
-                    tags[list_i] = "I-" + tag.upper()
-        return " ".join(tags)
+def intervals_to_tags(intervals_dict, sent_len):
     final_tag_dict = {}
     for tag in ["CHEMICAL", "GENE"]:
         intervals = intervals_dict[tag]
         tags = ["O"] * sent_len
         for interval in intervals:
-            begin, end, _ = interval
+            begin, end, full_tag = interval
             for local_i, list_i in enumerate(range(begin, end + 1)):
                 if local_i == 0:
-                    tags[list_i] = "B-" + tag.upper()
+                    tags[list_i] = "B-" + full_tag.upper()
                 else:
-                    tags[list_i] = "I-" + tag.upper()
+                    tags[list_i] = "I-" + full_tag.upper()
         final_tag_dict[tag] = " ".join(tags)
     return final_tag_dict
 
 
+
 def build_ner_data_dict(entity_to_info, stanza_sents, mode):
-    if mode == "drugprot":
-        return drugprot_ner_data_dict(entity_to_info, stanza_sents)
-    return chemprot_ner_data_dict(entity_to_info, stanza_sents)
-
-
-def drugprot_ner_data_dict(entity_to_info, stanza_sents):
     sent_idx_to_tags = defaultdict(lambda: [])
     for entity, info_dict in entity_to_info.items():
         sent_idx, ent_begin, ent_end = info_dict["stanza_location"]
@@ -268,60 +253,29 @@ def drugprot_ner_data_dict(entity_to_info, stanza_sents):
 
             curr_begin, curr_end, curr_type = sorted_tags[i]
             prev_ls = final_tags[curr_type]
+            dict_type = curr_type.split("-")[0]
             (prev_begin, prev_end, prev_type) = (
                 (-1, -1, curr_type) if len(prev_ls) == 0 else prev_ls[-1]
             )
 
             if (prev_begin >= curr_begin) and (curr_end >= prev_end):
-                final_tags[curr_type] = [*prev_ls[:-1]]
-                final_tags[curr_type].append((curr_begin, curr_end, curr_type))
+                final_tags[dict_type] = [*prev_ls[:-1]]
+                final_tags[dict_type].append((curr_begin, curr_end, curr_type))
 
             elif prev_end < curr_begin:
 
-                final_tags[curr_type].append((curr_begin, curr_end, curr_type))
+                final_tags[dict_type].append((curr_begin, curr_end, curr_type))
 
         sent_idx_to_tags[sent_idx] = intervals_to_tags(
-            final_tags, len(stanza_sent), mode="drugprot"
+            final_tags, len(stanza_sent)
         )
 
-    return sent_idx_to_tags
-
-
-def chemprot_ner_data_dict(entity_to_info, stanza_sents):
-    sent_idx_to_tags = defaultdict(lambda: [])
-    for entity, info_dict in entity_to_info.items():
-        sent_idx, ent_begin, ent_end = info_dict["stanza_location"]
-        entity_type = info_dict["type"]
-        sent_idx_to_tags[sent_idx].append((ent_begin, ent_end, entity_type))
-    for sent_idx, tags in sent_idx_to_tags.items():
-        sorted_tags = sorted(tags, key=lambda s: s[:2])
-        final_tags = []
-        for i in range(0, len(sorted_tags)):
-            prev = (-1, -1) if i == 0 else final_tags[-1]
-            curr = sorted_tags[i]
-            # print(f"{i} {(prev['begin'], prev['end'])} {(curr['begin'], curr['end'])}")
-            # if (prev["begin"] <= curr["begin"]) and (curr["end"] <= prev["end"]):
-            if (prev[0] >= curr[0]) and (curr[1] >= prev[1]):
-                # remove prev
-                # print("main case")
-                print("Overlap problem!")
-                final_tags = [*final_tags[:-1], curr]
-                # print(f"{to_str_ls(final_tags)}")
-            elif prev[1] < curr[0]:
-                # print("second case")
-                final_tags = [*final_tags, curr]
-                # print(f"{to_str_ls(final_tags)}")
-        sent_idx_to_tags[sent_idx] = intervals_to_tags(
-            final_tags, len(stanza_sents[sent_idx]), mode="chemprot"
-        )
     return sent_idx_to_tags
 
 
 def coalesce(abs_dict, ent_dict, rel_dict, mode="drugprot"):
-    if mode == "drugprot":
-        columns = ["end_to_end", "chemical_ner", "gene_ner", "text"]
-    else:
-        columns = ["end_to_end", "chemical_ner", "gene_ner", "text"]
+
+    columns = ["end_to_end", "chemical_ner", "gene_ner", "text"]
 
     build_entity_data(abs_dict, ent_dict)
 
@@ -337,12 +291,10 @@ def coalesce(abs_dict, ent_dict, rel_dict, mode="drugprot"):
             tok_sent = " ".join(elem["text"] for elem in stanza_ls)
             raw_e2e_cell = e2e_data_dict[sent_index]
             e2e_cell = raw_e2e_cell if len(raw_e2e_cell) > 0 else "None"
-            if mode == "drugprot":
-                chemical_tags = ner_data_dict[sent_index]["CHEMICAL"]
-                gene_tags = ner_data_dict[sent_index]["GENE"]
-                return [e2e_cell, chemical_tags, gene_tags, tok_sent]
-            return [e2e_cell, ner_data_dict[sent_index], tok_sent]
-
+            chemical_tags = ner_data_dict[sent_index]["CHEMICAL"]
+            gene_tags = ner_data_dict[sent_index]["GENE"]
+            return [e2e_cell, chemical_tags, gene_tags, tok_sent]
+    
         return [
             to_list(stanza_sent, idx) for idx, stanza_sent in enumerate(stanza_sents)
         ]
