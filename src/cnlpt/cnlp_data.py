@@ -438,6 +438,9 @@ def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, ou
                             sent_labels[wpi,wpi2] = label_lists[task_ind].index('None')
 
                 for label in labels[sent_ind][task_ind]:
+                    if label == 'None':
+                        continue
+                    
                     if not label[0] in tokeni_to_wpi or not label[1] in tokeni_to_wpi:
                         out_of_bounds +=1
                         continue
@@ -585,7 +588,7 @@ class DataTrainingArguments:
     })
 
     max_eval_items: Optional[int] = field(
-        default=-1, metadata={"help": "Set a number of validation instances to use during training (useful if a dataset has been created using dumb logic like 80/10/10 and 10\% takes forever to evaluate on. Default is evaluate on all validation data."}
+        default=-1, metadata={"help": "Set a number of validation instances to use during training (useful if a dataset has been created using dumb logic like 80/10/10 and 10%% takes forever to evaluate on. Default is evaluate on all validation data."}
     )
 
 
