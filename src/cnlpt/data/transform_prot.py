@@ -15,16 +15,6 @@ stanza.download("en", package="genia")
 genia_pipeline = stanza.Pipeline("en", package="genia")
 
 
-# copied from Shan's UCI Drug Review script,
-# might be unecessary here but jic
-def remove_newline(review):
-    review = review.replace("&#039;", "'")
-    review = review.replace("\n", " <cr> ")
-    review = review.replace("\r", " <cr> ")
-    review = review.replace("\t", " ")
-    return review
-
-
 def file_type(filename):
     base_w_ext = os.path.basename(filename)
     base = base_w_ext.split(".")[0]
@@ -107,7 +97,9 @@ def build_rel_dictionary(filename, mode="drugprot"):
                 print("Entered!")
                 entity_1 = raw_arg1.split(":")[-1]
                 entity_2 = raw_arg2.split(":")[-1]
-                identifier_to_rel[int(article_id)][(entity_1, entity_2)] = rel_type
+                # until we fix the issue
+                # identifier_to_rel[int(article_id)][(entity_1, entity_2)] = rel_type
+                identifier_to_rel[int(article_id)][(entity_1, entity_2)] = rel_group
 
     print("Relations Loaded")
     return identifier_to_rel
