@@ -325,8 +325,8 @@ def main():
     dev_df = get_dataframe(dev_path, mode=mode.lower())
 
     # newline removal
-    train_df["text"] = train_df["text"].apply(remove_newline)
-    dev_df["text"] = dev_df["text"].apply(remove_newline)
+    # train_df["text"] = train_df["text"].apply(remove_newline)
+    # dev_df["text"] = dev_df["text"].apply(remove_newline)
 
     # quote removal
     train_df["text"] = train_df["text"].str.replace('"', "")
