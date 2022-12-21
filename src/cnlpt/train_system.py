@@ -273,10 +273,6 @@ def main(json_file=None, json_obj=None):
             f"Output directory ({training_args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overcome."
         )
 
-    # FIXME - goal is to eliminate task names and just infer them from data directories and automatically do data processing.
-    # but for now maybe just create a dummy task called 'infer' meaning, 'just infer the task properties'
-    # assert len(data_args.task_name) == len(data_args.data_dir), 'Number of tasks and data directories should be the same!'
-
     # Setup logging
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
