@@ -84,7 +84,13 @@ class AutoProcessor(DataProcessor):
             self.dataset = load_dataset('json', data_files=data_files, field='data')
             with open(join(data_dir, ext_check_file), 'rt', encoding="utf-8") as f:
                 json_file = json.load(f)
-                metadata = json_file['metadata']
+                if 'metadata' in json_file:
+                    metadata = json_file['metadata']
+                elif os.path.exists(join(data_dir, 'metadata.json')):
+                    with open(join(data_dir, 'metadata.json')) as mf:
+                        metadata = json.load(mf)
+                else:
+                    raise Exception('No metadata was available in the data file or in the same directory!')
                 output_mode = metadata['output_mode']
             if not tasks is None:
                 dataset_tasks = tasks.intersection(metadata['tasks'])
