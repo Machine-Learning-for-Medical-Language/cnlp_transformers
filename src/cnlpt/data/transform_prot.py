@@ -13,12 +13,23 @@ TEST_DIR = "development"
 TRAIN_DIR = "training"
 nlp = spacy.load("en_core_sci_sm")
 
+
 def to_stanza_style_dict(text):
     processed_doc = nlp(text)
+
     def sent_dict(spacy_sent):
-        tokens = [token.text for token in spacy_sent]
-        return [{"id" : i + 1 , "text" : t} for i, t in enumerate(tokens)]
+        return [
+            {
+                "id": i + 1,
+                "text": tok.text,
+                "start_char": tok.start,
+                "end_char": tok.end,
+            }
+            for i, tok in enumerate(spacy_sent)
+        ]
+
     return [sent_dict(sent) for sent in processed_doc.sents]
+
 
 def file_type(filename):
     base_w_ext = os.path.basename(filename)
@@ -29,7 +40,7 @@ def file_type(filename):
 def order_files(file_dir):
     file_list = os.listdir(file_dir)
     # ChemProt spells it correctly and DrugProt doesn't
-    abs_endings = {"abstracs", "abstracts"} 
+    abs_endings = {"abstracs", "abstracts"}
     abs_file = [*filter(lambda s: file_type(s) in abs_endings, file_list)][0]
 
     ents_file = [*filter(lambda s: file_type(s) == "entities", file_list)][0]
@@ -54,10 +65,10 @@ def build_abstract_dictionary(filename):
 
             identifier, title, raw_article = row
             # character indices involve both title and abstract
-            #processed_article = genia_pipeline("\t".join([title, raw_article]))
-            identifier_to_processed_article[
-                int(identifier)
-            ] = to_stanza_style_dict("\t".join([title, raw_article])) # processed_article.to_dict()
+            # processed_article = genia_pipeline("\t".join([title, raw_article]))
+            identifier_to_processed_article[int(identifier)] = to_stanza_style_dict(
+                "\t".join([title, raw_article])
+            )  # processed_article.to_dict()
 
     return identifier_to_processed_article
 
@@ -235,7 +246,6 @@ def intervals_to_tags(intervals_dict, sent_len):
     return final_tag_dict
 
 
-
 def build_ner_data_dict(entity_to_info, stanza_sents, mode):
     sent_idx_to_tags = defaultdict(lambda: [])
     for entity, info_dict in entity_to_info.items():
@@ -264,9 +274,7 @@ def build_ner_data_dict(entity_to_info, stanza_sents, mode):
 
                 final_tags[dict_type].append((curr_begin, curr_end, curr_type))
 
-        sent_idx_to_tags[sent_idx] = intervals_to_tags(
-            final_tags, len(stanza_sent)
-        )
+        sent_idx_to_tags[sent_idx] = intervals_to_tags(final_tags, len(stanza_sent))
 
     return sent_idx_to_tags
 
@@ -292,7 +300,7 @@ def coalesce(abs_dict, ent_dict, rel_dict, mode="drugprot"):
             chemical_tags = ner_data_dict[sent_index]["CHEMICAL"]
             gene_tags = ner_data_dict[sent_index]["GENE"]
             return [e2e_cell, chemical_tags, gene_tags, tok_sent]
-    
+
         return [
             to_list(stanza_sent, idx) for idx, stanza_sent in enumerate(stanza_sents)
         ]
