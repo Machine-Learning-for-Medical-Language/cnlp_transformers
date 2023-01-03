@@ -251,7 +251,7 @@ def abs_ent_coord(entity_to_info, stanza_sents):
 
         raw_inds = []
         for tok_pair in pairwise(enumerate(stok_inds)):
-            result = _inside(tok_pair)
+            result = _inside[tok_pair]
             if result > -1:
                 raw_inds.append(result)
                 
