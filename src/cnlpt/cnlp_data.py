@@ -396,6 +396,7 @@ def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, ou
                         label_ids.append(-100)
                     # We set the label for the first token of each word.
                     elif word_idx != previous_word_idx:
+                        print(f"{labels[sent_ind]} {word_idx}")
                         label_ids.append(labels[sent_ind][task_ind][word_idx])
                     # For the other tokens in a word, we set the label to either the current label or -100, depending on
                     # the label_all_tokens flag.
