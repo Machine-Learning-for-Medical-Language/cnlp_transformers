@@ -247,7 +247,7 @@ def abs_ent_coord(entity_to_info, stanza_sents):
                 1: tok_2_idx,
             }
             local = tok_inside(info_dict, tok_1_inds, tok_2_inds)
-            return res_map(local)
+            return res_map[local]
 
         raw_inds = []
         for tok_pair in pairwise(enumerate(stok_inds)):
