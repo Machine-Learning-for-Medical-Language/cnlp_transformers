@@ -7,7 +7,8 @@ from tqdm import tqdm
 from pathlib import Path
 from itertools import chain
 from collections import defaultdict
-
+from itertools import groupby, tee
+from heapq import merge
 
 TEST_DIR = "development"
 TRAIN_DIR = "training"
@@ -21,6 +22,34 @@ def remove_newline(review):
     review = review.replace("\t", " ")
     return review
 
+def pairwise(iterable):
+    a, b = tee(iterable)
+    next(b, None)
+    return zip(a, b)
+
+def get_intersect(ls1, ls2):
+    """
+    Adapted from https://stackoverflow.com/a/57293089
+    for getting overlapping intervals from two lists of tuples
+    Args:
+      ls1: list of intervals/tuples 
+      ls2: list of intervals/tuples
+    Returns:
+      List of intervals/tuples describing intersections between the tuples
+      in the two lists, e.g.:
+      get_intersect([(2, 4), (9, 12)], [(3, 5), (7, 10)]) -> [(3, 4), (9,10)]
+    """
+    m1, m2 = tee(merge(ls1, ls2, key=lambda k: k[0]))
+    next(m2, None)
+    out = []
+    for v, g in groupby(zip(m1, m2), lambda k: k[0][1] < k[1][0]):
+        if not v:
+            ls = [*g][0]
+            inf = max(i[0] for i in ls)
+            sup = min(i[1] for i in ls)
+            # if inf != sup:
+            out.append((inf, sup))
+    return out
 
 def to_stanza_style_dict(text):
     processed_doc = nlp(text)
@@ -35,9 +64,14 @@ def to_stanza_style_dict(text):
             }
             for i, tok in enumerate(spacy_sent)
         ]
-
-    return [sent_dict(sent) for sent in processed_doc.sents]
-
+    
+    fully_processed = [sent_dict(sent) for sent in processed_doc.sents]
+    boundaries = [[(sent[0]["start_char"], sent[0]["end_char"])] for sent in fully_processed]
+    intersections = [get_intersect(s1, s2) for s1, s2 in pairwise(boundaries)]
+    if any(intersections):
+        print("Error!\n{boundaries}\n{intersections}")
+        exit()
+    return fully_processed
 
 def file_type(filename):
     base_w_ext = os.path.basename(filename)
@@ -177,7 +211,7 @@ def abs_ent_coord(entity_to_info, stanza_sents):
         # for spacy
         # if stok_begin == stok_end:
         #     return tok_begin == stok_begin
-        return tok_begin in range(stok_begin, stok_end) or tok_end in range(
+        return tok_begin in range(stok_begin, stok_end + 1) or tok_end in range(
             # here given the token index adjustment we risk
             # unwanted capture if we use the same end-inclusive policy as
             # with sentences
