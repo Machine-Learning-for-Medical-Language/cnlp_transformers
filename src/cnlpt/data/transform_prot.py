@@ -22,17 +22,19 @@ def remove_newline(review):
     review = review.replace("\t", " ")
     return review
 
+
 def pairwise(iterable):
     a, b = tee(iterable)
     next(b, None)
     return zip(a, b)
+
 
 def get_intersect(ls1, ls2):
     """
     Adapted from https://stackoverflow.com/a/57293089
     for getting overlapping intervals from two lists of tuples
     Args:
-      ls1: list of intervals/tuples 
+      ls1: list of intervals/tuples
       ls2: list of intervals/tuples
     Returns:
       List of intervals/tuples describing intersections between the tuples
@@ -51,6 +53,7 @@ def get_intersect(ls1, ls2):
             out.append((inf, sup))
     return out
 
+
 def to_stanza_style_dict(text):
     processed_doc = nlp(text)
 
@@ -64,14 +67,17 @@ def to_stanza_style_dict(text):
             }
             for i, tok in enumerate(spacy_sent)
         ]
-    
+
     fully_processed = [sent_dict(sent) for sent in processed_doc.sents]
-    boundaries = [[(sent[0]["start_char"], sent[-1]["end_char"])] for sent in fully_processed]
+    boundaries = [
+        [(sent[0]["start_char"], sent[-1]["end_char"])] for sent in fully_processed
+    ]
     intersections = [get_intersect(s1, s2) for s1, s2 in pairwise(boundaries)]
     if any(intersections):
         print("Error!\n{boundaries}\n{intersections}")
         exit()
     return fully_processed
+
 
 def file_type(filename):
     base_w_ext = os.path.basename(filename)
@@ -214,15 +220,19 @@ def abs_ent_coord(entity_to_info, stanza_sents):
         #     return tok_begin == stok_begin
         if tok_begin in range(tok_1_begin, tok_1_end):
             return 0
-        elif tok_begin in range(tok_2_begin, tok_2_end) or tok_begin in range(tok_1_end, tok_2_begin):
+        elif tok_begin in range(tok_2_begin, tok_2_end) or tok_begin in range(
+            tok_1_end, tok_2_begin
+        ):
             return 1
 
         if tok_end in range(tok_2_begin, tok_2_end):
             return 1
-        elif tok_begin in range(tok_1_begin, tok_1_end) or tok_begin in range(tok_1_end, tok_2_begin):
+        elif tok_begin in range(tok_1_begin, tok_1_end) or tok_begin in range(
+            tok_1_end, tok_2_begin
+        ):
             return 0
         return -1
-            
+
     def get_sent(info_dict):
         inds = [
             sent_index
@@ -237,12 +247,12 @@ def abs_ent_coord(entity_to_info, stanza_sents):
         stok_inds = tok_inds_table[sent_ind]
 
         def _inside(tok_pairs):
-            
+
             tok_pair_1, tok_pair_2 = tok_pairs
             tok_1_idx, tok_1_inds = tok_pair_1
             tok_2_idx, tok_2_inds = tok_pair_2
             res_map = {
-                -1 : -1,
+                -1: -1,
                 0: tok_1_idx,
                 1: tok_2_idx,
             }
@@ -254,7 +264,7 @@ def abs_ent_coord(entity_to_info, stanza_sents):
             result = _inside(tok_pair)
             if result > -1:
                 raw_inds.append(result)
-                
+
         if len(raw_inds) == 0:
             print(f"Error! {info_dict}\n{stok_inds}\n{raw_inds}")
         return (
@@ -361,6 +371,11 @@ def coalesce(abs_dict, ent_dict, rel_dict, mode="drugprot"):
             e2e_cell = raw_e2e_cell if len(raw_e2e_cell) > 0 else "None"
             chemical_tags = ner_data_dict[sent_index]["CHEMICAL"]
             gene_tags = ner_data_dict[sent_index]["GENE"]
+            assert len(gene_tags.split()) == len(tok_sent.split()) and len(
+                gene_tags.split()
+            ) == len(
+                chemical_tags.split()
+            ), f"Error with lengths! {tok_sent} : {len(tok_sent.split())} {chemical_tags} {gene_tags}"
             return [e2e_cell, chemical_tags, gene_tags, tok_sent]
 
         return [
