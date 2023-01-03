@@ -66,7 +66,7 @@ def to_stanza_style_dict(text):
         ]
     
     fully_processed = [sent_dict(sent) for sent in processed_doc.sents]
-    boundaries = [[(sent[0]["start_char"], sent[0]["end_char"])] for sent in fully_processed]
+    boundaries = [[(sent[0]["start_char"], sent[-1]["end_char"])] for sent in fully_processed]
     intersections = [get_intersect(s1, s2) for s1, s2 in pairwise(boundaries)]
     if any(intersections):
         print("Error!\n{boundaries}\n{intersections}")
