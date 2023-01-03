@@ -23,7 +23,7 @@ def to_stanza_style_dict(text):
                 "id": i + 1,
                 "text": tok.text,
                 "start_char": tok.idx,
-                "end_char": tok.idx + len(tok).idx - 1,
+                "end_char": tok.idx + len(tok) - 1,
             }
             for i, tok in enumerate(spacy_sent)
         ]
