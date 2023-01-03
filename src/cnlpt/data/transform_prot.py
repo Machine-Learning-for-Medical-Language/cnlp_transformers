@@ -347,6 +347,10 @@ def main():
     train_df["text"] = train_df["text"].str.replace('"', "")
     dev_df["text"] = dev_df["text"].str.replace('"', "")
 
+    # escape character removal
+    train_df["text"] = train_df["text"].str.replace("//", "")
+    dev_df["text"] = dev_df["text"].str.replace("//", "")
+    
     output_path.mkdir(parents=True, exist_ok=True)
     train_df.to_csv(
         output_path / "train.tsv",
