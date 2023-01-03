@@ -203,22 +203,26 @@ def abs_ent_coord(entity_to_info, stanza_sents):
             sent_end + 1,
         )
 
-    def tok_inside(info_dict, stanza_tok_inds):
+    def tok_inside(info_dict, tok_1_inds, tok_2_inds):
         tok_begin = info_dict["begin"]
         tok_end = info_dict["end"]
-        stok_begin, stok_end = stanza_tok_inds
+        tok_1_begin, tok_1_end = tok_1_inds
+        tok_2_begin, tok_2_end = tok_2_inds
         # 'or' here in case the mention spans more than one discovered token
         # for spacy
         # if stok_begin == stok_end:
         #     return tok_begin == stok_begin
-        return tok_begin in range(stok_begin, stok_end + 1) or tok_end in range(
-            # here given the token index adjustment we risk
-            # unwanted capture if we use the same end-inclusive policy as
-            # with sentences
-            stok_begin,
-            stok_end + 1,
-        )
+        if tok_begin in range(tok_1_begin, tok_1_end):
+            return 0
+        elif tok_begin in range(tok_2_begin, tok_2_end) or tok_begin in range(tok_1_end, tok_2_begin):
+            return 1
 
+        if tok_end in range(tok_2_begin, tok_2_end):
+            return 1
+        elif tok_begin in range(tok_1_begin, tok_1_end) or tok_begin in range(tok_1_end, tok_2_begin):
+            return 0
+        return -1
+            
     def get_sent(info_dict):
         inds = [
             sent_index
@@ -232,17 +236,31 @@ def abs_ent_coord(entity_to_info, stanza_sents):
     def get_stanza_tokens(info_dict, sent_ind):
         stok_inds = tok_inds_table[sent_ind]
 
-        def _inside(idx_stanza_tok_inds):
-            _, stanza_tok_inds = idx_stanza_tok_inds
-            return tok_inside(info_dict, stanza_tok_inds)
+        def _inside(tok_pairs):
+            
+            tok_pair_1, tok_pair_2 = tok_pairs
+            tok_1_idx, tok_1_inds = tok_pair_1
+            tok_2_idx, tok_2_inds = tok_pair_2
+            res_map = {
+                -1 : -1,
+                0: tok_1_idx,
+                1: tok_2_idx,
+            }
+            local = tok_inside(info_dict, tok_1_inds, tok_2_inds)
+            return res_map(local)
 
-        raw_inds = [*filter(_inside, enumerate(stok_inds))]
+        raw_inds = []
+        for tok_pair in pairwise(enumerate(stok_inds)):
+            result = _inside(tok_pair)
+            if result > -1:
+                raw_inds.append(result)
+                
         if len(raw_inds) == 0:
             print(f"Error! {info_dict}\n{stok_inds}\n{raw_inds}")
         return (
-            (raw_inds[0][0], raw_inds[-1][0])
+            (raw_inds[0], raw_inds[-1])
             if len(raw_inds) > 1
-            else (raw_inds[0][0], raw_inds[0][0])
+            else (raw_inds[0], raw_inds[0])
         )
 
     for ent_id, ent_info in entity_to_info.items():
