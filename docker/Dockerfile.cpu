@@ -1,0 +1,14 @@
+FROM python:3.9 as cnlp_transformer
+
+RUN --mount=type=cache,target=/root/.cache \
+  pip install cython
+RUN --mount=type=cache,target=/root/.cache \
+  pip install cnlp-transformers
+
+# temporary workaround for transformers/huggingface version issue 
+RUN pip uninstall -y huggingface-hub
+RUN pip install huggingface-hub==0.10.1
+
+WORKDIR /home
+
+ENTRYPOINT ["cnlpt_negation_rest", "-p", "8000"]

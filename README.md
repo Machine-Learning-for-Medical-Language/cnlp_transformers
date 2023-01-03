@@ -12,7 +12,8 @@ This library is _not_ intended to serve as a place for clinical NLP applications
 
 **Note: due to some dependency issues, this package does not officially
 support macOS on Apple Silicon. If you want to install it on Apple Silicon,
-you are on your own; we unofficially recommend trying it with Python 3.10.**
+you are on your own; we unofficially recommend trying it with Python 3.10, or using
+the docker CPU image**
 
 **Note:** When installing the library's dependencies, `pip` will probably install 
 PyTorch with CUDA 10.2 support by default. If you would like to run the 
@@ -27,8 +28,12 @@ you can install without cloning:
 
 ```sh
 $ # Note: if needed, install PyTorch first (see above)
-$ pip install cnlp_transformers
+$ pip install cnlp-transformers
 ```
+
+If you prefer, [prebuilt Docker images](https://hub.docker.com/repository/docker/smartonfhir/cnlp-transformers) are also available to run the REST APIs in a network.
+An example [Docker Compose configuration](./docker/compose.yaml) is also available for reference.
+
 
 ### Editable installation
 

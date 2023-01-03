@@ -1,0 +1,21 @@
+services:
+
+  cnlp-transformers:
+    image: smartonfhir/cnlp-transformers:latest
+    ports:
+      - 8000:8000
+    entrypoint: cnlpt_negation_rest -p 8000
+
+# See https://hub.docker.com/repository/docker/smartonfhir/cnlp-transformers
+# for more information about configuring docker for GPU usage
+  cnlp-transformers-gpu:
+    image: smartonfhir/cnlp-transformers:latest-gpu
+    platform: linux/amd64
+    ports:
+      - 8000:8000
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+    entrypoint: cnlpt_negation_rest -p 8000
