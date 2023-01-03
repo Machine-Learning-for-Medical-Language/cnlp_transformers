@@ -65,7 +65,7 @@ def to_stanza_style_dict(text):
                 "start_char": tok.idx,
                 "end_char": tok.idx + len(tok) - 1,
             }
-            for i, tok in enumerate(spacy_sent)
+            for i, tok in enumerate(spacy_sent) if not tok.is_space
         ]
 
     fully_processed = [sent_dict(sent) for sent in processed_doc.sents]
