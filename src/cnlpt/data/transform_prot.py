@@ -167,14 +167,14 @@ def abs_ent_coord(entity_to_info, stanza_sents):
         stok_begin, stok_end = stanza_tok_inds
         # 'or' here in case the mention spans more than one discovered token
         # for spacy
-        if stok_begin == stok_end:
-            return tok_begin == stok_begin
-        return tok_begin in range(stok_begin, stok_end) or tok_end in range(
+        # if stok_begin == stok_end:
+        #     return tok_begin == stok_begin
+        return tok_begin in range(stok_begin, stok_end + 1) or tok_end in range(
             # here given the token index adjustment we risk
             # unwanted capture if we use the same end-inclusive policy as
             # with sentences
             stok_begin,
-            stok_end,
+            stok_end  + 1,
         )
 
     def get_sent(info_dict):
