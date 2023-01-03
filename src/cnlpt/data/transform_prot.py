@@ -2,7 +2,7 @@ import os
 import csv
 import sys
 import pandas as pd
-import stanza
+import spacy
 from tqdm import tqdm
 from pathlib import Path
 from itertools import chain
@@ -11,9 +11,14 @@ from collections import defaultdict
 
 TEST_DIR = "development"
 TRAIN_DIR = "training"
-stanza.download("en", package="genia")
-genia_pipeline = stanza.Pipeline("en", package="genia")
+nlp = spacy.load("en_core_sci_sm")
 
+def to_stanza_style_dict(text):
+    processed_doc = nlp(text)
+    def sent_dict(spacy_sent):
+        tokens = [token.text for token in spacy_sent]
+        return [{"id" : i + 1 , "text" : t} for i, t in enumerate(tokens)]
+    return [sent_dict(sent) for sent in processed_doc.sents]
 
 def file_type(filename):
     base_w_ext = os.path.basename(filename)
@@ -49,10 +54,10 @@ def build_abstract_dictionary(filename):
 
             identifier, title, raw_article = row
             # character indices involve both title and abstract
-            processed_article = genia_pipeline("\t".join([title, raw_article]))
+            #processed_article = genia_pipeline("\t".join([title, raw_article]))
             identifier_to_processed_article[
                 int(identifier)
-            ] = processed_article.to_dict()
+            ] = to_stanza_style_dict("\t".join([title, raw_article])) # processed_article.to_dict()
 
     return identifier_to_processed_article
 
