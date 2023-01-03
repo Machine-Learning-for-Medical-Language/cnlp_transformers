@@ -14,6 +14,14 @@ TRAIN_DIR = "training"
 nlp = spacy.load("en_core_sci_sm")
 
 
+def remove_newline(review):
+    review = review.replace("&#039;", "'")
+    review = review.replace("\n", " <cr> ")
+    review = review.replace("\r", " <cr> ")
+    review = review.replace("\t", " ")
+    return review
+
+
 def to_stanza_style_dict(text):
     processed_doc = nlp(text)
 
@@ -174,7 +182,7 @@ def abs_ent_coord(entity_to_info, stanza_sents):
             # unwanted capture if we use the same end-inclusive policy as
             # with sentences
             stok_begin,
-            stok_end  + 1,
+            stok_end + 1,
         )
 
     def get_sent(info_dict):
@@ -255,7 +263,6 @@ def build_ner_data_dict(entity_to_info, stanza_sents, mode):
         sent_idx, ent_begin, ent_end = info_dict["stanza_location"]
         entity_type = info_dict["type"]
         sent_idx_to_tags[sent_idx].append((ent_begin, ent_end, entity_type))
-    print("Generating tags")
     for sent_idx, stanza_sent in enumerate(stanza_sents):
         tags = sent_idx_to_tags[sent_idx]
         sorted_tags = sorted(tags, key=lambda s: s[:2])
@@ -333,15 +340,15 @@ def main():
     mode = sys.argv[3]
     print("Generating Training Data")
     train_path = os.path.join(input_path, "training")
+    train_df = get_dataframe(train_path, mode=mode.lower())
     print("Generating Development Data")
     dev_path = os.path.join(input_path, "development")
 
-    train_df = get_dataframe(train_path, mode=mode.lower())
     dev_df = get_dataframe(dev_path, mode=mode.lower())
 
     # newline removal
-    # train_df["text"] = train_df["text"].apply(remove_newline)
-    # dev_df["text"] = dev_df["text"].apply(remove_newline)
+    train_df["text"] = train_df["text"].apply(remove_newline)
+    dev_df["text"] = dev_df["text"].apply(remove_newline)
 
     # quote removal
     train_df["text"] = train_df["text"].str.replace('"', "")
@@ -350,7 +357,7 @@ def main():
     # escape character removal
     train_df["text"] = train_df["text"].str.replace("//", "")
     dev_df["text"] = dev_df["text"].str.replace("//", "")
-    
+
     output_path.mkdir(parents=True, exist_ok=True)
     train_df.to_csv(
         output_path / "train.tsv",
