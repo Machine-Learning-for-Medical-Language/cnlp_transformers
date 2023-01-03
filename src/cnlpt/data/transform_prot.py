@@ -375,7 +375,7 @@ def coalesce(abs_dict, ent_dict, rel_dict, mode="drugprot"):
                 gene_tags.split()
             ) == len(
                 chemical_tags.split()
-            ), f"Error with lengths! {tok_sent} : {len(tok_sent.split())} {chemical_tags} {gene_tags}"
+            ), f"Error with lengths! \n {tok_sent} : {len(tok_sent.split())} \n {chemical_tags} : {len(chemical_tags.split())} \n {gene_tags} : {len(gene_tags.split())}"
             return [e2e_cell, chemical_tags, gene_tags, tok_sent]
 
         return [
