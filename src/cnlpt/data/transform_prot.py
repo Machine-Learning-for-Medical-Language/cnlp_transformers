@@ -23,6 +23,7 @@ def remove_newline(review):
     return review
 
 
+# Not always in itertools so here
 def pairwise(iterable):
     a, b = tee(iterable)
     next(b, None)
@@ -65,7 +66,8 @@ def to_stanza_style_dict(text):
                 "start_char": tok.idx,
                 "end_char": tok.idx + len(tok) - 1,
             }
-            for i, tok in enumerate(spacy_sent) if not tok.is_space
+            for i, tok in enumerate(spacy_sent)
+            if not tok.is_space
         ]
 
     fully_processed = [sent_dict(sent) for sent in processed_doc.sents]
@@ -113,10 +115,9 @@ def build_abstract_dictionary(filename):
 
             identifier, title, raw_article = row
             # character indices involve both title and abstract
-            # processed_article = genia_pipeline("\t".join([title, raw_article]))
             identifier_to_processed_article[int(identifier)] = to_stanza_style_dict(
                 "\t".join([title, raw_article])
-            )  # processed_article.to_dict()
+            )
 
     return identifier_to_processed_article
 
@@ -127,7 +128,7 @@ def build_entity_dictionary(filename, mode="drugprot"):
         rd = csv.reader(fd, delimiter="\t")
         for row in rd:
             article_id, entity_id, raw_entity_type, begin, end, text = row
-            # Since GENE-Y and GENE-N both become GENE in dev
+            # GENE-Y and GENE-N both become GENE in DrugProt dev
             if mode == "drugprot":
                 entity_type = raw_entity_type.split("-")[0]
             else:
@@ -159,8 +160,8 @@ def build_rel_dictionary(filename, mode="drugprot"):
             if eval_q.strip().upper() == "Y":
                 entity_1 = raw_arg1.split(":")[-1]
                 entity_2 = raw_arg2.split(":")[-1]
-                # until we fix the issue
-                # identifier_to_rel[int(article_id)][(entity_1, entity_2)] = rel_type
+                # Using direction agnostic relation
+                # classes to prevent memory blowup
                 out_rel = "_".join(rel_group.split(":"))
                 identifier_to_rel[int(article_id)][(entity_1, entity_2)] = out_rel
 
@@ -203,6 +204,7 @@ def abs_ent_coord(entity_to_info, stanza_sents):
         tok_end = info_dict["end"]
         sent_begin, sent_end = sent_inds
         # We're not handling tokens which cross sentence boundaries
+        # (scispacy tokenization seems to prevent this anyway)
         return tok_begin in range(sent_begin, sent_end + 1) and tok_end in range(
             # want to include last index
             sent_begin,
@@ -214,10 +216,6 @@ def abs_ent_coord(entity_to_info, stanza_sents):
         tok_end = info_dict["end"]
         tok_1_begin, tok_1_end = tok_1_inds
         tok_2_begin, tok_2_end = tok_2_inds
-        # 'or' here in case the mention spans more than one discovered token
-        # for spacy
-        # if stok_begin == stok_end:
-        #     return tok_begin == stok_begin
         if tok_begin in range(tok_1_begin, tok_1_end):
             return 0
         elif tok_begin in range(tok_2_begin, tok_2_end) or tok_begin in range(
@@ -275,9 +273,9 @@ def abs_ent_coord(entity_to_info, stanza_sents):
 
     for ent_id, ent_info in entity_to_info.items():
         sent_ind = get_sent(ent_info)
-        # Sometimes periods throw this off.
-        # You really should use windowing and/or cTAKES tokenization
-        # and/or efficient transformers if you're trying for the leaderboard
+        # You really should use windowing
+        # and/or >512 character architectures if you're
+        # trying for their leaderboard
         first_token_idx, last_token_idx = (
             get_stanza_tokens(ent_info, sent_ind) if sent_ind > -1 else (-1, -1)
         )
