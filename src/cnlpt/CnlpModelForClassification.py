@@ -17,6 +17,7 @@ from torch.nn import CrossEntropyLoss, MSELoss
 from transformers.modeling_outputs import SequenceClassifierOutput
 from torch.nn.functional import softmax, relu
 import math
+import random
 
 logger = logging.getLogger(__name__)
 
@@ -202,9 +203,14 @@ class CnlpModelForClassification(PreTrainedModel):
             ))
         self.num_labels = config.num_labels_list
         
-        if freeze:
+        if freeze > 0:
             for param in self.encoder.parameters():
-                param.requires_grad = False
+                if freeze >= 1.0:
+                    param.requires_grad = False
+                else:
+                    dart = random.random()
+                    if dart < freeze:
+                        param.requires_grad = False
         
         if bias_fit:
             for name, param in self.encoder.named_parameters():

@@ -74,6 +74,8 @@ def main(args):
 
     for sub_dir, text_name, xml_names in anafora.walk(args[0], xml_name_regex):
         print("Processing filename: %s" % (text_name))
+        # The point here is just to get the filename that we'll use to write out our system-generated relations.
+        # We never actually open up the gold standard xml file.
         if len(xml_names) > 1:
             sys.stderr.write('There were multiple valid xml files for file %s\n' % (text_name))
             filtered_names = []

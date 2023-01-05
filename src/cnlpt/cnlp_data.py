@@ -592,7 +592,7 @@ class DataTrainingArguments:
     })
 
     max_eval_items: Optional[int] = field(
-        default=-1, metadata={"help": "Set a number of validation instances to use during training (useful if a dataset has been created using dumb logic like 80/10/10 and 10\% takes forever to evaluate on. Default is evaluate on all validation data."}
+        default=-1, metadata={"help": "Set a number of validation instances to use during training (useful if a dataset has been created using dumb logic like 80/10/10 and 10%% takes forever to evaluate on. Default is evaluate on all validation data."}
     )
 
 

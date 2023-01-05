@@ -82,8 +82,8 @@ class CnlpTrainingArguments(TrainingArguments):
     final_task_weight: Optional[float] = field(
         default=1.0, metadata={"help": "Amount to up/down-weight final task in task list (other tasks weighted 1.0)"}
     )
-    freeze: bool = field(
-        default=False, metadata={"help": "Freeze the encoder layers and only train the layer between the encoder and classification architecture. Probably works best with --token flag since [CLS] may not be well-trained for anything in particular."}
+    freeze: float = field(
+        default=-1.0, metadata={"help": "Freeze the encoder layers and only train the layer between the encoder and classification architecture. Probably works best with --token flag since [CLS] may not be well-trained for anything in particular. If not specified, no weight freezing will be done. If specified as a flag (no arguments), 100%% of weights will be frozen. If a float (0..1.0) is specified, each weight will be frozen with that probability.", 'nargs':'?', "const":1.0 }
     )
     arg_reg: Optional[float] = field(
         default=-1, metadata={"help": "Weight to use on argument regularization term (penalizes end-to-end system if a discovered relation has low probability of being any entity type). Value < 0 (default) turns off this penalty."}
@@ -272,10 +272,6 @@ def main(json_file=None, json_obj=None):
         raise ValueError(
             f"Output directory ({training_args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overcome."
         )
-
-    # FIXME - goal is to eliminate task names and just infer them from data directories and automatically do data processing.
-    # but for now maybe just create a dummy task called 'infer' meaning, 'just infer the task properties'
-    # assert len(data_args.task_name) == len(data_args.data_dir), 'Number of tasks and data directories should be the same!'
 
     # Setup logging
     logging.basicConfig(
