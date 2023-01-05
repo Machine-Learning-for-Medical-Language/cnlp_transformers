@@ -66,19 +66,32 @@ repository, please follow these steps.
 5. Make your changes in `your-branch-name` on your fork.
 
 6. Open a PR to close the issue.
+   * If you are not making changes to source files or project configuration
+     files (`setup.cfg`, `pyproject.toml`, `MANIFEST.in`), you can target `main`
+   * Otherwise, have your PR target the branch for the next release. 
+     * If there is no such branch, create it by branching off of `main`, then
+       target your new branch.
+
 
 ### Testing your code
 
 This repository has GitHub Actions set up to automatically run the test 
 suite in `test` whenever a commit is pushed or a pull request is opened 
-in certain circumstances:
+in certain circumstances.
 
-* Pull requests targeting:
+Tests will run if changes are made to any of the following files:
+* `src/**`
+* `test/**`
+* `setup.cfg`
+* `pyproject.toml`
+
+AND the changes are in any of the following:
+
+* Pull requests targeting either of the following:
   * the `main` branch
-  * a branch name starting with `vX`, where `X` is a digit 
-  from 1 to 9 (e.g. `v0.3.0`)
-* Commits pushed to either of the above (for collaborators) or to:
-  * a branch name starting with `testable/`, e.g. `testable/my-special-feature`
+  * a branch name starting with `vX`, where `X` is a digit (e.g. `v0.3.0`)
+* Further commits pushed to the source branch of such a pull request
+* Commits pushed to a branch name starting with `testable/`, e.g. `testable/my-special-feature`
 
 You can see the structure of these test runs in the 
 [**Actions**](https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers/actions) 
@@ -103,23 +116,7 @@ need to name your branch anything special in this case.
 
 ## For Maintainers: Building and uploading new package version
 
-### Building
-
-First, increment the version number in `src/cnlpt/VERSION` if it hasn't
-already been incremented.
-
-Then, run `build`:
-
-```sh
-$ python -m build
-```
-
-This will build the package in the `./dist/` directory, creating it if
-it does not exist.
-
-### Uploading
-
-In preparation, set up your PyPI API key if you haven't already:
+### Setting up your PyPI API key
 
 1. Log into your PyPI account
 
@@ -133,24 +130,45 @@ In preparation, set up your PyPI API key if you haven't already:
    password = <the token value, including the `pypi-` prefix>
    ```
 
+### Building and uploading a new version
+
 **Only follow these steps after merging the new version branch into 
 `main`.**
 
 1. Checkout the merge commit for the new version; this will usually
    be the latest commit in `main`.
 
-2. Before continuing, **ensure the version number in `src/cnlpt/VERSION`
-   has been incremented** from the previous version on PyPI.
+2. Increment the version number in `src/cnlpt/VERSION` from the 
+   previous version on PyPI.
 
 3. Delete the contents of the `./dist/` directory if it exists.
 
-4. Build the new version according to the
-   [building instructions](#Building) above.
+4. Build the package using `build`:
+   ```sh
+   $ python -m build
+   ```
+   
+   This will build the package in the `./dist/` directory, creating it if
+   it does not exist.
 
 5. Upload to PyPI with `twine`:
    ```sh
    $ python -m twine upload dist/*
    ```
+
+6. On GitHub, make sure the branch for the version has been deleted after 
+   the PR was merged into `main`. This is to ensure that readthedocs does
+   not have a name conflict.
+
+7. On GitHub, make a new release:
+   1. Navigate to the [Releases](https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers/releases) page
+   2. Click "Draft a new release"
+   3. Click "Choose a tag"
+   4. Type the new version number in the format “vX.Y.Z” in the “Find or
+      create a new tag” field, and click “+ Create new tag: vX.Y.Z on publish”
+   5. Click “Generate release notes” and edit as necessary
+   6. Make sure “Set as latest release is checked”
+   7. Click "Publish"
 
 ### Building the documentation
 
