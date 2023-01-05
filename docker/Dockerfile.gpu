@@ -1,4 +1,4 @@
-FROM nvidia/cuda:10.2-runtime-ubi8 as cnlp_transformer
+FROM nvidia/cuda:10.2-runtime-ubi8 as cnlp-transformers-base
 
 RUN yum -y install python39 python39-pip
 RUN  pip3.9 install cython torch
@@ -11,5 +11,26 @@ RUN pip3.9 install huggingface-hub==0.10.1
 run export PATH=”$PATH:/usr/local/bin/python”
 
 WORKDIR /home
+# this copy is to support the preload of train models in the downstream images
+COPY .. /home
+ENTRYPOINT ["/bin/bash"]
 
+FROM cnlp-transformers-base as dtr
+run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.dtr()"
+ENTRYPOINT ["cnlpt_dtr_rest", "-p", "8000"]
+
+FROM cnlp-transformers-base as event
+run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.event()"
+ENTRYPOINT ["cnlpt_event_rest", "-p", "8000"]
+
+FROM cnlp-transformers-base as negation
+run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.negation()"
 ENTRYPOINT ["cnlpt_negation_rest", "-p", "8000"]
+
+FROM cnlp-transformers-base as temporal
+run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.temporal()"
+ENTRYPOINT ["cnlpt_temporal_rest", "-p", "8000"]
+
+FROM cnlp-transformers-base as timex
+run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.timex()"
+ENTRYPOINT ["cnlpt_timex_rest", "-p", "8000"]
