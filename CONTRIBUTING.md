@@ -89,8 +89,7 @@ AND the changes are in any of the following:
 
 * Pull requests targeting either of the following:
   * the `main` branch
-  * a branch name starting with `vX`, where `X` is a digit 
-  from 1 to 9 (e.g. `v0.3.0`)
+  * a branch name starting with `vX`, where `X` is a digit (e.g. `v0.3.0`)
 * Further commits pushed to the source branch of such a pull request
 * Commits pushed to a branch name starting with `testable/`, e.g. `testable/my-special-feature`
 
