@@ -58,7 +58,7 @@ def tagging_metrics(processor, preds, labels, task_ind):
     num_correct = (preds==labels).sum()
 
     acc = num_correct / len(preds)
-    f1 = f1_score(labels, preds, average=None)
+    f1 = f1_score(labels, preds, average=None, zero_division=0)
 
     return {'acc': acc, 'token_f1': fix_np_types(f1), 'f1': fix_np_types(seq_f1([label_seq], [pred_seq])), 'report':'\n'+seq_cls([label_seq], [pred_seq])}
 
@@ -99,8 +99,8 @@ def relation_metrics(processor, preds, labels, task_ind):
     acc = num_correct / len(relevant_preds)
 
     recall = recall_score(y_pred=relevant_preds, y_true=relevant_labels, average=None)
-    precision = precision_score(y_pred=relevant_preds, y_true=relevant_labels, average=None)
-    f1_scores = fix_np_types(f1_score(y_true=relevant_labels, y_pred=relevant_preds, average=None))
+    precision = precision_score(y_pred=relevant_preds, y_true=relevant_labels, average=None, zero_division=0)
+    f1_scores = fix_np_types(f1_score(y_true=relevant_labels, y_pred=relevant_preds, average=None, zero_division=0))
     report_dict = classification_report(y_true=relevant_labels, y_pred=relevant_preds, output_dict=True)
     report_str = classification_report(y_true=relevant_labels, y_pred=relevant_preds)
 
@@ -129,8 +129,8 @@ def acc_and_f1(preds, labels):
     """
     acc = accuracy_score(y_pred=preds, y_true=labels)
     recall = recall_score(y_true=labels, y_pred=preds, average=None)
-    precision = precision_score(y_true=labels, y_pred=preds, average=None)
-    f1 = f1_score(y_true=labels, y_pred=preds, average=None)
+    precision = precision_score(y_true=labels, y_pred=preds, average=None, zero_division=0)
+    f1 = f1_score(y_true=labels, y_pred=preds, average=None, zero_division=0)
     
     return {
         "acc": fix_np_types(acc),
@@ -159,7 +159,6 @@ def cnlp_compute_metrics(task_name, task_ind, preds, labels, processor, output_m
         labels
     ), f"Predictions and labels have mismatched lengths {len(preds)} and {len(labels)}"
     if output_mode == classification:
-        logger.warn("Choosing accuracy and f1 as default metrics; modify cnlp_compute_metrics() to customize for this task.")
         return acc_and_f1(preds=preds, labels=labels)
     elif output_mode == tagging:
         return tagging_metrics(processor, preds=preds, labels=labels, task_ind=task_ind)
