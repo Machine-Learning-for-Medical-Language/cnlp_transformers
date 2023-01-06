@@ -1,4 +1,4 @@
-FROM python:3.9 as cnlp-transformers-base
+FROM python:3.9 as base
 
 RUN --mount=type=cache,target=/root/.cache \
   pip install cython
@@ -14,22 +14,22 @@ WORKDIR /home
 COPY .. /home
 ENTRYPOINT ["/bin/bash"]
 
-FROM cnlp-transformers-base as dtr
+FROM base as dtr
 run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.dtr()"
 ENTRYPOINT ["cnlpt_dtr_rest", "-p", "8000"]
 
-FROM cnlp-transformers-base as event
+FROM base as event
 run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.event()"
 ENTRYPOINT ["cnlpt_event_rest", "-p", "8000"]
 
-FROM cnlp-transformers-base as negation
+FROM base as negation
 run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.negation()"
 ENTRYPOINT ["cnlpt_negation_rest", "-p", "8000"]
 
-FROM cnlp-transformers-base as temporal
+FROM base as temporal
 run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.temporal()"
 ENTRYPOINT ["cnlpt_temporal_rest", "-p", "8000"]
 
-FROM cnlp-transformers-base as timex
+FROM base as timex
 run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.timex()"
 ENTRYPOINT ["cnlpt_timex_rest", "-p", "8000"]

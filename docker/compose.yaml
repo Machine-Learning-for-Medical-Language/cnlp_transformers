@@ -13,9 +13,9 @@ services:
     platform: linux/amd64
     ports:
       - 8000:8000
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [gpu]
+#    deploy:
+#      resources:
+#        reservations:
+#          devices:
+#            - capabilities: [gpu]
     entrypoint: cnlpt_negation_rest -p 8000
