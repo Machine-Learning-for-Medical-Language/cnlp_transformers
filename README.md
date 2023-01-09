@@ -69,7 +69,7 @@ To use the library for fine-tuning, you'll need to take the following steps:
         { 'text': <text of instance>,
           'id': <instance id>
           '<sub-task 1 name>': <instance label>,
-          '<sub-task 2 name>: <instance label>,
+          '<sub-task 2 name>': <instance label>,
           ... // other labels
           }
         { }, // instance 2
