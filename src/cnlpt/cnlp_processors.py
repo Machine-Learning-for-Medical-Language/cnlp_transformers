@@ -27,6 +27,88 @@ classification = 'classification'
 tagging = 'tagging'
 relex = 'relations'
 
+def get_unique_labels(dataset, tasks, task_output_modes):
+    dataset_unique_labels = dict()
+    for task_ind,task_name in enumerate(tasks):
+        unique_labels = set()
+        # check all splits for labels just in case they do not fully overlap
+        for split in dataset:
+            # Add labels from this split to the overall label set and give a warning if they are not the same
+            split_labels = set( dataset[split][task_name])
+            unique_labels |= split_labels
+
+        unique_labels = list(unique_labels)
+
+        output_mode = task_output_modes[task_name]
+
+        ## get the complete set of unique tags by splitting each set of tags seen so far
+        if output_mode == tagging:
+            unique_tags = set()
+            for label in unique_labels:
+                tags = label.split(' ')
+                unique_tags.update(tags)
+            unique_labels = list(unique_tags)
+        elif output_mode == relex:
+            unique_relations = set()
+            for label in unique_labels:
+                inst_rels = label.split(' , ')
+                for rel in inst_rels:
+                    rel_cat = rel.split(',')[-1]
+                    if rel_cat[-1] == ')':
+                        rel_cat = rel_cat[:-1]
+                    unique_relations.add(rel_cat)
+            unique_labels = list(unique_relations)
+
+        unique_labels.sort()
+
+        dataset_unique_labels[task_name] = unique_labels
+
+    return dataset_unique_labels
+
+def infer_output_modes(dataset):
+    task_output_modes = {}
+    for task_ind, task_name in enumerate(dataset.tasks):
+        output_mode = classification
+        unique_labels = set()
+        # check all splits for labels just in case they do not fully overlap
+        for split in dataset:
+            # Add labels from this split to the overall label set and give a warning if they are not the same
+            split_labels = set( dataset[split][task_name])
+            unique_labels |= split_labels
+
+        unique_labels = list(unique_labels)
+
+        ## Check if any unique label has a space in it, then we know we are actually 
+        ## dealing with a tagging dataset, or if it ends in ), in which case it is a relation task.
+        for label in unique_labels:
+            if str(label)[-1] == ')':
+                output_mode = relex
+                break
+            elif ' ' in str(label):
+                output_mode = tagging
+                break
+
+        task_output_modes[task_name] = output_mode
+    
+    return task_output_modes
+
+def get_task_pruned_dataset(dataset, tasks, unique_labels):
+    tasks_to_remove = []
+    for task_ind, task_name in enumerate(tasks):
+        if len(unique_labels[task_name]) == 1:
+            logger.warn("Task named %s has only 1 unique label -- this column from the data" % (task_name))
+            tasks_to_remove.append(task_name)
+    
+    for split in dataset.keys():
+        dataset[split] = dataset[split].remove_columns(tasks_to_remove)
+    
+    for task in tasks_to_remove:
+        tasks.remove(task)
+        unique_labels.pop(task)
+
+    return dataset
+
+
 class AutoProcessor(DataProcessor):
     """
     A special type of processor that tries to infer the details about the dataset from the
@@ -34,7 +116,7 @@ class AutoProcessor(DataProcessor):
 
     TODO - add documentation of the expected file formats for json and csv defaults
     """
-    def __init__(self, data_dir:str, tasks:Set[str]=None):
+    def __init__(self, data_dir:str, tasks:Set[str]=None, max_train_items=-1):
         super().__init__()
 
         train_file = dev_file = test_file = None
@@ -75,11 +157,13 @@ class AutoProcessor(DataProcessor):
             ## user specified at the cli, remove those tasks so we don't also get them from other datasets
             ## and overwrite these.
             first_split = next(iter(self.dataset.values()))
-            dataset_tasks = tasks.intersection(first_split.features.keys())
-            tasks -= dataset_tasks
-            dataset_tasks = list(dataset_tasks)
-            dataset_tasks.sort()
-            metadata = {'tasks': dataset_tasks}
+            dataset_tasks = first_split.features.keys() - set(['text', 'text_a', 'text_b'])
+            active_tasks = tasks.intersection(dataset_tasks)
+            tasks -= active_tasks
+            active_tasks = list(active_tasks)
+            active_tasks.sort()
+            self.dataset.tasks = active_tasks
+            self.dataset.task_output_modes = {}
         elif ext_check_file.endswith('json'):
             self.dataset = load_dataset('json', data_files=data_files, field='data')
             with open(join(data_dir, ext_check_file), 'rt', encoding="utf-8") as f:
@@ -91,81 +175,60 @@ class AutoProcessor(DataProcessor):
                         metadata = json.load(mf)
                 else:
                     raise Exception('No metadata was available in the data file or in the same directory!')
-                output_mode = metadata['output_mode']
-            if not tasks is None:
-                dataset_tasks = tasks.intersection(metadata['tasks'])
-                tasks -= dataset_tasks
-                dataset_tasks = list(dataset_tasks)
-                dataset_tasks.sort()
-                metadata['tasks'] = dataset_tasks
+                
+                dataset_task2output = {}
+                for subtask in metadata['subtasks']:
+                    dataset_task2output[subtask['task_name']] = subtask['output_mode']
+                
+            if tasks is None:
+                active_tasks = set(dataset_task2output.keys())
+                tasks = active_tasks
+            else:
+                active_tasks = tasks.intersection(set(dataset_task2output.keys()))
+                tasks -= set(active_tasks)
+            
+            active_tasks = list(active_tasks)
+            active_tasks.sort()
+
+            self.dataset.tasks = active_tasks
+            self.dataset.task_output_modes = dataset_task2output
         else:
             raise ValueError('Data file %s has an extension that we cannot handle (tried csv and json)' % (train_file))
 
-        self.dataset.metadata = metadata
 
-        any_split = next(iter(self.dataset.values()))
-
-        metadata['output_mode'] = []
-        self.labels = []
-        for task_ind,dataset_task in enumerate(metadata['tasks']):
-            # Probably a reasonable default, and then we'll check for the other cases
-            output_mode = classification
-
-            unique_labels = list(set( any_split[self.dataset.metadata['tasks'][task_ind]]) )
-
-            ## Check if any unique label has a space in it, then we know we are actually 
-            ## dealing with a tagging dataset, or if it ends in ), in which case it is a relation task.
-            for label in unique_labels:
-                if str(label)[-1] == ')':
-                    output_mode = relex
-                    break
-                elif ' ' in str(label):
-                    assert 'output_mode' not in metadata or len(metadata['output_mode']) <= task_ind or metadata['output_mode'] == tagging, 'Output mode is ambiguous because we inferred tagging due to spaces in labels, but data file has another output mode.'
-                    output_mode = tagging
-                    break
             
-            
-            ## get the complete set of unique tags by splitting each set of tags seen so far
-            if output_mode == tagging:
-                unique_tags = set()
-                for label in unique_labels:
-                    tags = label.split(' ')
-                    unique_tags.update(tags)
-                unique_labels = list(unique_tags)
-            elif output_mode == relex:
-                unique_relations = set()
-                for label in unique_labels:
-                    inst_rels = label.split(' , ')
-                    for rel in inst_rels:
-                        rel_cat = rel.split(',')[-1]
-                        if rel_cat[-1] == ')':
-                            rel_cat = rel_cat[:-1]
-                        unique_relations.add(rel_cat)
-                unique_labels = list(unique_relations)
+        if len(self.dataset.task_output_modes) == 0:
+            self.dataset.task_output_modes = infer_output_modes(self.dataset)
 
+        # get any split of the data and ask for the set of unique labels for each task in the dataset from that split
+        self.labels = get_unique_labels(self.dataset, self.dataset.tasks, self.dataset.task_output_modes)
 
-            metadata['output_mode'].append(output_mode)
-            unique_labels.sort()
-            self.labels.append(unique_labels)
+        self.dataset = get_task_pruned_dataset(self.dataset, self.dataset.tasks, self.labels)
 
-        self.classifiers = metadata['tasks']
+        self.classifiers = self.dataset.tasks
+
+        if max_train_items > 0:
+            self.dataset['train'] = self.dataset['train'].select(range(max_train_items))
 
         print("Loaded dataset has length %d" % (len(self.dataset)))
 
-    def get_train_examples(self, data_dir):
+    def get_train_examples(self):
         return self.dataset['train']
 
-    def get_dev_examples(self, data_dir):
+    def get_dev_examples(self):
         return self.dataset['validation']
 
-    def get_test_examples(self, data_dir):
+    def get_test_examples(self):
         return self.dataset['test']
 
-    def get_output_mode(self):
-        return self.dataset.metadata['output_mode']
+    def get_output_mode(self, task_name):
+        return self.dataset.task_output_modes[task_name]
+
+    def get_output_modes(self):
+        return self.dataset.task_output_modes
 
     def get_num_tasks(self):
-        return len(self.dataset.metadata['tasks'])
+        return len(self.dataset.tasks)
 
     def get_labels(self):
         return self.labels
