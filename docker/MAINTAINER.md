@@ -3,23 +3,34 @@ has access to the smartonfhir organization. Then, the following commands
 should build and publish images (in the CPU case, for multiple architectures).
 
 
-MODEL should be one of: [base, dtr, event, negation, temporal, timex]
-PROCESSOR should be one of: [cpu, gpu]
-PLATFORMS should be linux/amd64 for GPU, and linux/amd64,linux/arm64 for CPU
+GPU-enabled
 ```
-export MAJOR=0
-export MINOR=4
-export PATCH=0
-export MODEL=negation
-export PROCESSOR=cpu
-export PLATFORMS=linux/amd64,linux/arm64
+set MAJOR=0
+set MINOR=4
+set PATCH=0
 
 docker buildx build \
---push --platform $PLATFORMS \
---tag smartonfhir/cnlp-transformers:$MODEL-latest-$PROCESSOR \
---tag smartonfhir/cnlp-transformers:$MODEL-$MAJOR-$PROCESSOR \
---tag smartonfhir/cnlp-transformers:$MODEL-$MAJOR.$MINOR-$PROCESSOR \
---tag smartonfhir/cnlp-transformers:$MODEL-$MAJOR.$MINOR.$PATCH-$PROCESSOR \
--f Dockerfile.$PROCESSOR \
---target $MODEL . 
+--platform linux/amd64 \
+--tag smartonfhir/cnlp-transformers:latest-gpu \
+--tag smartonfhir/cnlp-transformers:$MAJOR-gpu \
+--tag smartonfhir/cnlp-transformers:$MAJOR.$MINOR-gpu \
+--tag smartonfhir/cnlp-transformers:$MAJOR.$MINOR.$PATCH-gpu \
+-f Dockerfile.gpu . --push
+
+```
+
+CPU only
+```
+set MAJOR=0
+set MINOR=4
+set PATCH=0
+
+docker buildx build \
+--platform linux/amd64,linux/arm64 \
+--tag smartonfhir/cnlp-transformers:latest-cpu \
+--tag smartonfhir/cnlp-transformers:$MAJOR-cpu \
+--tag smartonfhir/cnlp-transformers:$MAJOR.$MINOR-cpu \
+--tag smartonfhir/cnlp-transformers:$MAJOR.$MINOR.$PATCH-cpu \
+-f Dockerfile.cpu . --push
+
 ```
