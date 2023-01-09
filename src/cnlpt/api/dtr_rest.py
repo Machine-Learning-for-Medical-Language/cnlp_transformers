@@ -58,6 +58,9 @@ async def process(doc: EntityDocument):
     instances = []
     start_time = time()
 
+    if len(doc.entities) == 0:
+        return DocTimeRelResults(statuses=[])
+
     for ent_ind, offsets in enumerate(doc.entities):
         # logger.debug('Entity ind: %d has offsets (%d, %d)' % (ent_ind, offsets[0], offsets[1]))
         inst_str = create_instance_string(doc_text, offsets)

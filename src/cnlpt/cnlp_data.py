@@ -431,12 +431,13 @@ def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, ou
                             sent_labels[wpi,wpi2] = label_lists[task].index('None')
 
                 for label in labels[sent_ind][task_ind]:
-                    if label == 'None':
+                    if label == "None":
                         continue
                     
                     if not label[0] in tokeni_to_wpi or not label[1] in tokeni_to_wpi:
                         out_of_bounds +=1
                         continue
+                    
 
                     wpi1 = tokeni_to_wpi[label[0]]
                     wpi2 = tokeni_to_wpi[label[1]]
