@@ -301,7 +301,9 @@ def main(json_file=None, json_obj=None):
         add_prefix_space=True,
         additional_special_tokens=['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>', '<neg>']
     )
-
+    
+    if model_args.encoder_name.split('/')[-1].startswith('galactica'):
+        tokenizer.add_special_tokens({'pad_token': '[PAD]'})
     model_name = model_args.model
     hierarchical = model_name == 'hier'
 

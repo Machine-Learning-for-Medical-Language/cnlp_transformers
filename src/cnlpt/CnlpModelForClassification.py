@@ -6,7 +6,7 @@ import copy
 import inspect
 from typing import Optional, List, Any, Dict
 
-from transformers import AutoModel, AutoConfig
+from transformers import AutoModel, AutoConfig, OPTForCausalLM
 from transformers.modeling_utils import PreTrainedModel
 from transformers.configuration_utils import PretrainedConfig
 
@@ -149,6 +149,9 @@ class CnlpConfig(PretrainedConfig):
         if encoder_name.startswith('distilbert'):
             self.hidden_dropout_prob = self.encoder_config['dropout']
             self.hidden_size = self.encoder_config['dim']
+        elif encoder_name.split('/')[-1].startswith('galactica'):
+            self.hidden_dropout_prob = self.encoder_config['dropout']
+            self.hidden_size = self.encoder_config['hidden_size']
         else:
             try:
                 self.hidden_dropout_prob = self.encoder_config['hidden_dropout_prob']
@@ -157,7 +160,7 @@ class CnlpConfig(PretrainedConfig):
                 raise ValueError(f'Encoder config does not have an attribute'
                                  f' "{ke.args[0]}"; this is likely because the API of'
                                  f' the chosen encoder differs from the BERT/RoBERTa'
-                                 f' API and the DistilBERT API. Encoders with different'
+                                 f' API, DistilBERT API, or OPT / Galactica API. Encoders with different'
                                  f' APIs are not yet supported (#35).')
 
 
@@ -176,6 +179,7 @@ class CnlpModelForClassification(PreTrainedModel):
     """
     base_model_prefix = 'cnlpt'
     config_class = CnlpConfig
+    is_galactica = False
 
     def __init__(self,
                  config: config_class,
@@ -189,17 +193,24 @@ class CnlpModelForClassification(PreTrainedModel):
 
         super().__init__(config)
 
+        self.is_galactica = config.encoder_name.split('/')[-1].startswith('galactica')
         encoder_config = AutoConfig.from_pretrained(config.encoder_name)
         encoder_config.vocab_size = config.vocab_size
         config.encoder_config = encoder_config.to_dict()
         encoder_model = AutoModel.from_config(encoder_config)
-        self.encoder = encoder_model.from_pretrained(config.encoder_name)
+        if self.is_galactica:
+            self.encoder = OPTForCausalLM.from_pretrained(config.encoder_name)
+            configured_layers = len(self.encoder.model.decoder.layers)
+        else:
+            self.encoder = encoder_model.from_pretrained(config.encoder_name)
+            configured_layers = len(encoder_model.encoder.layer)
         self.encoder.resize_token_embeddings(encoder_config.vocab_size)
 
-        if config.layer > len(encoder_model.encoder.layer):
-            raise ValueError('The layer specified (%d) is too big for the specified encoder which has %d layers' % (
+        
+        if config.layer > configured_layers:
+            raise ValueError('The layer specified (%d) is too big for the specified model which has %d layers' % (
                 config.layer,
-                len(encoder_model.encoder.layer)
+                configured_layers
             ))
         self.num_labels = config.num_labels_list
         
@@ -403,7 +414,8 @@ class CnlpModelForClassification(PreTrainedModel):
         new_kwargs = dict()
         params = inspect.signature(self.encoder.forward).parameters
         for name, value in kwargs.items():
-            if name not in params and value is not None:
+            galactica_issue = self.is_galactica and name == 'token_type_ids'
+            if name not in params and value is not None and not galactica_issue:
                 # Warn if a contentful parameter is not valid
                 logger.warning(f"Parameter {name} not present for encoder class {self.encoder.__class__.__name__}.")
             elif name in params:
