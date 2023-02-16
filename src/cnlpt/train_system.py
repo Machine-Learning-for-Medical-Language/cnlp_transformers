@@ -299,7 +299,7 @@ def main(json_file=None, json_obj=None):
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.encoder_name,
         cache_dir=model_args.cache_dir,
         add_prefix_space=True,
-        additional_special_tokens=['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>', '<neg>']
+        # additional_special_tokens=['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>', '<neg>']
     )
 
     model_name = model_args.model
