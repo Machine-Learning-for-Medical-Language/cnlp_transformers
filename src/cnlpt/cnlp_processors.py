@@ -104,7 +104,8 @@ class AutoProcessor(DataProcessor):
         for task_ind,dataset_task in enumerate(metadata['tasks']):
             # Probably a reasonable default, and then we'll check for the other cases
             output_mode = classification
-
+            print(self.dataset.metadata.keys())
+            print(self.dataset.metadata['tasks'][task_ind])
             unique_labels = list(set( any_split[self.dataset.metadata['tasks'][task_ind]]) )
 
             ## Check if any unique label has a space in it, then we know we are actually 
