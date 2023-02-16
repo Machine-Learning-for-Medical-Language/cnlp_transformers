@@ -106,6 +106,8 @@ class AutoProcessor(DataProcessor):
             output_mode = classification
             print(self.dataset.metadata.keys())
             print(self.dataset.metadata['tasks'][task_ind])
+            print(self.dataset.keys())
+            print(any_split.keys())
             unique_labels = list(set( any_split[self.dataset.metadata['tasks'][task_ind]]) )
 
             ## Check if any unique label has a space in it, then we know we are actually 
