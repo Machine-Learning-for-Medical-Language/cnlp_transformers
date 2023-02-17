@@ -90,7 +90,7 @@ To use the library for fine-tuning, you'll need to take the following steps:
           }
           ...
           {
-            'task_name': '<sub-task n description>'
+            'task_name': '<sub-task n name>'
             'output_mode': <sub-task output mode (e.g. tagging, relex, classification)>,
           }
         ]

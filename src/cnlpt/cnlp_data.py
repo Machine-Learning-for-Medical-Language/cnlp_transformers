@@ -311,7 +311,7 @@ def cnlp_preprocess_data(
     # contain pre-wordpiece token indices)
     if not inference:
         # Create a label map for each task in this dataset: { task1 => {label_0: 0, label_1: 1, label_2:, 2}, task2 => {label_0: 0, label_1:1} }
-        label_map = {task: {label: i for i, label in enumerate(label_lists[task])} for task_ind,task in enumerate(tasks)}
+        label_map = {task: {label: i for i, label in enumerate(label_lists[task])} for task in tasks}
 
         raw_labels = []
         labels = []
