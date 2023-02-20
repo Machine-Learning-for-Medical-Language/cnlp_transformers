@@ -137,6 +137,22 @@ For a demo of how to run the system in colab: [![Open In Colab](https://colab.re
 For chemical NER and the following for gene NER (`GENE-Y` are normalizable gene names and `GENE-N` are non-normalizable):
 ```gene_ner = {'acc': 0.9835720382010852, 'token_f1': [0.5503875968992249, 0.8223125230882896, 0.0, 0.0, 0.9949847518170479], 'f1': 0.7477207783371888, 'report': '\n              precision    recall  f1-score   support\n\n      GENE-N       0.70      0.45      0.55      2355\n      GENE-Y       0.76      0.88      0.82      5013\n\n   micro avg       0.75      0.75      0.75      7368\n   macro avg       0.73      0.67      0.68      7368\nweighted avg       0.74      0.75      0.73      7368\n'}```
 
+### Fine-tuning for concept normalization: End-to-end example
+1. Prepare the concept normalization input data (train.tsv, dev.tsv, and test.tsv) use following format (.tsv file).  
+
+| text | conceptnorm |
+| --- | --- |
+| <e> pleural effusion </e> | C0032227 |
+| <e> pulmonary consolidation </e> | C0521530 |
+| <e> aorta tortuous </e> | CUI-less |
+
+2. Prepare ontology cui text file (.txt), each line of the file will be a CUI.
+
+3. Prepare concept embeddings .npy file, and save it into a folder $concept_norm_path (a giant matrix with each row correspoding to the embeddings of each CUI, the order of the CUI embeddings follows the order of the ontology cui text file).
+
+4. Fine-tune with something like:
+```python -m cnlpt.train_system # --do_train --do_eval --task_name conceptnorm --data_dir cnlp_concept_norm/ --encoder_name cambridgeltl/SapBERT-from-PubMedBERT-fulltext-mean-token --output_dir temp/ --concept_norm_path $concept_norm_path --overwrite_output_dir --cache cache --token true --num_train_epochs 5 --learning_rate 3e-5 --per_device_train_batch_size 64 --max_seq_length 16 --layer 12 --seed 24 --evals_per_epoch 1``` 
+
 ### Fine-tuning options
 Run ```python -m cnlpt.train_system -h``` to see all the available options. In addition to inherited Huggingface Transformers options, there are options to do the following:
 * Run simple baselines (use ``--model cnn --tokenizer_name roberta-base`` -- since there is no HF model then you must specify the tokenizer explicitly)

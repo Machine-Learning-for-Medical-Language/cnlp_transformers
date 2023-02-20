@@ -26,18 +26,25 @@ mtl = 'mtl'
 classification = 'classification'
 tagging = 'tagging'
 relex = 'relations'
+conceptnorm = 'conceptnorm'
 
-def get_unique_labels(dataset, tasks, task_output_modes):
+def get_unique_labels(dataset, tasks, task_output_modes, data_dir):
     dataset_unique_labels = dict()
     for task_ind,task_name in enumerate(tasks):
-        unique_labels = set()
-        # check all splits for labels just in case they do not fully overlap
-        for split in dataset:
-            # Add labels from this split to the overall label set and give a warning if they are not the same
-            split_labels = set( dataset[split][task_name])
-            unique_labels |= split_labels
+        if task_name != conceptnorm:
+            unique_labels = set()
+            # check all splits for labels just in case they do not fully overlap
+            for split in dataset:
+                # Add labels from this split to the overall label set and give a warning if they are not the same
+                split_labels = set( dataset[split][task_name])
+                unique_labels |= split_labels
 
-        unique_labels = list(unique_labels)
+            unique_labels = list(unique_labels)
+        else:
+            with open(os.path.join(data_dir,'ontology_cui.txt'), 'r') as outfile:
+                labels = json.load(outfile)
+                outfile.close()
+                unique_labels = labels + ["CUI-less"]
 
         output_mode = task_output_modes[task_name]
 
@@ -58,8 +65,8 @@ def get_unique_labels(dataset, tasks, task_output_modes):
                         rel_cat = rel_cat[:-1]
                     unique_relations.add(rel_cat)
             unique_labels = list(unique_relations)
-
-        unique_labels.sort()
+        if task_name != conceptnorm:
+            unique_labels.sort()
 
         dataset_unique_labels[task_name] = unique_labels
 
@@ -69,24 +76,26 @@ def infer_output_modes(dataset):
     task_output_modes = {}
     for task_ind, task_name in enumerate(dataset.tasks):
         output_mode = classification
-        unique_labels = set()
-        # check all splits for labels just in case they do not fully overlap
-        for split in dataset:
-            # Add labels from this split to the overall label set and give a warning if they are not the same
-            split_labels = set( dataset[split][task_name])
-            unique_labels |= split_labels
+        if task_name != conceptnorm:
+            unique_labels = set()
+            # check all splits for labels just in case they do not fully overlap
+            for split in dataset:
+                # Add labels from this split to the overall label set and give a warning if they are not the same
+                split_labels = set( dataset[split][task_name])
+                unique_labels |= split_labels
 
-        unique_labels = list(unique_labels)
+            unique_labels = list(unique_labels)
 
         ## Check if any unique label has a space in it, then we know we are actually 
         ## dealing with a tagging dataset, or if it ends in ), in which case it is a relation task.
-        for label in unique_labels:
-            if str(label)[-1] == ')':
-                output_mode = relex
-                break
-            elif ' ' in str(label):
-                output_mode = tagging
-                break
+        if task_name != conceptnorm:
+            for label in unique_labels:
+                if str(label)[-1] == ')':
+                    output_mode = relex
+                    break
+                elif ' ' in str(label):
+                    output_mode = tagging
+                    break
 
         task_output_modes[task_name] = output_mode
     
@@ -198,7 +207,7 @@ class AutoProcessor(DataProcessor):
             self.dataset.task_output_modes = infer_output_modes(self.dataset)
 
         # get any split of the data and ask for the set of unique labels for each task in the dataset from that split
-        self.labels = get_unique_labels(self.dataset, self.dataset.tasks, self.dataset.task_output_modes)
+        self.labels = get_unique_labels(self.dataset, self.dataset.tasks, self.dataset.task_output_modes, data_dir)
 
         self.dataset = get_task_pruned_dataset(self.dataset, self.dataset.tasks, self.labels)
 

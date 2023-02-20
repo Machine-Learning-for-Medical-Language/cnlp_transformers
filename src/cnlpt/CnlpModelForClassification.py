@@ -13,11 +13,13 @@ from transformers.configuration_utils import PretrainedConfig
 import torch
 from torch import nn
 import logging
-from torch.nn import CrossEntropyLoss, MSELoss
+from torch.nn import CrossEntropyLoss, MSELoss, Parameter
 from transformers.modeling_outputs import SequenceClassifierOutput
-from torch.nn.functional import softmax, relu
+from torch.nn.functional import softmax, relu, normalize
 import math
 import random
+import numpy as np
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +35,50 @@ class ClassificationHead(nn.Module):
         x = self.out_proj(x)
         return x
 
+class CosineLayer(nn.Module):
+    def __init__(
+            self,
+            config,
+            concept_dim=88150
+            ):
+        super(CosineLayer, self).__init__()
+
+        self.dropout = nn.Dropout(0.1)
+        self.cos = nn.CosineSimilarity(dim=-1)
+        concept_dims = (concept_dim,config.hidden_size) 
+
+        if config.concept_norm is not None:
+            weights_matrix = np.load(os.path.join(config.concept_norm,
+                    "concept_embeddings.npy")).astype(np.float32)
+            self.weight = Parameter(torch.from_numpy(weights_matrix),
+                                    requires_grad=True)
+            threshold_value = np.loadtxt(
+                os.path.join(config.concept_norm, "cuiless_threshold.txt")).astype(np.float32)
+            self.threshold = Parameter(torch.tensor(threshold_value),
+                                       requires_grad=False)
+        else:
+            self.weight = Parameter(torch.rand(concept_dims),
+                                    requires_grad=True)
+            torch.nn.init.xavier_uniform(self.weight)
+            self.threshold = Parameter(torch.tensor(0.35), requires_grad=True)
+
+    def forward(self, features):
+        batch_size, fea_size = features.shape
+        features_norm = normalize(features)
+        weight_norm = normalize(self.weight)
+        sim_mt = torch.mm(features_norm, weight_norm.transpose(0, 1))
+        cui_less_score = torch.full((batch_size, 1), 1).to(
+            features.device) * self.threshold.to(features.device)
+        similarity_score = torch.cat((sim_mt, cui_less_score), 1)
+        # if self.config.finetuning_task[task_ind] == "conceptnorm":
+        #     #### TODO add scaling as a hyper-parameter for concept normalization
+        scaling = 0.03
+        similarity_score = similarity_score/scaling
+        return similarity_score
+
 
 class RepresentationProjectionLayer(nn.Module):
-    def __init__(self, config, layer=10, tokens=False, tagger=False, relations=False, num_attention_heads=-1, head_size=64):
+    def __init__(self, config, layer=10, tokens=False, tagger=False, relations=False, conceptnorm=False,num_attention_heads=-1, head_size=64):
         super().__init__()
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         if relations:
@@ -47,6 +90,7 @@ class RepresentationProjectionLayer(nn.Module):
         self.tokens = tokens
         self.tagger = tagger
         self.relations = relations
+        self.conceptnorm =  conceptnorm
         self.hidden_size = config.hidden_size
         
         if num_attention_heads <= 0 and relations:
@@ -94,10 +138,10 @@ class RepresentationProjectionLayer(nn.Module):
         else:
             # take <s> token (equiv. to [CLS])
             x = features[self.layer_to_use][..., 0, :]
-
-        x = self.dropout(x)
-        x = self.dense(x)
-        x = torch.tanh(x)
+        if not self.conceptnorm:
+            x = self.dropout(x)
+            x = self.dense(x)
+            x = torch.tanh(x)
         return x
 
 
@@ -131,6 +175,7 @@ class CnlpConfig(PretrainedConfig):
         tagger = [False],
         relations = [False],
         use_prior_tasks=False,
+        concept_norm=None,
         **kwargs
      ):
         super().__init__(**kwargs)
@@ -146,6 +191,7 @@ class CnlpConfig(PretrainedConfig):
         self.use_prior_tasks = use_prior_tasks
         self.encoder_name = encoder_name
         self.encoder_config = AutoConfig.from_pretrained(encoder_name).to_dict()
+        self.concept_norm =  concept_norm
         if encoder_name.startswith('distilbert'):
             self.hidden_dropout_prob = self.encoder_config['dropout']
             self.hidden_size = self.encoder_config['dim']
@@ -222,13 +268,17 @@ class CnlpModelForClassification(PreTrainedModel):
         self.classifiers = nn.ModuleList()
         total_prev_task_labels = 0
         for task_ind,task_num_labels in enumerate(self.num_labels):
-            self.feature_extractors.append(RepresentationProjectionLayer(config, layer=config.layer, tokens=config.tokens, tagger=config.tagger[task_ind], relations=config.relations[task_ind], num_attention_heads=config.num_rel_attention_heads, head_size=config.rel_attention_head_dims))
+            conceptnorm = config.finetuning_task[task_ind] == "conceptnorm"
+            self.feature_extractors.append(RepresentationProjectionLayer(config, layer=config.layer, tokens=config.tokens, tagger=config.tagger[task_ind], relations=config.relations[task_ind], conceptnorm=conceptnorm, num_attention_heads=config.num_rel_attention_heads, head_size=config.rel_attention_head_dims))
             if config.relations[task_ind]:
                 hidden_size = config.num_rel_attention_heads
                 if config.use_prior_tasks:
                     hidden_size += total_prev_task_labels
 
                 self.classifiers.append(ClassificationHead(config, task_num_labels, hidden_size=hidden_size))
+            elif conceptnorm:
+                self.classifiers.append(CosineLayer(config,
+                    concept_dim=task_num_labels -1))
             else:
                 self.classifiers.append(ClassificationHead(config, task_num_labels))
             total_prev_task_labels += task_num_labels
@@ -424,7 +474,7 @@ class CnlpModelForClassification(PreTrainedModel):
         labels=None,
         output_attentions=None,
         output_hidden_states=None,
-        event_tokens=None,
+        event_mask=None,
     ):
         r"""
         Forward method.
@@ -449,7 +499,7 @@ class CnlpModelForClassification(PreTrainedModel):
                 If :obj:`config.num_labels > 1` a classification loss is computed (Cross-Entropy).
             output_attentions (`bool`, *optional*): Whether or not to return the attentions tensors of all attention layers.
             output_hidden_states: not used.
-            event_tokens: a mask defining which tokens in the input are to be averaged for input to classifier head; only used when self.tokens==True.
+            event_mask: a mask defining which tokens in the input are to be averaged for input to classifier head; only used when self.tokens==True.
 
         Returns: (`transformers.SequenceClassifierOutput`) the output of the model
         """
@@ -480,7 +530,7 @@ class CnlpModelForClassification(PreTrainedModel):
         )
 
         for task_ind,task_num_labels in enumerate(self.num_labels):
-            features = self.feature_extractors[task_ind](outputs.hidden_states, event_tokens)
+            features = self.feature_extractors[task_ind](outputs.hidden_states, event_mask)
             if self.use_prior_tasks:
                 # note: this specific way of incorporating previous logits doesn't help in my experiments with thyme/clinical tempeval
                 if self.relations[task_ind]:
