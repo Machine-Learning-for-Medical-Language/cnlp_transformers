@@ -222,7 +222,7 @@ class ModelArguments:
     )
 
 
-def is_pretrained_model(model_name):
+def is_hub_model(model_name):
     # check if it's a model on the huggingface model hub:
     url = hf_hub_url(model_name, CONFIG_NAME)
     r = requests.head(url)
@@ -322,8 +322,8 @@ def main(json_file=None, json_obj=None):
             # if processor.get_num_tasks() > 1:
             for subtask_num in range(processor.get_num_tasks()):
                 task_names.append(processor.get_classifiers()[subtask_num])
-                num_labels.append(len(processor.get_labels()[subtask_num]))
-                task_output_mode = processor.get_output_mode()[subtask_num]
+                num_labels.append(len(processor.get_labels()[task_names[-1]]))
+                task_output_mode = processor.get_output_mode(task_names[-1])
                 output_mode.append(task_output_mode)
                 tagger.append(task_output_mode == tagging)
                 relations.append(task_output_mode == relex)
@@ -342,9 +342,6 @@ def main(json_file=None, json_obj=None):
     # Distributed training:
     # The .from_pretrained methods guarantee that only one local process can concurrently
     # download model & vocab.
-
-    pretrained = False
-
     if model_name == 'cnn':
         model = CnnSentenceClassifier(len(tokenizer), 
                                       num_labels_list=num_labels,
@@ -367,55 +364,73 @@ def main(json_file=None, json_obj=None):
         if exists(model_path):
             model.load_state_dict(torch.load(model_path))
     elif model_name == 'hier':
-        # encoder_config = AutoConfig.from_pretrained(
-        #     model_args.config_name if model_args.config_name else model_args.encoder_name,
-        #     finetuning_task=data_args.task_name,
-        # )
-
-        pretrained = True
-
         encoder_name = model_args.config_name if model_args.config_name else model_args.encoder_name
-        config = CnlpConfig(
-            encoder_name,
-            data_args.task_name,
-            num_labels,
-            layer=model_args.layer,
-            tokens=model_args.token,
-            num_rel_attention_heads=model_args.num_rel_feats,
-            rel_attention_head_dims=model_args.head_features,
-            tagger=tagger,
-            relations=relations,
-        )
-        # num_tokens=len(tokenizer))
-        config.vocab_size = len(tokenizer)
+        if is_hub_model(encoder_name):
+            config = CnlpConfig(
+                encoder_name,
+                data_args.task_name,
+                num_labels,
+                layer=model_args.layer,
+                tokens=model_args.token,
+                num_rel_attention_heads=model_args.num_rel_feats,
+                rel_attention_head_dims=model_args.head_features,
+                tagger=tagger,
+                relations=relations,
+            )
+            # num_tokens=len(tokenizer))
+            config.vocab_size = len(tokenizer)
 
-        encoder_dim = config.hidden_size
+            encoder_dim = config.hidden_size
 
-        transformer_head_config = HierarchicalTransformerConfig(
-            n_layers=model_args.hier_num_layers,
-            d_model=encoder_dim,
-            d_inner=model_args.hier_hidden_dim,
-            n_head=model_args.hier_n_head,
-            d_k=model_args.hier_d_k,
-            d_v=model_args.hier_d_v,
-        )
+            transformer_head_config = HierarchicalTransformerConfig(
+                n_layers=model_args.hier_num_layers,
+                d_model=encoder_dim,
+                d_inner=model_args.hier_hidden_dim,
+                n_head=model_args.hier_n_head,
+                d_k=model_args.hier_d_k,
+                d_v=model_args.hier_d_v,
+            )
 
-        model = HierarchicalModel(
-            config=config,
-            transformer_head_config=transformer_head_config,
-            class_weights=dataset.class_weights,
-            final_task_weight=training_args.final_task_weight,
-            freeze=training_args.freeze,
-            argument_regularization=training_args.arg_reg,
-        )
+            model = HierarchicalModel(
+                config=config,
+                transformer_head_config=transformer_head_config,
+                class_weights=dataset.class_weights,
+                final_task_weight=training_args.final_task_weight,
+                freeze=training_args.freeze,
+                argument_regularization=training_args.arg_reg,
+            )
+        else:
+            # use a checkpoint from an existing model
+            AutoConfig.register("cnlpt", CnlpConfig)
+            AutoModel.register(CnlpConfig, HierarchicalModel)
+            
+            config = AutoConfig.from_pretrained(
+                    encoder_name,
+                    cache_dir=model_args.cache_dir,
+                )
+            encoder_dim = config.hidden_size
+            transformer_head_config = HierarchicalTransformerConfig(
+                n_layers=model_args.hier_num_layers,
+                d_model=encoder_dim,
+                d_inner=model_args.hier_hidden_dim,
+                n_head=model_args.hier_n_head,
+                d_k=model_args.hier_d_k,
+                d_v=model_args.hier_d_v,
+            )
+
+            ## TODO: check if user overwrote parameters in command line that could change behavior of the model and warn
+            #if data_args.chunk_len is not None:
+            
+            logger.info("Loading pre-trained hierarchical model...")
+            model = AutoModel.from_pretrained(encoder_name, config=config, transformer_head_config=transformer_head_config)
 
     else:
         # by default cnlpt model, but need to check which encoder they want
         encoder_name = model_args.encoder_name
 
         # TODO check when download any pretrained language model to local disk, if 
-        # the following condition "is_pretrained_model(encoder_name)" works or not.
-        if not is_pretrained_model(encoder_name):
+        # the following condition "is_hub_model(encoder_name)" works or not.
+        if not is_hub_model(encoder_name):
             # we are loading one of our own trained models as a starting point.
             #
             # 1) if training_args.do_train is true:
@@ -491,7 +506,6 @@ def main(json_file=None, json_obj=None):
                                 relations=relations,)
                                 #num_tokens=len(tokenizer))
             config.vocab_size = len(tokenizer)
-            pretrained = True
             model = CnlpModelForClassification(
                 config=config,
                 class_weights=dataset.class_weights,
@@ -553,7 +567,7 @@ def main(json_file=None, json_obj=None):
                     labels = p.label_ids[:,task_ind].squeeze()
 
                 processor = processors[task_name]
-                metrics[task_name] = cnlp_compute_metrics(task_name, task_ind, preds, labels, processor, processor.get_output_mode()[task_ind])
+                metrics[task_name] = cnlp_compute_metrics(task_name, task_ind, preds, labels, processor, processor.get_output_mode(task_name))
                 # FIXME - Defaulting to accuracy for model selection score, when it should be task-specific
                 task_scores.append( metrics[task_name].get('one_score', np.mean(metrics[task_name].get('f1'))))
                 #task_scores.append(processor.get_one_score(metrics.get(task_name, metrics.get(task_name.split('-')[0], None))))
@@ -636,11 +650,11 @@ def main(json_file=None, json_obj=None):
                                     subtask_ind = 0
                                 else:
                                     subtask_ind = task_ind
-                                item = dataset_labels[dataset_ind][task_ind][item]
+                                item = dataset_labels[dataset_ind][task_name][item]
                                 writer.write("Task %d (%s) - Index %d - %s\n" % (task_ind, task_name, index, item))
                         elif output_mode[task_ind] == tagging:
                             task_predictions = np.argmax(predictions[task_ind], axis=2)
-                            task_labels = dataset_labels[dataset_ind][task_ind]
+                            task_labels = dataset_labels[dataset_ind][task_name]
                             for index, pred_seq in enumerate(task_predictions):
                                 wpind_to_ind = {}
                                 chunk_labels = []
@@ -658,7 +672,7 @@ def main(json_file=None, json_obj=None):
                                 writer.write('Task %d (%s) - Index %d: %s\n' % (task_ind, task_name, index, str(entities)))
                         elif output_mode[task_ind] == relex:
                             task_predictions = np.argmax(predictions[task_ind], axis=3)
-                            task_labels = dataset_labels[dataset_ind][task_ind]
+                            task_labels = dataset_labels[dataset_ind][task_name]
                             # assert task_labels[0] == 'None', 'The first labeled relation category should always be "None" but for task %s it is %s' % (task_names[task_ind], task_labels[0])
                             
                             for inst_ind in range(task_predictions.shape[0]):
@@ -695,7 +709,7 @@ def main(json_file=None, json_obj=None):
                 with open(output_test_file, "w") as writer:
                     logger.info("***** Test results *****")
                     for index, item in enumerate(task_predictions):
-                        item = test_dataset.get_labels()[task_ind][item]
+                        item = test_dataset.get_labels()[task_name][item]
                         writer.write("%s\n" % (item))
 
     return eval_results

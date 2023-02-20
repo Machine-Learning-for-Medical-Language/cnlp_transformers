@@ -238,8 +238,8 @@ def cnlp_preprocess_data(
     tokenizer: PreTrainedTokenizer,
     max_length: Optional[int] = None,
     tasks: List[str] = None,
-    label_lists: Optional[List[List[str]]] = None,
-    output_mode: Optional[str] = None,
+    label_lists: Optional[Dict[str,List[str]]] = None,
+    output_modes: Optional[Dict[str,str]] = None,
     inference: bool = False,
     hierarchical: bool = False,
     chunk_len: int = -1,
@@ -259,10 +259,10 @@ def cnlp_preprocess_data(
     :param typing.Optional[int] max_length: the maximum sequence length
         at which to truncate examples
     :param List[str] tasks: the task name(s) in a list, used to index the labels in the examples list.
-    :param typing.Optional[typing.List[str]] label_list: the list of labels
-        for this task. If not provided explicitly, it will be retrieved from
+    :param typing.Optional[typing.Dict[str,List[str]]] label_list: a mapping from 
+        tasks to the list of labels for each task. If not provided explicitly, it will be retrieved from
         the processor with :meth:`transformers.DataProcessor.get_labels`.
-    :param typing.Optional[str] output_mode: the output mode for this task.
+    :param typing.Optional[Dict[str,str]] output_modes: the output modes for this task.
         If not provided explicitly, it will be retrieved from
         :data:`cnlpt.cnlp_processors.cnlp_output_modes`.
     :param bool inference: whether we're doing training or inference only -- if inference mode the labels associated with examples can't be trusted.
@@ -311,7 +311,7 @@ def cnlp_preprocess_data(
     # contain pre-wordpiece token indices)
     if not inference:
         # Create a label map for each task in this dataset: { task1 => {label_0: 0, label_1: 1, label_2:, 2}, task2 => {label_0: 0, label_1:1} }
-        label_map = {task: {label: i for i, label in enumerate(label_lists[task_ind])} for task_ind,task in enumerate(tasks)}
+        label_map = {task: {label: i for i, label in enumerate(label_lists[task])} for task in tasks}
 
         raw_labels = []
         labels = []
@@ -322,13 +322,13 @@ def cnlp_preprocess_data(
             task_labels = []
             raw_labels.append(examples[task])
 
-            if output_mode[task_ind] == classification:
+            if output_modes[task] == classification:
                 task_labels = [label_map[task][label] for label in raw_labels[task_ind]]
                 # labels is just a list of one label for each instance
-            elif output_mode[task_ind] == tagging:
+            elif output_modes[task] == tagging:
                 task_labels = [ [label_map[task][label] for label in inst_labels.split()] for inst_labels in raw_labels[task_ind]]
                 # labels is a list of lists, where each internal list is the set of tags for that instance.
-            elif output_mode[task_ind] == relex:
+            elif output_modes[task] == relex:
                 for inst_rels in raw_labels[task_ind]:
                     if inst_rels == 'None':
                         task_labels.append(['None'])
@@ -342,13 +342,13 @@ def cnlp_preprocess_data(
                             inst_labels.append( (int(start_token), int(end_token), label_map[task].get(category, 0)))
                         task_labels.append(inst_labels)
             else:
-                raise NotImplementedError('This method is not complete for output mode %s' % (output_mode,) )
+                raise NotImplementedError('This method is not complete for output mode %s' % (output_modes[task],) )
             labels.append(task_labels)
 
         # Convert the labels to column format that arrow prefers
         labels = list(zip(*labels))
 
-        result['label'] = _build_pytorch_labels(result, tasks, labels, output_mode, num_instances, max_length, label_lists)
+        result['label'] = _build_pytorch_labels(result, tasks, labels, output_modes, num_instances, max_length, label_lists)
     # else:
         # result['label'] =  [ (0,) for i in range(num_instances)]
 
@@ -368,20 +368,13 @@ def cnlp_preprocess_data(
             insert_empty_chunk_at_beginning=insert_empty_chunk_at_beginning,
         )
 
-    ## FIXME - doesn't work because this is called in batch mode - maybe move to dataset class initializer?
-    # for i in range(5):
-    #     logger.info("*** Example ***")
-    #     features = {x: result[x][i] for x in result.keys()}
-    #     # logger.info("guid: %s" % (example.guid))
-    #     logger.info("features: %s" % truncate_features(features) if truncate_examples else features)
-
     return result
 
-def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, output_mode:List[str], num_instances:int, max_length:int, label_lists: List[List[str]]):
+def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, output_modes:Dict[str,str], num_instances:int, max_length:int, label_lists: List[List[str]]):
     labels_out = []
     for task_ind, task in enumerate(tasks):
         encoded_labels = []
-        if output_mode[task_ind] == tagging:
+        if output_modes[task] == tagging:
             for sent_ind in range(num_instances):
                 sent_labels = []
 
@@ -406,7 +399,7 @@ def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, ou
                 encoded_labels.append(np.expand_dims(np.array(label_ids), 1))
 
             labels_out.append(encoded_labels)
-        elif output_mode[task_ind] == relex:
+        elif output_modes[task] == relex:
             # start by building a matrix that's N' x N' (word-piece length) with "None" as the default
             # for word pairs, and -100 (mask) as the default if one of word pair is a suffix token
             out_of_bounds = 0
@@ -435,7 +428,7 @@ def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, ou
                         # don't want to consider it because it may screw up the learning to have 2 such similar
                         # tokens not involved in a relation.
                         if wpi != wpi2:
-                            sent_labels[wpi,wpi2] = label_lists[task_ind].index('None')
+                            sent_labels[wpi,wpi2] = label_lists[task].index('None')
 
                 for label in labels[sent_ind][task_ind]:
                     if label == "None":
@@ -458,7 +451,7 @@ def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, ou
                     'During relation processing, there were %d relations (out of %d total relations) where at least one argument was truncated so the relation could not be trained/predicted.' % (out_of_bounds, num_relations)
                 )
                 
-        elif output_mode[task_ind] == classification:
+        elif output_modes[task] == classification:
             for sent_ind in range(num_instances):
                 encoded_labels.append( (labels[sent_ind][task_ind],) )
             labels_out.append(np.array(encoded_labels))
@@ -591,6 +584,10 @@ class DataTrainingArguments:
         "help": "Whether to truncate input examples when displaying them in the log"
     })
 
+    max_train_items: Optional[int] = field(
+        default=-1, metadata={"help": "Set a number of train instances to use during training (useful for debugging data processing logic if a dataset is very large. Default is to train on all training data."}
+    )
+
     max_eval_items: Optional[int] = field(
         default=-1, metadata={"help": "Set a number of validation instances to use during training (useful if a dataset has been created using dumb logic like 80/10/10 and 10%% takes forever to evaluate on. Default is evaluate on all validation data."}
     )
@@ -611,7 +608,6 @@ class ClinicalNlpDataset(Dataset):
         model (:class:`cnlpt.HierarchicalTransformer.HierarchicalModel`)
     """
     args: DataTrainingArguments
-    output_mode: List[str]
     features: List[InputFeatures]
 
     def __init__(
@@ -624,7 +620,6 @@ class ClinicalNlpDataset(Dataset):
     ):
         self.args = args
         self.processors = []
-        self.output_mode = []
         self.class_weights = []
         self.label_lists = []
         self.hierarchical = hierarchical
@@ -632,7 +627,6 @@ class ClinicalNlpDataset(Dataset):
         self.datasets = []
 
         # Load data features from cache or dataset file
-        # self.label_lists = [processor.get_labels() for processor in self.processors]
         self.label_lists = []
         self.num_train_instances = 0
 
@@ -643,9 +637,9 @@ class ClinicalNlpDataset(Dataset):
 
         tasks = None if args.task_name is None else set(args.task_name)
         for data_dir_ind, data_dir in enumerate(args.data_dir):
-            dataset_processor = AutoProcessor(data_dir, tasks)
+            dataset_processor = AutoProcessor(data_dir, tasks, max_train_items=args.max_train_items)
             self.processors.append(dataset_processor)
-
+            
             ## TODO get this working again
             for classifier in range(dataset_processor.get_num_tasks()):
                 self.class_weights.append(None)
@@ -663,7 +657,7 @@ class ClinicalNlpDataset(Dataset):
                     'tokenizer':tokenizer,
                     'max_length':args.max_seq_length,
                     'label_lists':self.label_lists[data_dir_ind],
-                    'output_mode':dataset_processor.get_output_mode(),
+                    'output_modes':dataset_processor.get_output_modes(),
                     'inference': not 'train' in dataset_processor.dataset,
                     'hierarchical':self.hierarchical,
                     'chunk_len':self.args.chunk_len,

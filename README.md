@@ -74,24 +74,31 @@ To use the library for fine-tuning, you'll need to take the following steps:
         { 'text': <text of instance>,
           'id': <instance id>
           '<sub-task 1 name>': <instance label>,
-          '<sub-task 2 name>: <instance label>,
+          '<sub-task 2 name>': <instance label>,
           ... // other labels
           }
         { }, // instance 2
         ...  // instances 3...N
     ],
       'metadata': {
-        'output_mode': [<list of output modes (e.g. tagging, relex, classification)>],
-        'task': <overall task/dataset name>,
-        'tasks': [<list of sub-task names>],
         'version': '<optional dataset versioning>',
-        '<sub-task 1 name>': '<sub-task 1 description>',
-        ...,
-        '<sub-task n name>': '<sub-task n description>'
+        'task': <overall task/dataset name>,
+        'subtasks': [
+          {
+            'task_name': '<sub-task 1 name>',
+            'output_mode': <sub-task output mode (e.g. tagging, relex, classification)>,
+          }
+          ...
+          {
+            'task_name': '<sub-task n name>'
+            'output_mode': <sub-task output mode (e.g. tagging, relex, classification)>,
+          }
+        ]
       }
     }
 ``` 
-Instance labels should be formatted the same way as in the csv/tsv example above, see specifically the formats for tagging and relations.
+Instance labels should be formatted the same way as in the csv/tsv example above, see specifically the formats for tagging and relations. The 'metadata' field can either be included in the train/dev/test files or as a separate metadata.json file.
+
 
 
 2. Run train_system.py with a ```--task_name``` from your data files and the ```--data-dir``` argument from Step 1.
