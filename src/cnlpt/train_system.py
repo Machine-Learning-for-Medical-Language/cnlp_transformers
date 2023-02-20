@@ -364,10 +364,6 @@ def main(json_file=None, json_obj=None):
         if exists(model_path):
             model.load_state_dict(torch.load(model_path))
     elif model_name == 'hier':
-        # encoder_config = AutoConfig.from_pretrained(
-        #     model_args.config_name if model_args.config_name else model_args.encoder_name,
-        #     finetuning_task=data_args.task_name,
-        # )
         encoder_name = model_args.config_name if model_args.config_name else model_args.encoder_name
         if is_hub_model(encoder_name):
             config = CnlpConfig(
