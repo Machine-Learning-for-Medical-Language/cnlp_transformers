@@ -104,10 +104,6 @@ class AutoProcessor(DataProcessor):
         for task_ind,dataset_task in enumerate(metadata['tasks']):
             # Probably a reasonable default, and then we'll check for the other cases
             output_mode = classification
-            print(self.dataset.metadata.keys())
-            print(self.dataset.metadata['tasks'][task_ind])
-            print(self.dataset.keys())
-            print(any_split.keys())
             unique_labels = list(set( any_split[self.dataset.metadata['tasks'][task_ind]]) )
 
             ## Check if any unique label has a space in it, then we know we are actually 
@@ -123,16 +119,20 @@ class AutoProcessor(DataProcessor):
             
             
             ## get the complete set of unique tags by splitting each set of tags seen so far
+
+            # the problem seemed to be issues of singular text instances
+            # being 'None' in clingen which somehow get turned into actual None?
+            # Best guess is they're invoking ast somewhere
             if output_mode == tagging:
                 unique_tags = set()
                 for label in unique_labels:
-                    tags = label.split(' ')
+                    tags = str(label).split(' ')
                     unique_tags.update(tags)
                 unique_labels = list(unique_tags)
             elif output_mode == relex:
                 unique_relations = set()
                 for label in unique_labels:
-                    inst_rels = label.split(' , ')
+                    inst_rels = str(label).split(' , ')
                     for rel in inst_rels:
                         rel_cat = rel.split(',')[-1]
                         if rel_cat[-1] == ')':
