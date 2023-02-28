@@ -637,7 +637,7 @@ def _build_pytorch_labels(
         encoded_labels = []
         if output_modes[task] == tagging:
             for sent_ind in range(num_instances):
-                if result.is_fast() and not character_level:
+                if result.is_fast and not character_level:
                     word_ids = result.word_ids(batch_index=sent_ind)
                     encoded_labels.append(
                         _build_word_id_tag_labels(word_ids, labels, sent_ind, task_ind)
@@ -657,7 +657,7 @@ def _build_pytorch_labels(
             out_of_bounds = 0
             num_relations = 0
             for sent_ind in range(num_instances):
-                if result.is_fast() and not character_level:
+                if result.is_fast and not character_level:
                     word_ids = result.word_ids(batch_index=sent_ind)
                     (
                         sent_labels,
