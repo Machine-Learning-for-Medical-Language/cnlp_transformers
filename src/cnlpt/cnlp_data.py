@@ -339,7 +339,7 @@ def cnlp_preprocess_data(
                     try:
                         task_labels.append([label_map[task][label] for label in inst_labels.split()]) 
                     except Exception as e:
-                        print(f"Exception {e} given task {task} of index {task_ind} with: \n\n labels: \n {inst_labels} labels: \n {inst}")
+                        print(f"Exception {e} given task {task} of index {task_ind} with: \n\n labels: \n {inst_labels} \n\n instance: \n {inst}")
                 # labels is a list of lists, where each internal list is the set of tags for that instance.
             elif output_mode[task_ind] == relex:
                 for inst_rels in raw_labels[task_ind]:
