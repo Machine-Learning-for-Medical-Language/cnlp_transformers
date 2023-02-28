@@ -476,7 +476,7 @@ def _build_char_level_relex_labels(labels:List, sent_ind:int, task_ind:int):
         sent_labels[wpi1][wpi2] = label[2]
     return sent_labels, num_relations, out_of_bounds
     """
-    return, [], -1, -1
+    return [], -1, -1
 
 def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, output_mode:List[str], num_instances:int, max_length:int, label_lists: List[List[str]], character_level:bool):
     labels_out = []
