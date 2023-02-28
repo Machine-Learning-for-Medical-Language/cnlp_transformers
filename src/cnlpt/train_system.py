@@ -54,7 +54,7 @@ from .cnlp_metrics import cnlp_compute_metrics
 
 from .CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
 from .BaselineModels import CnnSentenceClassifier, LstmSentenceClassifier
-from .HierarchicalTransformer import HierarchicalModel#, HierarchicalTransformerConfig
+from .HierarchicalTransformer import HierarchicalModel
 
 import requests
 
