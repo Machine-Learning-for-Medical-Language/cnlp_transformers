@@ -406,17 +406,18 @@ def cnlp_preprocess_data(
             character_level,
         )
     if not character_level:
-        result["event_mask"] = _build_event_mask(
-            result,
+        result['event_mask'] = _build_event_mask_word_piece(
+            result, 
             num_instances,
-            tokenizer.convert_tokens_to_ids("<e>"),
-            tokenizer.convert_tokens_to_ids("</e>"),
+            tokenizer.convert_tokens_to_ids('<e>'),
+            tokenizer.convert_tokens_to_ids('</e>'),
         )
     else:
-        logger.info(
-            "No implementation for character level event masking so setting result[event_mask] to None"
+        logging.warn("No real implementation for character level event masking yet, using a placeholder")
+        result['event_mask'] = _build_event_mask_character(
+            result, 
+            num_instances,
         )
-        result["event_mask"] = []
     if hierarchical:
         result = cnlp_convert_features_to_hierarchical(
             result,
@@ -721,6 +722,10 @@ def _build_pytorch_labels(
 
     return labels_shaped
 
+<<<<<<< HEAD
+=======
+def _build_event_mask_word_piece(result:BatchEncoding, num_insts:int, event_start_token_id, event_end_token_id):
+>>>>>>> 29adf13 (Using dummy output of the same type and shape)
 
 def _build_event_mask(
     result: BatchEncoding, num_insts: int, event_start_token_id, event_end_token_id
@@ -760,8 +765,22 @@ def _build_event_mask(
 
     return event_tokens
 
+<<<<<<< HEAD
 
 def truncate_features(feature: Union[InputFeatures, HierarchicalInputFeatures]) -> str:
+=======
+def _build_event_mask_character(result:BatchEncoding, num_insts:int):
+    event_tokens = []
+    for i in range(num_insts):
+        input_ids = result['input_ids'][i]
+        inst_event_tokens = [1] * len(input_ids)
+        event_tokens.append(inst_event_tokens)
+
+    return event_tokens
+    
+
+def truncate_features(feature: Union[InputFeatures, HierarchicalInputFeatures]):
+>>>>>>> 29adf13 (Using dummy output of the same type and shape)
     """
     Method to produce a truncated string representation of a feature.
 
