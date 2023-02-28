@@ -321,8 +321,8 @@ def cnlp_preprocess_data(
             truncation=True,
             is_split_into_words=not character_level,
         )
-    except:
-        print(f"Issue with input: \n\n{sentences}")
+    except Exception as e:
+        print(f"Issue {e} given input: \n\n{sentences}")
 
     # Now that we have the labels for each instances, and we've tokenized the input sentences,
     # we need to solve the problem of aligning labels with word piece indexes for the tasks of tagging
