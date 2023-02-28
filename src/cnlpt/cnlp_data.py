@@ -356,11 +356,14 @@ def cnlp_preprocess_data(
     # else:
         # result['label'] =  [ (0,) for i in range(num_instances)]
 
-    result['event_mask'] = _build_event_mask(result, 
-                                            num_instances,
-                                            tokenizer.convert_tokens_to_ids('<e>'),
-                                            tokenizer.convert_tokens_to_ids('</e>'))
-
+    if not character_level:
+        result['event_mask'] = _build_event_mask(result, 
+                                                 num_instances,
+                                                 tokenizer.convert_tokens_to_ids('<e>'),
+                                                 tokenizer.convert_tokens_to_ids('</e>'))
+    else:
+        logger.info("No implementation for character level event masking so setting result[event_mask] to None")
+        result['event_mask'] = None
     if hierarchical:
         result = cnlp_convert_features_to_hierarchical(
             result,
