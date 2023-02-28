@@ -363,7 +363,7 @@ def cnlp_preprocess_data(
                                                  tokenizer.convert_tokens_to_ids('</e>'))
     else:
         logger.info("No implementation for character level event masking so setting result[event_mask] to None")
-        result['event_mask'] = None
+        result['event_mask'] = []
     if hierarchical:
         result = cnlp_convert_features_to_hierarchical(
             result,
