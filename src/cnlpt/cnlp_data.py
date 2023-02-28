@@ -301,13 +301,16 @@ def cnlp_preprocess_data(
     else:
         padding = 'max_length'
 
-    result = tokenizer(
-        sentences,
-        max_length=max_length,
-        padding=padding,
-        truncation=True,
-        is_split_into_words=not character_level,
-    )
+    try:
+        result = tokenizer(
+            sentences,
+            max_length=max_length,
+            padding=padding,
+            truncation=True,
+            is_split_into_words=not character_level,
+        )
+    except:
+        print(f"Issue with input: \n\n{sentences}")
 
     # Now that we have the labels for each instances, and we've tokenized the input sentences, 
     # we need to solve the problem of aligning labels with word piece indexes for the tasks of tagging
