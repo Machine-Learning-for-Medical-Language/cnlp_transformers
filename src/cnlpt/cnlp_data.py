@@ -310,8 +310,8 @@ def cnlp_preprocess_data(
             truncation=True,
             is_split_into_words=not character_level,
         )
-    except:
-        print(f"Issue with input: \n\n{sentences}")
+    except Exception as e:
+        print(f"Issue {e} given input: \n\n{sentences}")
 
     # Now that we have the labels for each instances, and we've tokenized the input sentences, 
     # we need to solve the problem of aligning labels with word piece indexes for the tasks of tagging
@@ -335,8 +335,10 @@ def cnlp_preprocess_data(
                 # labels is just a list of one label for each instance
             elif output_mode[task_ind] == tagging:
                 # really thought I had solved this but TODO -- find the root of the None literal mess and fix it once and for all
-                print(f"{raw_labels[task_ind]}")
-                task_labels = [ [label_map[task][label] for label in str(inst_labels).split()] for inst_labels in raw_labels[task_ind]]
+                try:
+                    task_labels = [ [label_map[task][label] for label in inst_labels.split()] for inst_labels in raw_labels[task_ind]]
+                except Exception as e:
+                    print(f"Exception {e} given task {task} of index {task_ind} with: \n\n {raw_labels[task_ind]}")
                 # labels is a list of lists, where each internal list is the set of tags for that instance.
             elif output_mode[task_ind] == relex:
                 for inst_rels in raw_labels[task_ind]:
