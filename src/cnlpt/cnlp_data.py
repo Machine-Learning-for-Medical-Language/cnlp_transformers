@@ -357,13 +357,18 @@ def cnlp_preprocess_data(
         # result['label'] =  [ (0,) for i in range(num_instances)]
 
     if not character_level:
-        result['event_mask'] = _build_event_mask(result, 
-                                                 num_instances,
-                                                 tokenizer.convert_tokens_to_ids('<e>'),
-                                                 tokenizer.convert_tokens_to_ids('</e>'))
+        result['event_mask'] = _build_event_mask_word_piece(
+            result, 
+            num_instances,
+            tokenizer.convert_tokens_to_ids('<e>'),
+            tokenizer.convert_tokens_to_ids('</e>'),
+        )
     else:
-        logger.info("No implementation for character level event masking so setting result[event_mask] to None")
-        result['event_mask'] = []
+        logging.warn("No real implementation for character level event masking yet, using a placeholder")
+        result['event_mask'] = _build_event_mask_character(
+            result, 
+            num_instances,
+        )
     if hierarchical:
         result = cnlp_convert_features_to_hierarchical(
             result,
@@ -554,7 +559,7 @@ def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, ou
     
     return labels_shaped
 
-def _build_event_mask(result:BatchEncoding, num_insts:int, event_start_token_id, event_end_token_id):
+def _build_event_mask_word_piece(result:BatchEncoding, num_insts:int, event_start_token_id, event_end_token_id):
 
     event_tokens = []
     for i in range(num_insts):
@@ -577,6 +582,16 @@ def _build_event_mask(result:BatchEncoding, num_insts:int, event_start_token_id,
         event_tokens.append(inst_event_tokens)
 
     return event_tokens
+
+def _build_event_mask_character(result:BatchEncoding, num_insts:int):
+    event_tokens = []
+    for i in range(num_insts):
+        input_ids = result['input_ids'][i]
+        inst_event_tokens = [1] * len(input_ids)
+        event_tokens.append(inst_event_tokens)
+
+    return event_tokens
+    
 
 def truncate_features(feature: Union[InputFeatures, HierarchicalInputFeatures]):
     """
