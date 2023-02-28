@@ -303,7 +303,8 @@ def cnlp_preprocess_data(
 
     try:
         result = tokenizer(
-            sentences,
+            # stupid adhoc for clingen
+            [*map(str, sentences)],
             max_length=max_length,
             padding=padding,
             truncation=True,
