@@ -54,7 +54,7 @@ from .cnlp_metrics import cnlp_compute_metrics
 
 from .CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
 from .BaselineModels import CnnSentenceClassifier, LstmSentenceClassifier
-from .HierarchicalTransformer import HierarchicalModel, HierarchicalTransformerConfig
+from .HierarchicalTransformer import HierarchicalModel#, HierarchicalTransformerConfig
 
 import requests
 
@@ -231,7 +231,8 @@ def is_hub_model(model_name):
 
     return False
 
-def main(json_file=None, json_obj=None):
+
+def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = None):
     """
     See all possible arguments in :class:`transformers.TrainingArguments`
     or by passing the --help flag to this script.
@@ -248,6 +249,9 @@ def main(json_file=None, json_obj=None):
     :return: the evaluation results (will be empty if ``--do_eval`` not passed)
     """
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, CnlpTrainingArguments))
+    model_args: ModelArguments
+    data_args: DataTrainingArguments
+    training_args: CnlpTrainingArguments
 
     if json_file is not None and json_obj is not None:
         raise ValueError('cannot specify json_file and json_obj')
@@ -376,24 +380,19 @@ def main(json_file=None, json_obj=None):
                 rel_attention_head_dims=model_args.head_features,
                 tagger=tagger,
                 relations=relations,
+                hier_head_config=dict(
+                    n_layers=model_args.hier_num_layers,
+                    d_inner=model_args.hier_hidden_dim,
+                    n_head=model_args.hier_n_head,
+                    d_k=model_args.hier_d_k,
+                    d_v=model_args.hier_d_v,
+                )
             )
             # num_tokens=len(tokenizer))
             config.vocab_size = len(tokenizer)
 
-            encoder_dim = config.hidden_size
-
-            transformer_head_config = HierarchicalTransformerConfig(
-                n_layers=model_args.hier_num_layers,
-                d_model=encoder_dim,
-                d_inner=model_args.hier_hidden_dim,
-                n_head=model_args.hier_n_head,
-                d_k=model_args.hier_d_k,
-                d_v=model_args.hier_d_v,
-            )
-
             model = HierarchicalModel(
                 config=config,
-                transformer_head_config=transformer_head_config,
                 class_weights=dataset.class_weights,
                 final_task_weight=training_args.final_task_weight,
                 freeze=training_args.freeze,
@@ -403,27 +402,17 @@ def main(json_file=None, json_obj=None):
             # use a checkpoint from an existing model
             AutoConfig.register("cnlpt", CnlpConfig)
             AutoModel.register(CnlpConfig, HierarchicalModel)
-            
+
             config = AutoConfig.from_pretrained(
                     encoder_name,
                     cache_dir=model_args.cache_dir,
                 )
-            encoder_dim = config.hidden_size
-            transformer_head_config = HierarchicalTransformerConfig(
-                n_layers=model_args.hier_num_layers,
-                d_model=encoder_dim,
-                d_inner=model_args.hier_hidden_dim,
-                n_head=model_args.hier_n_head,
-                d_k=model_args.hier_d_k,
-                d_v=model_args.hier_d_v,
-            )
 
             ## TODO: check if user overwrote parameters in command line that could change behavior of the model and warn
             #if data_args.chunk_len is not None:
-            
-            logger.info("Loading pre-trained hierarchical model...")
-            model = AutoModel.from_pretrained(encoder_name, config=config, transformer_head_config=transformer_head_config)
 
+            logger.info("Loading pre-trained hierarchical model...")
+            model = AutoModel.from_pretrained(encoder_name, config=config)
     else:
         # by default cnlpt model, but need to check which encoder they want
         encoder_name = model_args.encoder_name

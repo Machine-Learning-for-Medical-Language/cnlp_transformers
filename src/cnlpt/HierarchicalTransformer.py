@@ -4,7 +4,7 @@ Module containing the Hierarchical Transformer module, adapted from Xin Su.
 import logging
 import copy
 import random
-from typing import Optional, List
+from typing import Optional, List, cast
 
 import numpy as np
 from torch import nn
@@ -180,32 +180,6 @@ class EncoderLayer(nn.Module):
         return enc_output, enc_slf_attn
 
 
-class HierarchicalTransformerConfig(object):
-    """
-    Config object for hierarchical transformer's document-level encoder layers
-
-    Original author: Xin Su (https://github.com/xinsu626/DocTransformer)
-
-    Args:
-        n_layers: number of encoder layers
-        d_model: the dimensionality of the input and output of the encoder
-        d_inner: the inner hidden size of the positionwise FFN in the encoder
-        n_head: the number of attention heads
-        d_k: the size of the query and key vectors
-        d_v: the size of the value vector
-        dropout: the amount of dropout to use in training in both the
-          attention and FFN steps (default 0.1)
-    """
-    def __init__(self, n_layers, d_model, d_inner, n_head, d_k, d_v, dropout=0.1):
-        self.n_layers = n_layers
-        self.d_model = d_model
-        self.d_inner = d_inner
-        self.n_head = n_head
-        self.d_k = d_k
-        self.d_v = d_v
-        self.dropout = dropout
-
-
 class HierarchicalModel(CnlpModelForClassification):
     """
     Hierarchical Transformer model (https://arxiv.org/abs/2105.06752)
@@ -226,7 +200,6 @@ class HierarchicalModel(CnlpModelForClassification):
     def __init__(
         self,
         config: config_class,
-        transformer_head_config: HierarchicalTransformerConfig,
         *,
         class_weights: Optional[List[float]] = None,
         final_task_weight: float = 1.0,
@@ -242,19 +215,21 @@ class HierarchicalModel(CnlpModelForClassification):
             freeze=freeze,
         )
 
+        self.config = cast(CnlpConfig, self.config)  # for PyCharm
+
         # Document-level transformer layer
         transformer_layer = EncoderLayer(
-            d_model=transformer_head_config.d_model,
-            d_inner=transformer_head_config.d_inner,
-            n_head=transformer_head_config.n_head,
-            d_k=transformer_head_config.d_k,
-            d_v=transformer_head_config.d_v,
-            dropout=transformer_head_config.dropout,
+            d_model=self.config.hidden_size,
+            d_inner=self.config.hier_head_config.d_inner,
+            n_head=self.config.hier_head_config.n_head,
+            d_k=self.config.hier_head_config.d_k,
+            d_v=self.config.hier_head_config.d_v,
+            dropout=self.config.hier_head_config.dropout,
         )
         self.transformer = nn.ModuleList(
             [
                 copy.deepcopy(transformer_layer)
-                for _ in range(transformer_head_config.n_layers)
+                for _ in range(self.config.hier_head_config.n_layers)
             ]
         )
 
