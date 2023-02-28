@@ -335,10 +335,11 @@ def cnlp_preprocess_data(
                 # labels is just a list of one label for each instance
             elif output_mode[task_ind] == tagging:
                 # really thought I had solved this but TODO -- find the root of the None literal mess and fix it once and for all
-                try:
-                    task_labels = [ [label_map[task][label] for label in inst_labels.split()] for inst_labels in raw_labels[task_ind]]
-                except Exception as e:
-                    print(f"Exception {e} given task {task} of index {task_ind} with: \n\n {raw_labels[task_ind]}")
+                for inst_labels, inst in zip(raw_labels[task_ind], examples["text"]):
+                    try:
+                        task_labels.append([label_map[task][label] for label in inst_labels.split()]) 
+                    except Exception as e:
+                        print(f"Exception {e} given task {task} of index {task_ind} with: \n\n labels: \n {inst_labels} labels: \n {inst}")
                 # labels is a list of lists, where each internal list is the set of tags for that instance.
             elif output_mode[task_ind] == relex:
                 for inst_rels in raw_labels[task_ind]:
