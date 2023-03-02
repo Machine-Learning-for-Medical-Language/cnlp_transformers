@@ -540,6 +540,8 @@ def main(
                 if model_args.config_name
                 else model_args.encoder_name,
                 cache_dir=model_args.cache_dir,
+                # in this case we're looking at a fine-tuned model (?)
+                character_level=dara_args.character_level,
             )
 
             if training_args.do_train:
@@ -596,6 +598,7 @@ def main(
                 tagger=tagger,
                 relations=relations,
                 label_dictionary=dataset.get_labels(),
+                character_level=data_args.character_level,
                 # num_tokens=len(tokenizer),
             )
             config.vocab_size = len(tokenizer)
