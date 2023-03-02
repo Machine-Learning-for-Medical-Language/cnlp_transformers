@@ -492,7 +492,7 @@ def main(json_file=None, json_obj=None):
                                 tagger=tagger,
                                 relations=relations,
                                 # in this case we're looking at a raw pretrained model (?)
-                                character_level=dara_args.character_level,
+                                character_level=data_args.character_level,
                                 )
                                 #num_tokens=len(tokenizer))
             config.vocab_size = len(tokenizer)
