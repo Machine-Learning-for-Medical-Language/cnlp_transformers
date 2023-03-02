@@ -220,16 +220,16 @@ class HierarchicalModel(CnlpModelForClassification):
         # Document-level transformer layer
         transformer_layer = EncoderLayer(
             d_model=self.config.hidden_size,
-            d_inner=self.config.hier_head_config.d_inner,
-            n_head=self.config.hier_head_config.n_head,
-            d_k=self.config.hier_head_config.d_k,
-            d_v=self.config.hier_head_config.d_v,
-            dropout=self.config.hier_head_config.dropout,
+            d_inner=self.config.hier_head_config["d_inner"],
+            n_head=self.config.hier_head_config["n_head"],
+            d_k=self.config.hier_head_config["d_k"],
+            d_v=self.config.hier_head_config["d_v"],
+            dropout=self.config.hier_head_config["dropout"],
         )
         self.transformer = nn.ModuleList(
             [
                 copy.deepcopy(transformer_layer)
-                for _ in range(self.config.hier_head_config.n_layers)
+                for _ in range(self.config.hier_head_config["n_layers"])
             ]
         )
 
