@@ -120,19 +120,20 @@ class CnlpConfig(PretrainedConfig):
     model_type='cnlpt'
 
     def __init__(
-        self,
-        encoder_name='roberta-base',
-        finetuning_task=None,
-        num_labels_list=[],
-        layer=-1,
-        tokens=False,
-        num_rel_attention_heads=12,
-        rel_attention_head_dims=64,
-        tagger = [False],
-        relations = [False],
-        use_prior_tasks=False,
-        **kwargs
-     ):
+            self,
+            encoder_name='roberta-base',
+            finetuning_task=None,
+            num_labels_list=[],
+            layer=-1,
+            tokens=False,
+            num_rel_attention_heads=12,
+            rel_attention_head_dims=64,
+            tagger = [False],
+            relations = [False],
+            use_prior_tasks=False,
+            character_level=False,
+            **kwargs
+    ):
         super().__init__(**kwargs)
         # self.name_or_path='cnlpt'
         self.finetuning_task = finetuning_task
@@ -146,6 +147,7 @@ class CnlpConfig(PretrainedConfig):
         self.use_prior_tasks = use_prior_tasks
         self.encoder_name = encoder_name
         self.encoder_config = AutoConfig.from_pretrained(encoder_name).to_dict()
+        self.character_level = character_level
         if encoder_name.startswith('distilbert'):
             self.hidden_dropout_prob = self.encoder_config['dropout']
             self.hidden_size = self.encoder_config['dim']
@@ -194,7 +196,13 @@ class CnlpModelForClassification(PreTrainedModel):
         config.encoder_config = encoder_config.to_dict()
         encoder_model = AutoModel.from_config(encoder_config)
         self.encoder = encoder_model.from_pretrained(config.encoder_name)
-        self.encoder.resize_token_embeddings(encoder_config.vocab_size)
+        # part of the motivation for leaving this
+        # logic alone for character level models is that
+        # at the time of writing,  CANINE and Flair are the only game in town.
+        # CANINE's hashable embeddings for unicode codepoints allows for
+        # additional parameterization, which rn doesn't seem so relevant
+        if not config.character_level:
+            self.encoder.resize_token_embeddings(encoder_config.vocab_size)
 
         if config.layer > len(encoder_model.encoder.layer):
             raise ValueError('The layer specified (%d) is too big for the specified encoder which has %d layers' % (
@@ -222,7 +230,17 @@ class CnlpModelForClassification(PreTrainedModel):
         self.classifiers = nn.ModuleList()
         total_prev_task_labels = 0
         for task_ind,task_num_labels in enumerate(self.num_labels):
-            self.feature_extractors.append(RepresentationProjectionLayer(config, layer=config.layer, tokens=config.tokens, tagger=config.tagger[task_ind], relations=config.relations[task_ind], num_attention_heads=config.num_rel_attention_heads, head_size=config.rel_attention_head_dims))
+            self.feature_extractors.append(
+                RepresentationProjectionLayer(
+                    config,
+                    layer=config.layer,
+                    tokens=config.tokens,
+                    tagger=config.tagger[task_ind],
+                    relations=config.relations[task_ind],
+                    num_attention_heads=config.num_rel_attention_heads,
+                    head_size=config.rel_attention_head_dims
+                )
+            )
             if config.relations[task_ind]:
                 hidden_size = config.num_rel_attention_heads
                 if config.use_prior_tasks:

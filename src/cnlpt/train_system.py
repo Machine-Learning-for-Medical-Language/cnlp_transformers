@@ -443,6 +443,8 @@ def main(json_file=None, json_obj=None):
             config = AutoConfig.from_pretrained(
                 model_args.config_name if model_args.config_name else model_args.encoder_name,
                 cache_dir=model_args.cache_dir,
+                # in this case we're looking at a fine-tuned model (?)
+                character_level=dara_args.character_level,
             )
 
             if training_args.do_train:
@@ -488,7 +490,10 @@ def main(json_file=None, json_obj=None):
                                 num_rel_attention_heads=model_args.num_rel_feats,
                                 rel_attention_head_dims=model_args.head_features,
                                 tagger=tagger,
-                                relations=relations,)
+                                relations=relations,
+                                # in this case we're looking at a raw pretrained model (?)
+                                character_level=dara_args.character_level,
+                                )
                                 #num_tokens=len(tokenizer))
             config.vocab_size = len(tokenizer)
             pretrained = True
