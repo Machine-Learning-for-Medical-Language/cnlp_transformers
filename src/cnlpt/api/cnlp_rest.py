@@ -1,6 +1,7 @@
 
 # Core python imports
 import os
+import os.path
 
 # FastAPI imports
 from pydantic import BaseModel
@@ -70,6 +71,10 @@ def initialize_cnlpt_model(app, model_name, cuda=True, batch_size=8):
     AutoModel.register(CnlpConfig, CnlpModelForClassification)
 
     config = AutoConfig.from_pretrained(model_name)
+    
+    if 'concept_norm' in config.__dict__:
+        config.concept_norm = os.path.join(model_name, '..')
+
     app.state.tokenizer = AutoTokenizer.from_pretrained(model_name,
                                                   config=config)
     model = CnlpModelForClassification.from_pretrained(model_name, cache_dir=os.getenv('HF_CACHE'), config=config)

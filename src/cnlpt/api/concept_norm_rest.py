@@ -31,10 +31,9 @@ from transformers import (
 
 # from .api.cnlp_rest import get_dataset
 from datasets import Dataset
-from cnlp_data import cnlp_preprocess_data
 
 from ..CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
-from .cnlp_rest import  get_dataset
+from .cnlp_rest import  get_dataset, initialize_cnlpt_model
 import numpy as np
 import torch
 
@@ -42,48 +41,18 @@ import logging, os, json
 from time import time
 
 app = FastAPI()
-model_name = "/home/dongfangxu/Projects/cnlp_updated/src/cnlpt/model/share/checkpoint-57456/"
+model_name = "/lab-share/CHIP-Savova-e2/Public/resources/cnlpt/concept_norm/share/checkpoint-57456/"
 logger = logging.getLogger('Concept_Normalization_REST_Processor')
 logger.setLevel(logging.DEBUG)
 
 task = 'conceptnorm'
-with open(os.path.join('/home/dongfangxu/Projects/Concept_Norm/data/share/processed/e2_processed_new/','ontology_cui.txt'), 'r') as outfile:
+with open(os.path.join(model_name,"../ontology_cui.txt"), 'r') as outfile:
     labels = json.load(outfile)
+
 outfile.close()
 labels = labels + ["CUI-less"]
 
 max_length = 32
-
-def initialize_cnlpt_model(app, model_name, cuda=True, batch_size=8):
-    args = ['--output_dir', 'save_run/', '--per_device_eval_batch_size', str(batch_size), '--do_predict', '--report_to', 'none']
-    parser = HfArgumentParser((TrainingArguments,))
-    training_args, = parser.parse_args_into_dataclasses(args=args)
-
-    app.state.training_args = training_args
-
-    AutoConfig.register("cnlpt", CnlpConfig)
-    AutoModel.register(CnlpConfig, CnlpModelForClassification)
-
-    config = AutoConfig.from_pretrained(model_name)
-    config.concept_norm = None
-
-    app.state.tokenizer = AutoTokenizer.from_pretrained(model_name,
-                                                  config=config)
-    model = CnlpModelForClassification.from_pretrained(model_name, cache_dir=os.getenv('HF_CACHE'), config=config)
-    if cuda and not torch.cuda.is_available():
-        logging.warning('CUDA is set to True (probably a default) but was not available; setting to False and proceeding. If you have a GPU you need to debug why pytorch cannot see it.')
-        cuda = False
-    
-    if cuda:
-        model = model.to('cuda')
-    else:
-        model = model.to('cpu')
-
-    app.state.trainer = Trainer(
-        model=model,
-        args=app.state.training_args,
-        compute_metrics=None,
-    )
 
 class Entity(BaseModel):
     ''' doc_text: The raw text of the document
@@ -145,8 +114,7 @@ def rest():
     args = parser.parse_args()
 
     import uvicorn
-    uvicorn.run("concept_norm_rest:app", host='127.0.0.1', port=3456, reload=True)
-
+    uvicorn.run("cnlpt.api.concept_norm_rest:app", host='0.0.0.0', port=args.port, reload=True)
 
 if __name__ == '__main__':
     rest()
