@@ -220,6 +220,13 @@ class ModelArguments:
             )
         },
     )
+    hier_dropout: Optional[float] = field(
+        default=0.1,
+        metadata={
+            "help": "For the hierarchical model, the dropout probability for the "
+                    "document-level transformer layers"
+        }
+    )
 
 
 def is_hub_model(model_name):
@@ -386,6 +393,7 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
                     n_head=model_args.hier_n_head,
                     d_k=model_args.hier_d_k,
                     d_v=model_args.hier_d_v,
+                    dropout=model_args.hier_dropout,
                 )
             )
             # num_tokens=len(tokenizer))

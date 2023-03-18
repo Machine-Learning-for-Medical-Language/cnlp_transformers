@@ -217,6 +217,8 @@ class HierarchicalModel(CnlpModelForClassification):
 
         self.config = cast(CnlpConfig, self.config)  # for PyCharm
 
+        assert self.config.hier_head_config is not None, "Hierarchical model is being instantiated with no hierarchical head config"
+
         # Document-level transformer layer
         transformer_layer = EncoderLayer(
             d_model=self.config.hidden_size,
