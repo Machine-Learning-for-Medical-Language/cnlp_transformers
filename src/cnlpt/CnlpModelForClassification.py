@@ -78,7 +78,7 @@ class CosineLayer(nn.Module):
 
 
 class RepresentationProjectionLayer(nn.Module):
-    def __init__(self, config, layer=10, tokens=False, tagger=False, relations=False, conceptnorm=False,num_attention_heads=-1, head_size=64):
+    def __init__(self, config, layer=10, tokens=False, tagger=False, relations=False, skip_projection=False,num_attention_heads=-1, head_size=64):
         super().__init__()
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         if relations:
@@ -90,7 +90,7 @@ class RepresentationProjectionLayer(nn.Module):
         self.tokens = tokens
         self.tagger = tagger
         self.relations = relations
-        self.conceptnorm =  conceptnorm
+        self.skip_projection = skip_projection
         self.hidden_size = config.hidden_size
         
         if num_attention_heads <= 0 and relations:
@@ -138,10 +138,14 @@ class RepresentationProjectionLayer(nn.Module):
         else:
             # take <s> token (equiv. to [CLS])
             x = features[self.layer_to_use][..., 0, :]
-        if not self.conceptnorm:
+
+        # for normal classification we pass through a dense layer, for cosine layer
+        # classification we just grab the representation directly:
+        if not self.skip_projection:
             x = self.dropout(x)
             x = self.dense(x)
             x = torch.tanh(x)
+
         return x
 
 
@@ -191,7 +195,7 @@ class CnlpConfig(PretrainedConfig):
         self.use_prior_tasks = use_prior_tasks
         self.encoder_name = encoder_name
         self.encoder_config = AutoConfig.from_pretrained(encoder_name).to_dict()
-        self.concept_norm =  concept_norm
+        self.concept_norm = concept_norm
         if encoder_name.startswith('distilbert'):
             self.hidden_dropout_prob = self.encoder_config['dropout']
             self.hidden_size = self.encoder_config['dim']
@@ -269,7 +273,7 @@ class CnlpModelForClassification(PreTrainedModel):
         total_prev_task_labels = 0
         for task_ind,task_num_labels in enumerate(self.num_labels):
             conceptnorm = config.finetuning_task[task_ind] == "conceptnorm"
-            self.feature_extractors.append(RepresentationProjectionLayer(config, layer=config.layer, tokens=config.tokens, tagger=config.tagger[task_ind], relations=config.relations[task_ind], conceptnorm=conceptnorm, num_attention_heads=config.num_rel_attention_heads, head_size=config.rel_attention_head_dims))
+            self.feature_extractors.append(RepresentationProjectionLayer(config, layer=config.layer, tokens=config.tokens, tagger=config.tagger[task_ind], relations=config.relations[task_ind], skip_projection=conceptnorm, num_attention_heads=config.num_rel_attention_heads, head_size=config.rel_attention_head_dims))
             if config.relations[task_ind]:
                 hidden_size = config.num_rel_attention_heads
                 if config.use_prior_tasks:
