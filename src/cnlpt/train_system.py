@@ -120,6 +120,10 @@ class ModelArguments:
         default=False, metadata={"help": "Classify over an actual token rather than the [CLS] ('<s>') token -- requires that the tokens to be classified are surrounded by <e>/</e> tokens"}
     )
 
+    concept_norm_path: Optional[str] = field(
+        default=None, metadata={"help": "the path of pre-computed concept embeddings and cui-less threshold"}
+    )
+
     # NxN relation classifier-specific arguments
     num_rel_feats: Optional[int] = field(
         default=12, metadata={"help": "Number of features/attention heads to use in the NxN relation classifier"}
@@ -304,6 +308,8 @@ def main(json_file=None, json_obj=None):
 
     model_name = model_args.model
     hierarchical = model_name == 'hier'
+    conceptnorm_path = model_args.concept_norm_path
+
 
     # Get datasets
     dataset = (
@@ -481,6 +487,7 @@ def main(json_file=None, json_obj=None):
                     model_name = tempmodel.name
             else:
                 # setting 2) evaluate or make predictions
+                config.concept_norm = None
                 model = CnlpModelForClassification.from_pretrained(
                     model_args.encoder_name,
                     config=config,
@@ -503,7 +510,8 @@ def main(json_file=None, json_obj=None):
                                 num_rel_attention_heads=model_args.num_rel_feats,
                                 rel_attention_head_dims=model_args.head_features,
                                 tagger=tagger,
-                                relations=relations,)
+                                relations=relations,
+                                concept_norm=conceptnorm_path,)
                                 #num_tokens=len(tokenizer))
             config.vocab_size = len(tokenizer)
             model = CnlpModelForClassification(
@@ -691,6 +699,7 @@ def main(json_file=None, json_obj=None):
     if training_args.do_predict:
         logging.info("*** Test ***")
         test_dataset=dataset.datasets[0]['test']
+        dataset_labels = dataset.get_labels()[0]
         # FIXME: this part hasn't been updated for the MTL setup so it doesn't work anymore since
         # predictions is generalized to be a list of predictions and the output needs to be different for each kin.
         # maybe it's ok to only handle classification since it has a very straightforward output format and evaluation,
@@ -709,7 +718,8 @@ def main(json_file=None, json_obj=None):
                 with open(output_test_file, "w") as writer:
                     logger.info("***** Test results *****")
                     for index, item in enumerate(task_predictions):
-                        item = test_dataset.get_labels()[task_name][item]
+                        item = dataset_labels[task_name][item]
+                        # item = test_dataset.get_labels()[task_name][item]
                         writer.write("%s\n" % (item))
 
     return eval_results

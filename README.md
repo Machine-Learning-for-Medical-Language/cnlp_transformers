@@ -112,6 +112,22 @@ We provided the following step-by-step examples how to finetune in clinical NLP 
 #### 2. [Sequence tagging task](examples/chemprot/): using [ChemProt website](https://biocreative.bioinformatics.udel.edu/news/corpora/chemprot-corpus-biocreative-vi/)
 
 
+### Fine-tuning for concept normalization: End-to-end example
+1. Prepare the concept normalization input data (train.tsv, dev.tsv, and test.tsv) use following format (.tsv file).  
+
+| text | conceptnorm |
+| --- | --- |
+| <e> pleural effusion </e> | C0032227 |
+| <e> pulmonary consolidation </e> | C0521530 |
+| <e> aorta tortuous </e> | CUI-less |
+
+2. Prepare ontology cui text file (.txt), each line of the file will be a CUI.
+
+3. Prepare concept embeddings .npy file, and save it into a folder $concept_norm_path (a giant matrix with each row correspoding to the embeddings of each CUI, the order of the CUI embeddings follows the order of the ontology cui text file).
+
+4. Fine-tune with something like:
+```python -m cnlpt.train_system # --do_train --do_eval --task_name conceptnorm --data_dir cnlp_concept_norm/ --encoder_name cambridgeltl/SapBERT-from-PubMedBERT-fulltext-mean-token --output_dir temp/ --concept_norm_path $concept_norm_path --overwrite_output_dir --cache cache --token true --num_train_epochs 5 --learning_rate 3e-5 --per_device_train_batch_size 64 --max_seq_length 16 --layer 12 --seed 24 --evals_per_epoch 1``` 
+
 ### Fine-tuning options
 Run ```python -m cnlpt.train_system -h``` to see all the available options. In addition to inherited Huggingface Transformers options, there are options to do the following:
 * Run simple baselines (use ``--model cnn --tokenizer_name roberta-base`` -- since there is no HF model then you must specify the tokenizer explicitly)
