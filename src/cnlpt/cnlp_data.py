@@ -105,7 +105,7 @@ def cnlp_convert_features_to_hierarchical(
         # cls_token_segment_id=0,
         # pad_token_segment_id=0,
         # use_special_token=True,
-) -> HierarchicalInputFeatures:
+) -> BatchEncoding:
     """
     Chunk an instance of InputFeatures into an instance of HierarchicalInputFeatures
     for the hierarchical model.
@@ -131,7 +131,6 @@ def cnlp_convert_features_to_hierarchical(
         if not token_type_ids_ is None:
             token_type_ids_ = token_type_ids_[ind]
         event_tokens_ = features['event_mask'][ind]
-        label_ = features['label'][ind]
 
         assert len(input_ids_) == len(attention_mask_) == len(event_tokens_)
 
@@ -227,10 +226,8 @@ def cnlp_convert_features_to_hierarchical(
         if not token_type_ids_ is None:
             features['token_type_ids'][ind] = chunks_token_type_ids
         features['event_mask'][ind] = chunks_event_tokens
-        features['label'][ind] = label_
 
     return features
-    #return HierarchicalInputFeatures(chunks, chunks_attention_mask, chunks_token_type_ids, chunks_event_tokens, label_)
 
 
 def cnlp_preprocess_data(

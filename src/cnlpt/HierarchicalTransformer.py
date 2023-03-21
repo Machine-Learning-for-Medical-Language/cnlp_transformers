@@ -268,7 +268,7 @@ class HierarchicalModel(CnlpModelForClassification):
         inputs_embeds=None,
         labels=None,
         output_attentions=None,
-        output_hidden_states=None,
+        output_hidden_states=False,
         event_tokens=None,
     ):
         """
@@ -293,7 +293,7 @@ class HierarchicalModel(CnlpModelForClassification):
                 If `self.num_labels[task_ind] == 1` a regression loss is computed (Mean-Square loss),
                 If `self.num_labels[task_ind] > 1` a classification loss is computed (Cross-Entropy).
             output_attentions (`bool`, *optional*): Whether or not to return the attentions tensors of all attention layers.
-            output_hidden_states: not used.
+            output_hidden_states: If True, return a matrix of shape (batch_size, num_chunks, hidden size) representing the contextualized embeddings of each chunk. The 0-th element of each chunk is the classifier representation for that instance.
             event_tokens: not currently used (only relevant for token classification)
 
         Returns:
@@ -333,6 +333,7 @@ class HierarchicalModel(CnlpModelForClassification):
         )
 
         logits = []
+        hidden_states = None
 
         state = dict(loss=None, task_label_ind=0)
 
@@ -385,6 +386,9 @@ class HierarchicalModel(CnlpModelForClassification):
             # extract first Documents as rep. (B, hidden_size)
             doc_rep = chunks_reps[:, 0, :]
 
+            if output_hidden_states:
+                hidden_states = chunks_reps
+
             # predict (B, 5)
             task_logits = self.classifiers[task_ind](doc_rep)
             logits.append(task_logits)
@@ -418,4 +422,4 @@ class HierarchicalModel(CnlpModelForClassification):
                 attentions=outputs.attentions,
             )
         else:
-            return SequenceClassifierOutput(loss=state["loss"], logits=logits)
+            return SequenceClassifierOutput(loss=state["loss"], logits=logits, hidden_states=hidden_states)
