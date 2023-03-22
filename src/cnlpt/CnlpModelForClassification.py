@@ -21,6 +21,19 @@ import random
 
 logger = logging.getLogger(__name__)
 
+def generalize_encoder_forward_kwargs(encoder, **kwargs: Any) -> Dict[str, Any]:
+    new_kwargs = dict()
+    params = inspect.signature(encoder.forward).parameters
+    for name, value in kwargs.items():
+        if name not in params and value is not None:
+            # Warn if a contentful parameter is not valid
+            logger.warning(f"Parameter {name} not present for encoder class {encoder.__class__.__name__}.")
+        elif name in params:
+            # Pass all, and only, parameters that are valid,
+            # regardless of whether they are None
+            new_kwargs[name] = value
+        # else, value is None and not in params, so we ignore it
+    return new_kwargs
 
 class ClassificationHead(nn.Module):
     def __init__(self, config, num_labels, hidden_size=-1):
@@ -399,20 +412,6 @@ class CnlpModelForClassification(PreTrainedModel):
 
         state["loss"] += self.argument_regularization * prob_rel_no_ent.sum()
 
-    def generalize_encoder_forward_kwargs(self, **kwargs: Any) -> Dict[str, Any]:
-        new_kwargs = dict()
-        params = inspect.signature(self.encoder.forward).parameters
-        for name, value in kwargs.items():
-            if name not in params and value is not None:
-                # Warn if a contentful parameter is not valid
-                logger.warning(f"Parameter {name} not present for encoder class {self.encoder.__class__.__name__}.")
-            elif name in params:
-                # Pass all, and only, parameters that are valid,
-                # regardless of whether they are None
-                new_kwargs[name] = value
-            # else, value is None and not in params, so we ignore it
-        return new_kwargs
-
     def forward(
         self,
         input_ids=None,
@@ -454,7 +453,8 @@ class CnlpModelForClassification(PreTrainedModel):
         Returns: (`transformers.SequenceClassifierOutput`) the output of the model
         """
 
-        kwargs = self.generalize_encoder_forward_kwargs(
+        kwargs = generalize_encoder_forward_kwargs(
+            self.encoder,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
             position_ids=position_ids,
