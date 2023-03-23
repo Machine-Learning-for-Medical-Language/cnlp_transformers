@@ -16,6 +16,7 @@ from transformers.tokenization_utils import PreTrainedTokenizer
 from datasets import Features
 from dataclasses import dataclass, field, asdict, astuple
 from enum import Enum
+from warned_dataclasses import Warned, warned
 
 from .cnlp_processors import classification, tagging, relex, mtl, AutoProcessor
 
@@ -532,6 +533,7 @@ def truncate_list_of_lists(li: Union[list, str]) -> Union[list, str]:
         return li
 
 
+@warned(error=True)
 @dataclass
 class DataTrainingArguments:
     """
@@ -572,11 +574,11 @@ class DataTrainingArguments:
                                          "of the rarest class."}
     )
 
-    chunk_len: Optional[int] = field(default=None, metadata={"help": "Chunk length for hierarchical model"})
+    chunk_len: Warned[int, "hier"] = field(default=None, metadata={"help": "Chunk length for hierarchical model"})
 
-    num_chunks: Optional[int] = field(default=None, metadata={"help": "Max chunk count for hierarchical model"})
+    num_chunks: Warned[int, "hier"] = field(default=None, metadata={"help": "Max chunk count for hierarchical model"})
 
-    insert_empty_chunk_at_beginning: bool = field(default=False, metadata={
+    insert_empty_chunk_at_beginning: Warned[bool, "hier"] = field(default=False, metadata={
         "help": "Whether to insert an empty chunk for hierarchical model"
     })
 

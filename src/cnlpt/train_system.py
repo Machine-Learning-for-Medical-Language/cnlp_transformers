@@ -47,8 +47,9 @@ from torch.optim import AdamW
 from transformers.trainer_pt_utils import get_parameter_names
 from transformers.file_utils import CONFIG_NAME
 from huggingface_hub import hf_hub_url
+from warned_dataclasses import Warned, warned, ConditionSet
 
-from .cnlp_processors import tagging, relex, classification
+from .cnlp_processors import tagging, relex, classification, mtl
 from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
 from .cnlp_metrics import cnlp_compute_metrics
 
@@ -69,6 +70,8 @@ cnlpt_models = ['cnn', 'lstm', 'hier', 'cnlpt']
 
 logger = logging.getLogger(__name__)
 
+
+@warned(error=True)
 @dataclass
 class CnlpTrainingArguments(TrainingArguments):
     """
@@ -92,6 +95,8 @@ class CnlpTrainingArguments(TrainingArguments):
         default=False, metadata={"help": "Only optimize the bias parameters of the encoder (and the weights of the classifier heads), as proposed in the BitFit paper by Ben Zaken et al. 2021 (https://arxiv.org/abs/2106.10199)"}
     )
 
+
+@warned(error=True)
 @dataclass
 class ModelArguments:
     """
@@ -121,21 +126,21 @@ class ModelArguments:
     )
 
     # NxN relation classifier-specific arguments
-    num_rel_feats: Optional[int] = field(
+    num_rel_feats: Warned[int, relex] = field(
         default=12, metadata={"help": "Number of features/attention heads to use in the NxN relation classifier"}
     )
-    head_features: Optional[int] = field(
+    head_features: Warned[int, relex] = field(
         default=64, metadata={"help": "Number of parameters in each attention head in the NxN relation classifier"}
     )
 
     # CNN-specific arguments
-    cnn_embed_dim: Optional[int] = field(
+    cnn_embed_dim: Warned[int, "cnn"] = field(
         default=100,
         metadata={
             'help': "For the CNN baseline model, the size of the word embedding space."
         }
     )
-    cnn_num_filters: Optional[int] = field(
+    cnn_num_filters: Warned[int, "cnn"] = field(
         default=25,
         metadata={
             'help': (
@@ -145,7 +150,7 @@ class ModelArguments:
         }
     )
 
-    cnn_filter_sizes: Optional[List[int]] = field(
+    cnn_filter_sizes: Warned[List[int], "cnn"] = field(
         default_factory=lambda: [1, 2, 3],
         metadata={
             "help": (
@@ -156,13 +161,13 @@ class ModelArguments:
     )
 
     # LSTM-specific arguments
-    lstm_embed_dim: Optional[int] = field(
+    lstm_embed_dim: Warned[int, "lstm"] = field(
         default=100,
         metadata={
             'help': "For the LSTM baseline model, the size of the word embedding space."
         }
     )
-    lstm_hidden_size: Optional[int] = field(
+    lstm_hidden_size: Warned[int, "lstm"] = field(
         default=100,
         metadata={
             "help": "For the LSTM baseline model, the hidden size of the LSTM layer"
@@ -170,12 +175,12 @@ class ModelArguments:
     )
 
     # Multi-task classifier-specific arguments
-    use_prior_tasks: bool = field(
+    use_prior_tasks: Warned[bool, mtl] = field(
         default=False, metadata={"help": "In the multi-task setting, incorporate the logits from the previous tasks into subsequent representation layers. This will be done in the task order specified in the command line."}
     )
 
     # Hierarchical Transformer-specific arguments
-    hier_num_layers: Optional[int] = field(
+    hier_num_layers: Warned[int, "hier"] = field(
         default=2,
         metadata={
             "help": (
@@ -184,7 +189,7 @@ class ModelArguments:
             )
         },
     )
-    hier_hidden_dim: Optional[int] = field(
+    hier_hidden_dim: Warned[int, "hier"] = field(
         default=2048,
         metadata={
             "help": (
@@ -193,7 +198,7 @@ class ModelArguments:
             )
         },
     )
-    hier_n_head: Optional[int] = field(
+    hier_n_head: Warned[int, "hier"] = field(
         default=8,
         metadata={
             "help": (
@@ -202,7 +207,7 @@ class ModelArguments:
             )
         },
     )
-    hier_d_k: Optional[int] = field(
+    hier_d_k: Warned[int, "hier"] = field(
         default=8,
         metadata={
             "help": (
@@ -211,7 +216,7 @@ class ModelArguments:
             )
         },
     )
-    hier_d_v: Optional[int] = field(
+    hier_d_v: Warned[int, "hier"] = field(
         default=96,
         metadata={
             "help": (
@@ -231,6 +236,7 @@ def is_hub_model(model_name):
 
     return False
 
+
 def main(json_file=None, json_obj=None):
     """
     See all possible arguments in :class:`transformers.TrainingArguments`
@@ -248,6 +254,9 @@ def main(json_file=None, json_obj=None):
     :return: the evaluation results (will be empty if ``--do_eval`` not passed)
     """
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, CnlpTrainingArguments))
+    model_args: ModelArguments
+    data_args: DataTrainingArguments
+    training_args: CnlpTrainingArguments
 
     if json_file is not None and json_obj is not None:
         raise ValueError('cannot specify json_file and json_obj')
@@ -262,6 +271,8 @@ def main(json_file=None, json_obj=None):
         model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+
+    warning_conditions = ConditionSet(model_args, data_args, training_args)
 
     if (
         os.path.exists(training_args.output_dir)
@@ -303,11 +314,14 @@ def main(json_file=None, json_obj=None):
     )
 
     model_name = model_args.model
-    hierarchical = model_name == 'hier'
+
+    for s in ["cnn", "lstm", "hier"]:
+        if model_name == s:
+            warning_conditions.satisfy(s)
 
     # Get datasets
     dataset = (
-        ClinicalNlpDataset(data_args, tokenizer=tokenizer, cache_dir=model_args.cache_dir, hierarchical=hierarchical,)
+        ClinicalNlpDataset(data_args, tokenizer=tokenizer, cache_dir=model_args.cache_dir, hierarchical=model_name == "hier",)
     )
 
     try:
@@ -319,7 +333,8 @@ def main(json_file=None, json_obj=None):
         tasks_to_processors = {}
         for dataset_ind in range(len(data_args.data_dir)):
             processor = dataset.processors[dataset_ind]
-            # if processor.get_num_tasks() > 1:
+            if processor.get_num_tasks() > 1:
+                warning_conditions.satisfy(mtl)
             for subtask_num in range(processor.get_num_tasks()):
                 task_names.append(processor.get_classifiers()[subtask_num])
                 num_labels.append(len(processor.get_labels()[task_names[-1]]))
@@ -336,6 +351,11 @@ def main(json_file=None, json_obj=None):
 
     except KeyError:
         raise ValueError("Task not found: %s" % (data_args.task_name))
+
+    if any(relations):
+        warning_conditions.satisfy(relex)
+
+    warning_conditions.warn_all()
 
     # Load pretrained model and tokenizer
     #
