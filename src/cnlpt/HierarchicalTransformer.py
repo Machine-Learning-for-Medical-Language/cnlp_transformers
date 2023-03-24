@@ -221,7 +221,6 @@ class HierarchicalModel(PreTrainedModel):
         transformer_head_config:
         class_weights:
         final_task_weight:
-        argument_regularization:
         freeze:
     """
     base_model_prefix = "hier"
@@ -346,8 +345,6 @@ class HierarchicalModel(PreTrainedModel):
 
         logits = []
         hidden_states = None
-
-        state = dict(loss=None, task_label_ind=0)
 
         # outputs.last_hidden_state.shape: (B * n_chunks, chunk_len, hidden_size)
         # (B * n_chunk, hidden_size)
