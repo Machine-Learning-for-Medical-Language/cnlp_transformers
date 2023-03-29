@@ -16,7 +16,7 @@ from transformers.modeling_outputs import SequenceClassifierOutput
 from transformers.modeling_utils import PreTrainedModel
 from transformers import AutoModel, AutoConfig
 
-from .CnlpModelForClassification import CnlpConfig, ClassificationHead, generalize_encoder_forward_kwargs
+from .CnlpModelForClassification import CnlpConfig, ClassificationHead, generalize_encoder_forward_kwargs, freeze_encoder_weights
 
 logger = logging.getLogger(__name__)
 
@@ -231,6 +231,7 @@ class HierarchicalModel(PreTrainedModel):
         config: config_class,
         transformer_head_config: HierarchicalTransformerConfig,
         *,
+        freeze: float = -1.0,
         class_weights: Optional[List[float]] = None,
     ):
         # Initialize common components
@@ -244,6 +245,16 @@ class HierarchicalModel(PreTrainedModel):
         encoder_model = AutoModel.from_config(encoder_config)
         self.encoder = encoder_model.from_pretrained(config.encoder_name)
         self.encoder.resize_token_embeddings(encoder_config.vocab_size)
+
+        if config.layer > transformer_head_config.n_layers:
+            raise ValueError('The layer specified (%d) is too big for the specified chunk transformer which has %d layers' % (
+                config.layer,
+                transformer_head_config.n_layers
+            ))
+        self.layer = config.layer
+
+        if freeze > 0:
+            freeze_encoder_weights(self.encoder, freeze)
 
         self.num_labels = config.num_labels_list
 
@@ -267,6 +278,10 @@ class HierarchicalModel(PreTrainedModel):
         for task_num_labels in self.num_labels:
             self.classifiers.append(ClassificationHead(config, task_num_labels))
 
+        if class_weights is None:
+            self.class_weights = [None] * len(self.classifiers)
+        else:
+            self.class_weights = class_weights
 
     def forward(
         self,
@@ -363,8 +378,15 @@ class HierarchicalModel(PreTrainedModel):
         chunks_reps = chunks_reps + position_embeddings
 
         # document encoding (B, n_chunk, hidden_size)
-        for layer_module in self.transformer:
+        for layer_ind, layer_module in enumerate(self.transformer):
             chunks_reps, _ = layer_module(chunks_reps)
+
+            ## this case is mainly for when we are doing subsequent fine-tuning using a pre-trained
+            ## hierarchical model and we want to check whether an earlier layer might provide better
+            ## classification performance (e.g., if we think the last layer(s) are overfit to the pre-training
+            ## objective) Just short circuit rather than doing the whole computation.
+            if layer_ind+1 >= self.layer:
+                break
 
         if output_hidden_states:
             hidden_states = chunks_reps
@@ -372,9 +394,13 @@ class HierarchicalModel(PreTrainedModel):
         # extract first Documents as rep. (B, hidden_size)
         doc_rep = chunks_reps[:, 0, :]
 
-        loss_fct = CrossEntropyLoss()
         total_loss = 0
         for task_ind, task_num_labels in enumerate(self.num_labels):
+            if not self.class_weights[task_ind] is None:
+                class_weights = torch.FloatTensor(self.class_weights[task_ind]).to(self.device)
+            else:
+                class_weights = None
+            loss_fct = CrossEntropyLoss(weight=class_weights)
 
             # predict (B, 5)
             task_logits = self.classifiers[task_ind](doc_rep)

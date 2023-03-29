@@ -395,6 +395,7 @@ def main(json_file=None, json_obj=None):
                 config=config,
                 transformer_head_config=transformer_head_config,
                 class_weights=dataset.class_weights,
+                freeze=training_args.freeze,
             )
         else:
             # use a checkpoint from an existing model
