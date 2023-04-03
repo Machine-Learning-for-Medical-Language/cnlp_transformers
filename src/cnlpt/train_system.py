@@ -402,9 +402,7 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
             model = HierarchicalModel(
                 config=config,
                 class_weights=dataset.class_weights,
-                final_task_weight=training_args.final_task_weight,
                 freeze=training_args.freeze,
-                argument_regularization=training_args.arg_reg,
             )
         else:
             # use a checkpoint from an existing model

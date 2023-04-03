@@ -92,7 +92,7 @@ def relation_metrics(processor, preds, labels, task_name):
     # are set to -100 so pytorch loss functions ignore them. We need to make sure the
     # scorer also ignores them.
     relevant_inds = np.where(labels != -100)
-    relevant_labels = labels[relevant_inds]
+    relevant_labels = labels[relevant_inds].astype('int')
     relevant_preds = preds[relevant_inds]
 
     num_correct = (relevant_labels == relevant_preds).sum()

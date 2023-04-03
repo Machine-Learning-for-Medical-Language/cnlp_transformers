@@ -21,8 +21,33 @@ import random
 
 logger = logging.getLogger(__name__)
 
+def generalize_encoder_forward_kwargs(encoder, **kwargs: Any) -> Dict[str, Any]:
+    new_kwargs = dict()
+    params = inspect.signature(encoder.forward).parameters
+    for name, value in kwargs.items():
+        if name not in params and value is not None:
+            # Warn if a contentful parameter is not valid
+            logger.warning(f"Parameter {name} not present for encoder class {encoder.__class__.__name__}.")
+        elif name in params:
+            # Pass all, and only, parameters that are valid,
+            # regardless of whether they are None
+            new_kwargs[name] = value
+        # else, value is None and not in params, so we ignore it
+    return new_kwargs
+
+def freeze_encoder_weights(encoder, freeze):
+    for param in encoder.parameters():
+        if freeze >= 1.0:
+            param.requires_grad = False
+        else:
+            dart = random.random()
+            if dart < freeze:
+                param.requires_grad = False
 
 class ClassificationHead(nn.Module):
+    """
+    Generic classification head that can be used for any task.
+    """
     def __init__(self, config, num_labels, hidden_size=-1):
         super().__init__()
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
@@ -35,6 +60,17 @@ class ClassificationHead(nn.Module):
 
 
 class RepresentationProjectionLayer(nn.Module):
+    """
+    The class that maps from some output from a text encoder into a feature representation that can be classified.
+    Project the representation to a new space depending on the task type, based on arguments passed in to the constructor.
+    :param config - The config file for the encoder
+    :param layer - Which layer to pull the encoder representation from
+    :param tokens - Whether to classify an entity based on the token reprsentation rather than the CLS representation
+    :param tagger - Whether the current task is a token tagging task
+    :param relations - Whether the current task is relation exttraction
+    :param num_attention_heads - For relations, how many "features" to use
+    :param head_size - For relations, how big each head should be
+    """
     def __init__(self, config, layer=10, tokens=False, tagger=False, relations=False, num_attention_heads=-1, head_size=64):
         super().__init__()
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
@@ -185,7 +221,7 @@ class CnlpModelForClassification(PreTrainedModel):
                  class_weights: Optional[List[float]] = None,
                  final_task_weight: float = 1.0,
                  argument_regularization: float = -1,
-                 freeze=False,
+                 freeze: float = -1.0,
                  bias_fit=False,
                  ):
 
@@ -206,14 +242,8 @@ class CnlpModelForClassification(PreTrainedModel):
         self.num_labels = config.num_labels_list
         
         if freeze > 0:
-            for param in self.encoder.parameters():
-                if freeze >= 1.0:
-                    param.requires_grad = False
-                else:
-                    dart = random.random()
-                    if dart < freeze:
-                        param.requires_grad = False
-        
+            freeze_encoder_weights(self.encoder, freeze)
+
         if bias_fit:
             for name, param in self.encoder.named_parameters():
                 if not 'bias' in name:
@@ -401,20 +431,6 @@ class CnlpModelForClassification(PreTrainedModel):
 
         state["loss"] += self.argument_regularization * prob_rel_no_ent.sum()
 
-    def generalize_encoder_forward_kwargs(self, **kwargs: Any) -> Dict[str, Any]:
-        new_kwargs = dict()
-        params = inspect.signature(self.encoder.forward).parameters
-        for name, value in kwargs.items():
-            if name not in params and value is not None:
-                # Warn if a contentful parameter is not valid
-                logger.warning(f"Parameter {name} not present for encoder class {self.encoder.__class__.__name__}.")
-            elif name in params:
-                # Pass all, and only, parameters that are valid,
-                # regardless of whether they are None
-                new_kwargs[name] = value
-            # else, value is None and not in params, so we ignore it
-        return new_kwargs
-
     def forward(
         self,
         input_ids=None,
@@ -456,7 +472,8 @@ class CnlpModelForClassification(PreTrainedModel):
         Returns: (`transformers.SequenceClassifierOutput`) the output of the model
         """
 
-        kwargs = self.generalize_encoder_forward_kwargs(
+        kwargs = generalize_encoder_forward_kwargs(
+            self.encoder,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
             position_ids=position_ids,
