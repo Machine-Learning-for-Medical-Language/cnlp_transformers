@@ -71,7 +71,7 @@ cnlpt_models = ['cnn', 'lstm', 'hier', 'cnlpt']
 logger = logging.getLogger(__name__)
 
 
-@warned(error=True)
+@warned(error=True, warn_on_default=False)
 @dataclass
 class CnlpTrainingArguments(TrainingArguments):
     """
@@ -96,7 +96,7 @@ class CnlpTrainingArguments(TrainingArguments):
     )
 
 
-@warned(error=True)
+@warned(error=True, warn_on_default=False)
 @dataclass
 class ModelArguments:
     """

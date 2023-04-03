@@ -533,7 +533,7 @@ def truncate_list_of_lists(li: Union[list, str]) -> Union[list, str]:
         return li
 
 
-@warned(error=True)
+@warned(error=True, warn_on_default=False)
 @dataclass
 class DataTrainingArguments:
     """
