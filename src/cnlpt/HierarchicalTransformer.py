@@ -216,24 +216,24 @@ class HierarchicalModel(PreTrainedModel):
 
         assert self.config.hier_head_config is not None, "Hierarchical model is being instantiated with no hierarchical head config"
 
-        encoder_config = AutoConfig.from_pretrained(config.encoder_name)
-        encoder_config.vocab_size = config.vocab_size
-        config.encoder_config = encoder_config.to_dict()
+        encoder_config = AutoConfig.from_pretrained(self.config.encoder_name)
+        encoder_config.vocab_size = self.config.vocab_size
+        self.config.encoder_config = encoder_config.to_dict()
         encoder_model = AutoModel.from_config(encoder_config)
-        self.encoder = encoder_model.from_pretrained(config.encoder_name)
+        self.encoder = encoder_model.from_pretrained(self.config.encoder_name)
         self.encoder.resize_token_embeddings(encoder_config.vocab_size)
 
-        if config.layer > transformer_head_config.n_layers:
+        if self.config.layer > self.config.hier_head_config["n_layers"]:
             raise ValueError('The layer specified (%d) is too big for the specified chunk transformer which has %d layers' % (
-                config.layer,
-                transformer_head_config.n_layers
+                self.config.layer,
+                self.config.hier_head_config["n_layers"]
             ))
-        self.layer = config.layer
+        self.layer = self.config.layer
 
         if freeze > 0:
             freeze_encoder_weights(self.encoder, freeze)
 
-        self.num_labels = config.num_labels_list
+        self.num_labels = self.config.num_labels_list
 
         # Document-level transformer layer
         transformer_layer = EncoderLayer(
@@ -253,7 +253,7 @@ class HierarchicalModel(PreTrainedModel):
 
         self.classifiers = nn.ModuleList()
         for task_num_labels in self.num_labels:
-            self.classifiers.append(ClassificationHead(config, task_num_labels))
+            self.classifiers.append(ClassificationHead(self.config, task_num_labels))
 
         if class_weights is None:
             self.class_weights = [None] * len(self.classifiers)
