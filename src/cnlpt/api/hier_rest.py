@@ -49,7 +49,7 @@ async def get_representation(doc: UnannotatedDocument):
     
     # Convert to a list so python can send it out
     hidden_states = result['hidden_states'].to('cpu').detach().numpy()[:,0,:].tolist()
-    return {'reps': hidden_states}
+    return {'reps': hidden_states[0]}
 
 def rest():
     import argparse
@@ -59,7 +59,7 @@ def rest():
     args = parser.parse_args()
 
     import uvicorn
-    uvicorn.run("cnlpt.api.hier_rest:app", host='0.0.0.0', port=args.port, reload=True)
+    uvicorn.run("cnlpt.api.hier_rest:app", host='0.0.0.0', port=args.port, reload=False)
 
 
 if __name__ == '__main__':
