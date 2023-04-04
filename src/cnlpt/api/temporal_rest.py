@@ -43,6 +43,9 @@ event_label_dict = { val:ind for ind,val in enumerate(event_label_list)}
 relation_label_list = ['None', 'CONTAINS', 'OVERLAP', 'BEFORE', 'BEGINS-ON', 'ENDS-ON']
 relation_label_dict = { val:ind for ind,val in enumerate(relation_label_list)}
 
+dtr_label_list = ["AFTER", "BEFORE", "BEFORE/OVERLAP", "OVERLAP"]
+old_dtr_label_list = ["BEFORE", "OVERLAP", "BEFORE/OVERLAP", "AFTER"]
+
 tasks = ['timex', 'event', 'tlinkx']
 labels = [ timex_label_list, event_label_list, relation_label_list]
 max_length = 128

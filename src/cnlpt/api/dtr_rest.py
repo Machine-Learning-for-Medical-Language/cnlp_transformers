@@ -21,8 +21,8 @@ from typing import List
 from time import time
 
 from ..CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
-from ..cnlp_processors import DtrProcessor
-from .cnlp_rest import EntityDocument, ClassificationDocumentDataset, initialize_cnlpt_model, create_instance_string
+from .cnlp_rest import EntityDocument, initialize_cnlpt_model, create_instance_string, get_dataset
+from .temporal_rest import dtr_label_list, old_dtr_label_list
 
 from transformers import (
     AutoConfig,
@@ -58,15 +58,17 @@ async def process(doc: EntityDocument):
     instances = []
     start_time = time()
 
+    if len(doc.entities) == 0:
+        return DocTimeRelResults(statuses=[])
+
     for ent_ind, offsets in enumerate(doc.entities):
         # logger.debug('Entity ind: %d has offsets (%d, %d)' % (ent_ind, offsets[0], offsets[1]))
         inst_str = create_instance_string(doc_text, offsets)
         logger.debug('Instance string is %s' % (inst_str))
         instances.append(inst_str)
 
-    dataset = ClassificationDocumentDataset.from_instance_list(instances, 
-                                                                app.state.tokenizer, 
-                                                                label_list=DtrProcessor().get_labels())
+    dataset = get_dataset(instances, app.state.tokenizer, label_lists=[old_dtr_label_list], tasks=['dtr'], max_length=max_length)
+
     preproc_end = time()
 
     output = app.state.trainer.predict(test_dataset=dataset)
@@ -77,7 +79,7 @@ async def process(doc: EntityDocument):
 
     results = []
     for ent_ind in range(len(dataset)):
-        results.append(dataset.get_labels()[predictions[ent_ind]])
+        results.append(old_dtr_label_list[predictions[ent_ind]])
 
     output = DocTimeRelResults(statuses=results)
 
