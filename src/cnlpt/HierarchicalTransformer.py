@@ -4,7 +4,7 @@ Module containing the Hierarchical Transformer module, adapted from Xin Su.
 import logging
 import copy
 import random
-from typing import Optional, List
+from typing import Optional, List, cast
 
 import numpy as np
 from torch import nn
@@ -184,32 +184,6 @@ class EncoderLayer(nn.Module):
         return enc_output, enc_slf_attn
 
 
-class HierarchicalTransformerConfig(object):
-    """
-    Config object for hierarchical transformer's document-level encoder layers
-
-    Original author: Xin Su (https://github.com/xinsu626/DocTransformer)
-
-    Args:
-        n_layers: number of encoder layers
-        d_model: the dimensionality of the input and output of the encoder
-        d_inner: the inner hidden size of the positionwise FFN in the encoder
-        n_head: the number of attention heads
-        d_k: the size of the query and key vectors
-        d_v: the size of the value vector
-        dropout: the amount of dropout to use in training in both the
-          attention and FFN steps (default 0.1)
-    """
-    def __init__(self, n_layers, d_model, d_inner, n_head, d_k, d_v, dropout=0.1):
-        self.n_layers = n_layers
-        self.d_model = d_model
-        self.d_inner = d_inner
-        self.n_head = n_head
-        self.d_k = d_k
-        self.d_v = d_v
-        self.dropout = dropout
-
-
 class HierarchicalModel(PreTrainedModel):
     """
     Hierarchical Transformer model (https://arxiv.org/abs/2105.06752)
@@ -229,7 +203,6 @@ class HierarchicalModel(PreTrainedModel):
     def __init__(
         self,
         config: config_class,
-        transformer_head_config: HierarchicalTransformerConfig,
         *,
         freeze: float = -1.0,
         class_weights: Optional[List[float]] = None,
@@ -239,44 +212,48 @@ class HierarchicalModel(PreTrainedModel):
             config,
         )
 
-        encoder_config = AutoConfig.from_pretrained(config.encoder_name)
-        encoder_config.vocab_size = config.vocab_size
-        config.encoder_config = encoder_config.to_dict()
+        self.config = cast(CnlpConfig, self.config)  # for PyCharm
+
+        assert self.config.hier_head_config is not None, "Hierarchical model is being instantiated with no hierarchical head config"
+
+        encoder_config = AutoConfig.from_pretrained(self.config.encoder_name)
+        encoder_config.vocab_size = self.config.vocab_size
+        self.config.encoder_config = encoder_config.to_dict()
         encoder_model = AutoModel.from_config(encoder_config)
-        self.encoder = encoder_model.from_pretrained(config.encoder_name)
+        self.encoder = encoder_model.from_pretrained(self.config.encoder_name)
         self.encoder.resize_token_embeddings(encoder_config.vocab_size)
 
-        if config.layer > transformer_head_config.n_layers:
+        if self.config.layer > self.config.hier_head_config["n_layers"]:
             raise ValueError('The layer specified (%d) is too big for the specified chunk transformer which has %d layers' % (
-                config.layer,
-                transformer_head_config.n_layers
+                self.config.layer,
+                self.config.hier_head_config["n_layers"]
             ))
-        self.layer = config.layer
+        self.layer = self.config.layer
 
         if freeze > 0:
             freeze_encoder_weights(self.encoder, freeze)
 
-        self.num_labels = config.num_labels_list
+        self.num_labels = self.config.num_labels_list
 
         # Document-level transformer layer
         transformer_layer = EncoderLayer(
-            d_model=transformer_head_config.d_model,
-            d_inner=transformer_head_config.d_inner,
-            n_head=transformer_head_config.n_head,
-            d_k=transformer_head_config.d_k,
-            d_v=transformer_head_config.d_v,
-            dropout=transformer_head_config.dropout,
+            d_model=self.config.hidden_size,
+            d_inner=self.config.hier_head_config["d_inner"],
+            n_head=self.config.hier_head_config["n_head"],
+            d_k=self.config.hier_head_config["d_k"],
+            d_v=self.config.hier_head_config["d_v"],
+            dropout=self.config.hier_head_config["dropout"],
         )
         self.transformer = nn.ModuleList(
             [
                 copy.deepcopy(transformer_layer)
-                for _ in range(transformer_head_config.n_layers)
+                for _ in range(self.config.hier_head_config["n_layers"])
             ]
         )
 
         self.classifiers = nn.ModuleList()
         for task_num_labels in self.num_labels:
-            self.classifiers.append(ClassificationHead(config, task_num_labels))
+            self.classifiers.append(ClassificationHead(self.config, task_num_labels))
 
         if class_weights is None:
             self.class_weights = [None] * len(self.classifiers)

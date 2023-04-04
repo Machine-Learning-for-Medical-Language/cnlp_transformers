@@ -21,7 +21,7 @@ import logging
 
 # intra-library imports
 from ..CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
-from ..HierarchicalTransformer import HierarchicalModel, HierarchicalTransformerConfig
+from ..HierarchicalTransformer import HierarchicalModel
 from ..cnlp_data import cnlp_preprocess_data
 
 class UnannotatedDocument(BaseModel):
@@ -96,21 +96,24 @@ def initialize_hier_model(app, model_name, cuda=True, batch_size=1):
     AutoConfig.register("cnlpt", CnlpConfig)
     AutoModel.register(CnlpConfig, HierarchicalModel)
 
-    config = AutoConfig.from_pretrained(model_name)
+    config: CnlpConfig = AutoConfig.from_pretrained(model_name)
+
+    encoder_dim = config.hidden_size
+
+    ## TODO (#122) - replace this with the transformer config when we fix that issue. just use defaults for now.
+    config.hier_head_config = dict(
+        n_layers=2,
+        d_model=encoder_dim,
+        d_inner=2048,
+        n_head=8,
+        d_k=8,
+        d_v=96,
+    )
+
     app.state.tokenizer = AutoTokenizer.from_pretrained(model_name,
                                                   config=config)
     
-    ## TODO (#122) - replace this with the transformer config when we fix that issue. just use defaults for now. 
-    encoder_dim = config.hidden_size
-    transformer_head_config = HierarchicalTransformerConfig(
-                n_layers=2,
-                d_model=encoder_dim,
-                d_inner=2048,
-                n_head=8,
-                d_k=8,
-                d_v=96,
-            )
-    model = AutoModel.from_pretrained(model_name, cache_dir=os.getenv('HF_CACHE'), config=config, transformer_head_config=transformer_head_config)
+    model = AutoModel.from_pretrained(model_name, cache_dir=os.getenv('HF_CACHE'), config=config)
     model.train(False)
 
     if cuda and not torch.cuda.is_available():
