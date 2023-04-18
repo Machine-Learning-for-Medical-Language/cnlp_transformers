@@ -590,6 +590,9 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
 
         return compute_metrics_fn
 
+    if len(dataset.datasets) > 1:
+        raise NotImplementedError("The trainer is currently not able to train with more than one dataset.")
+
     # Initialize our Trainer
     trainer = Trainer(
         model=model,
