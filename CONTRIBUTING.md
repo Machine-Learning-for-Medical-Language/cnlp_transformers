@@ -68,10 +68,10 @@ repository, please follow these steps.
 6. Open a PR to close the issue.
    * If you are not making changes to source files or project configuration
      files (`setup.cfg`, `pyproject.toml`, `MANIFEST.in`), you can target `main`
-   * Otherwise, have your PR target the branch for the next release. 
+   * Otherwise, **have your PR target the branch for the next release**. 
+     * This will be a branch named `dev-vX.Y.Z` for version X.Y.Z.
      * If there is no such branch, create it by branching off of `main`, then
        target your new branch.
-
 
 ### Testing your code
 
@@ -89,7 +89,7 @@ AND the changes are in any of the following:
 
 * Pull requests targeting either of the following:
   * the `main` branch
-  * a branch name starting with `vX`, where `X` is a digit (e.g. `v0.3.0`)
+  * a branch name starting with `dev-vX`, where `X` is a digit (e.g. `dev-v0.6.0`)
 * Further commits pushed to the source branch of such a pull request
 * Commits pushed to a branch name starting with `testable/`, e.g. `testable/my-special-feature`
 
@@ -114,7 +114,28 @@ this repository, the test runs will be triggered on creation and any
 time you add new commits to the base branch in your fork. You do not
 need to name your branch anything special in this case.
 
-## For Maintainers: Building and uploading new package version
+## For Maintainers: Making a new package version
+
+### Developing the next version
+
+When it is time to start development on a new major, minor, or patch
+version, create a new branch off of `main` in this repository.
+
+This new branch should be named `dev-vX.Y.Z` for version X.Y.Z.
+
+When deciding whether to create a major, minor, or patch version, follow
+the Semantic Versioning guidelines. The key points are as follows:
+
+> Given a version number MAJOR.MINOR.PATCH, increment the:
+> 
+> 1. MAJOR version when you make incompatible API changes*
+> 2. MINOR version when you add functionality in a backwards compatible manner
+> 3. PATCH version when you make backwards compatible bug fixes
+
+*At time of writing we are still in major version 0, meaning we are
+in the initial development stage. For major version 0, both incompatible
+API changes and backwards compatible feature adds fall under the MINOR 
+version, and the API is not considered stable.
 
 ### Setting up your PyPI API key
 
@@ -156,11 +177,7 @@ need to name your branch anything special in this case.
    $ python -m twine upload dist/*
    ```
 
-6. On GitHub, make sure the branch for the version has been deleted after 
-   the PR was merged into `main`. This is to ensure that readthedocs does
-   not have a name conflict.
-
-7. On GitHub, make a new release:
+6. On GitHub, make a new release:
    1. Navigate to the [Releases](https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers/releases) page
    2. Click "Draft a new release"
    3. Click "Choose a tag"
