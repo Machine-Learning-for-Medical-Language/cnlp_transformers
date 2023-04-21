@@ -138,7 +138,7 @@ need to name your branch anything special in this case.
 1. Checkout the merge commit for the new version; this will usually
    be the latest commit in `main`.
 
-2. Increment the version number in `src/cnlpt/VERSION` from the 
+2. Increment the version number in `src/cnlpt/__init__.py:__version__` from the 
    previous version on PyPI.
 
 3. Delete the contents of the `./dist/` directory if it exists.
