@@ -168,6 +168,7 @@ class CnlpConfig(PretrainedConfig):
         relations = [False],
         use_prior_tasks=False,
         hier_head_config=None,
+        label_dictionary = None,
         **kwargs
      ):
         super().__init__(**kwargs)
@@ -184,6 +185,7 @@ class CnlpConfig(PretrainedConfig):
         self.encoder_name = encoder_name
         self.encoder_config = AutoConfig.from_pretrained(encoder_name).to_dict()
         self.hier_head_config = hier_head_config
+        self.label_dictionary = label_dictionary
         if encoder_name.startswith('distilbert'):
             self.hidden_dropout_prob = self.encoder_config['dropout']
             self.hidden_size = self.encoder_config['dim']

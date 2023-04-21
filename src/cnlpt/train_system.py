@@ -498,7 +498,8 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
                                 num_rel_attention_heads=model_args.num_rel_feats,
                                 rel_attention_head_dims=model_args.head_features,
                                 tagger=tagger,
-                                relations=relations,)
+                                relations=relations,
+                                label_dictionary=dataset.get_labels())
                                 #num_tokens=len(tokenizer))
             config.vocab_size = len(tokenizer)
             model = CnlpModelForClassification(
