@@ -379,7 +379,7 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
         if is_hub_model(encoder_name):
             config = CnlpConfig(
                 encoder_name,
-                data_args.task_name,
+                dataset.tasks,
                 num_labels,
                 layer=model_args.layer,
                 tokens=model_args.token,
@@ -491,7 +491,7 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
             # By default, we use model card as the starting point to fine-tune
             encoder_name = model_args.config_name if model_args.config_name else model_args.encoder_name
             config = CnlpConfig(encoder_name,
-                                data_args.task_name,
+                                dataset.tasks,
                                 num_labels,
                                 layer=model_args.layer,
                                 tokens=model_args.token,

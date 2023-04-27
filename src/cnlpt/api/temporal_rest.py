@@ -47,6 +47,9 @@ dtr_label_list = ["AFTER", "BEFORE", "BEFORE/OVERLAP", "OVERLAP"]
 old_dtr_label_list = ["BEFORE", "OVERLAP", "BEFORE/OVERLAP", "AFTER"]
 
 tasks = ['timex', 'event', 'tlinkx']
+# The default ordering from THYME 1 model
+task_order = {'event':0, 'timex': 1, 'tlinkx': 2}
+
 labels = [ timex_label_list, event_label_list, relation_label_list]
 max_length = 128
 
@@ -89,7 +92,44 @@ def create_instance_string(tokens: List[str]):
 
 @app.on_event("startup")
 async def startup_event():
-    initialize_cnlpt_model(app, model_name)
+    global timex_label_list, timex_label_dict, event_label_list, event_label_dict, relation_label_list, relation_label_dict, task_order
+
+    local_model_name = os.getenv('MODEL_NAME', model_name)
+    initialize_cnlpt_model(app, local_model_name)
+
+    config_dict = app.state.trainer.model.config.to_dict()
+    # For newer models (version >= 0.6.0), the label dictionary is saved with the model
+    # config. we can look for it to preserve backwards compatibility for now but
+    # should eventually remove the hardcoded label lists from our inference tools.
+    if (label_dict := config_dict.get('label_dictionary', None)) is not None:
+        # some older versions have one label dictionary per dataset, future versions should just
+        # have a task-keyed dictionary
+        if type(label_dict) == list:
+            label_dict = label_dict[0]
+        
+        if 'event' in label_dict:
+            event_label_list = label_dict['event']
+            event_label_dict = { val:ind for ind,val in enumerate(event_label_list)}
+            print(event_label_list)
+        
+        if 'timex' in label_dict:
+            timex_label_list = label_dict['timex']
+            timex_label_dict = { val:ind for ind,val in enumerate(timex_label_list)}
+            print(timex_label_list)
+
+        if 'tlinkx' in label_dict:
+            relation_label_list = label_dict['tlinkx']
+            relation_label_dict = { val:ind for ind,val in enumerate(relation_label_list)}
+            print(relation_label_list)
+
+    
+    if (task_list := config_dict.get('finetuning_task', None)) is not None:
+        print("Overwriting finetuning task order")
+        for task_ind, task_name in enumerate(task_list):
+            task_order[task_name] = task_ind
+        print(task_order)
+    else:
+        print("Didn't find a new task ordering in the model config")
 
 @app.post("/temporal/process")
 async def process(doc: TokenizedSentenceDocument):
@@ -105,6 +145,10 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     sents = doc.sent_tokens
     metadata = doc.metadata
 
+    print(event_label_list)
+    print(timex_label_list)
+    print(relation_label_list)
+
     logger.warn('Received document labeled %s with %d sentences' % (metadata, len(sents)))
     instances = []
     start_time = time()
@@ -119,10 +163,11 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
 
     output = app.state.trainer.predict(test_dataset=dataset)
 
-    timex_predictions = np.argmax(output.predictions[0], axis=2)
-    event_predictions = np.argmax(output.predictions[1], axis=2)
-    rel_predictions = np.argmax(output.predictions[2], axis=3)
-    rel_inds = np.where(rel_predictions > 0)
+    timex_predictions = np.argmax(output.predictions[task_order['timex']], axis=2)
+    event_predictions = np.argmax(output.predictions[task_order['event']], axis=2)
+    rel_predictions = np.argmax(output.predictions[task_order['tlinkx']], axis=3)
+    rel_inds = np.where(rel_predictions != relation_label_dict["None"])
+
     logging.debug('Found relation indices: %s' % (str(rel_inds)))
 
     rels_by_sent = {}
@@ -166,7 +211,13 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
                 wpind_to_ind[key] = val
                 # tokeni_to_wpi[val] = key
                 timex_labels.append(timex_label_list[timex_predictions[sent_ind][word_pos_idx]])
-                event_labels.append(event_label_list[event_predictions[sent_ind][word_pos_idx]])
+                try:
+                    event_labels.append(event_label_list[event_predictions[sent_ind][word_pos_idx]])
+                except:
+                    print('exception thrown when sent_ind=%d and word_pos_idx=%d' %( sent_ind, word_pos_idx))
+                    print('prediction is %s' % str(event_predictions[sent_ind][word_pos_idx]))
+                    raise Exception
+                
             previous_word_idx = word_idx
 
         timex_entities = get_entities(timex_labels)

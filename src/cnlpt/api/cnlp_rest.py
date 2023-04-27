@@ -108,6 +108,7 @@ def initialize_hier_model(app, model_name, cuda=True, batch_size=1):
         n_head=8,
         d_k=8,
         d_v=96,
+        dropout=0.1,
     )
 
     app.state.tokenizer = AutoTokenizer.from_pretrained(model_name,
