@@ -300,8 +300,7 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
                     class_weights=dataset.class_weights,
                     final_task_weight=training_args.final_task_weight,
                     freeze=training_args.freeze,
-                    bias_fit=training_args.bias_fit,
-                    argument_regularization=training_args.arg_reg)
+                    bias_fit=training_args.bias_fit)
 
         else:
             # This only works when model_args.encoder_name is one of the 
@@ -355,7 +354,7 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
             metrics = {}
             task_scores = []
             task_label_ind = 0
-
+            
             for task_ind,task_name in enumerate(task_names):
                 if tagger[task_name]:
                     preds = np.argmax(p.predictions[task_ind], axis=2)
@@ -370,7 +369,10 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
                     labels = p.label_ids[:,:,task_label_ind:task_label_ind+data_args.max_seq_length].squeeze()
                     task_label_ind += data_args.max_seq_length
                 elif p.label_ids.ndim == 3:
-                    labels = p.label_ids[:,:, task_label_ind:task_label_ind+1].squeeze()
+                    if tagger[task_name]:
+                        labels = p.label_ids[:,:, task_label_ind:task_label_ind+1].squeeze()
+                    else:
+                        labels = p.label_ids[:, 0, task_label_ind].squeeze()
                     task_label_ind += 1
                 elif p.label_ids.ndim == 2:
                     labels = p.label_ids[:,task_ind].squeeze()
@@ -439,6 +441,7 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
         except:
             eval_result = trainer.evaluate(eval_dataset=eval_dataset)
         
+        trainer.compute_metrics = None
         if trainer.is_world_process_zero():
             with open(output_eval_file, "w") as writer:
                 logger.info("***** Eval results on combined dataset *****")
@@ -453,8 +456,8 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
                 output_eval_predictions_file = os.path.join(training_args.output_dir, f'eval_predictions_%s_%d.txt' % (subdir, dataset_ind))
                 write_predictions_for_dataset(output_eval_predictions_file, 
                                               trainer,
-                                              dataset.datasets[dataset_ind]['validation'],
                                               dataset,
+                                              'validation',
                                               dataset_ind,
                                               output_mode,
                                               tokenizer)
@@ -463,7 +466,7 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
 
     if training_args.do_predict:
         logging.info("*** Test ***")
-        test_dataset=dataset.datasets[0]['test']
+        trainer.compute_metrics = None
         # FIXME: this part hasn't been updated for the MTL setup so it doesn't work anymore since
         # predictions is generalized to be a list of predictions and the output needs to be different for each kin.
         # maybe it's ok to only handle classification since it has a very straightforward output format and evaluation,
@@ -474,8 +477,8 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
                 output_test_predictions_file = os.path.join(training_args.output_dir, f'test_predictions_%s_%d.txt' % (subdir, dataset_ind))
                 write_predictions_for_dataset(output_test_predictions_file, 
                                                 trainer,
-                                                dataset.datasets[dataset_ind]['test'],
                                                 dataset,
+                                                'test',
                                                 dataset_ind,
                                                 output_mode,
                                                 tokenizer)

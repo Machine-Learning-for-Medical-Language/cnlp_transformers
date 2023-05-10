@@ -377,7 +377,28 @@ def cnlp_preprocess_data(
     return result
 
 def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, output_modes:Dict[str,str], num_instances:int, max_length:int, label_lists: List[List[str]]):
+    '''
+    _build_pytorch_labels: we do two things here: map from labels in input space to ints in a softmax, and in a data
+    structure that can contain multiple task types such that the Trainer class will be happy with, and then that
+    the model.forward() can unpack easily to do the loss calculations.
+    '''
     labels_out = []
+
+    pad_classification = False
+    if relex in output_modes.values():
+        # i'm not sure this is right...
+        max_dims = 3
+        if classification in output_modes.values():
+            pad_classification = True
+    elif tagging in output_modes.values():
+        # we have tagging as the highest dimensional output
+        max_dims = 2
+        if classification in output_modes.values():
+            pad_classification = True
+    else:
+        # classification only
+        max_dims = 1
+
     for task_ind, task in enumerate(tasks):
         encoded_labels = []
         if output_modes[task] == tagging:
@@ -458,17 +479,29 @@ def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, ou
                 )
                 
         elif output_modes[task] == classification:
-            for sent_ind in range(num_instances):
-                encoded_labels.append( (labels[sent_ind][task_ind],) )
+            for inst_ind in range(num_instances):
+                # if we try to combine classification with tagging/relex, we end up with non-rectangular label
+                # arrays. so we need to pad out the classification target to be the length of the sequence
+                # so that we can concatenate it. we'll have to account for this in the forward() and in the
+                # compute metrics code as well.
+                if pad_classification:
+                    padded_inst = np.zeros( (max_length,1) ) - 100
+                    padded_inst[0] = labels[inst_ind][task_ind]
+                    encoded_labels.append( padded_inst )
+                else:
+                    encoded_labels.append(labels[inst_ind][task_ind])
             labels_out.append(np.array(encoded_labels))
     
     labels_unshaped =  list(zip(*labels_out))
     labels_shaped = []
+    
     for ind in range(len(labels_unshaped)):
-        if labels_unshaped[ind][0].ndim == 2:
+        if max_dims == 2:
             labels_shaped.append( np.concatenate( labels_unshaped[ind], axis=1 ) )
         elif labels_unshaped[ind][0].ndim == 1:
             labels_shaped.append( np.concatenate( labels_unshaped[ind], axis=0 ) )
+        else:
+            raise Exception('We have not yet accounted for the setting where the max_dims > 2. Can that happen with relations?')
     
     return labels_shaped
 
@@ -642,7 +675,8 @@ class ClinicalNlpDataset(Dataset):
             if self.args.max_seq_length < implicit_max_len:
                 raise ValueError('For the hierarchical model, the max seq length should be equal to the chunk length * num_chunks, otherwise what is the point?')
 
-        tasks = None if args.task_name is None else set(args.task_name)
+        tasks = None if args.task_name is None else list(args.task_name)
+        self.tasks = tasks
         for data_dir_ind, data_dir in enumerate(args.data_dir):
             dataset_processor = AutoProcessor(data_dir, tasks, max_train_items=args.max_train_items)
             self.processors.append(dataset_processor)
@@ -736,7 +770,7 @@ class ClinicalNlpDataset(Dataset):
                         elif self.output_modes[task] == relex:
                             pass
                         elif self.output_modes[task] == classification:
-                            dataset[split_name] = dataset[split_name].add_column(task, np.array([-100] * len(dataset[split_name])))
+                            dataset[split_name] = dataset[split_name].add_column(task, [none_column] * len(dataset[split_name]))
 
 
                 for column in dataset[split_name].column_names:
