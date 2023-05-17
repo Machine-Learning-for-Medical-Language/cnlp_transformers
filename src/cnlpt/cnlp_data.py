@@ -336,7 +336,7 @@ def cnlp_preprocess_data(
                 # labels is a list of lists, where each internal list is the set of tags for that instance.
             elif output_modes[task] == relex:
                 for inst_rels in raw_labels[task_ind]:
-                    if inst_rels == 'None':
+                    if inst_rels is None or inst_rels == 'None':
                         task_labels.append(['None'])
                     else:
                         # The label for a sentence with multiple relations looks like this:
@@ -385,12 +385,7 @@ def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, ou
     labels_out = []
 
     pad_classification = False
-    if relex in output_modes.values():
-        # i'm not sure this is right...
-        max_dims = 3
-        if classification in output_modes.values():
-            pad_classification = True
-    elif tagging in output_modes.values():
+    if relex in output_modes.values() or tagging in output_modes.values():
         # we have tagging as the highest dimensional output
         max_dims = 2
         if classification in output_modes.values():
@@ -497,9 +492,11 @@ def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, ou
     
     for ind in range(len(labels_unshaped)):
         if max_dims == 2:
+            ## relations or tagging and possibly classification too
             labels_shaped.append( np.concatenate( labels_unshaped[ind], axis=1 ) )
-        elif labels_unshaped[ind][0].ndim == 1:
-            labels_shaped.append( np.concatenate( labels_unshaped[ind], axis=0 ) )
+        elif max_dims == 1:
+            ## classification only
+            labels_shaped.append( labels_unshaped[ind] )
         else:
             raise Exception('We have not yet accounted for the setting where the max_dims > 2. Can that happen with relations?')
     

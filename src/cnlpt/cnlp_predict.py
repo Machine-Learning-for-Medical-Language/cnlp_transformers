@@ -49,14 +49,15 @@ def write_predictions_for_dataset(output_fn: str,
 
                     entities = get_entities(chunk_labels)
                     writer.write('Task %d (%s) - Index %d: %s\n' % (task_ind, task_name, index, str(entities)))
-            elif output_mode[task_ind] == relex:
+            elif output_mode[task_name] == relex:
                 task_predictions = np.argmax(predictions[task_ind], axis=3)
                 relex_labels = task_labels[task_name]
+                none_index = relex_labels.index('None') if 'None' in relex_labels else  -1
                 # assert task_labels[0] == 'None', 'The first labeled relation category should always be "None" but for task %s it is %s' % (task_names[task_ind], task_labels[0])
                 
                 for inst_ind in range(task_predictions.shape[0]):
                     inst_preds = task_predictions[inst_ind]
-                    a1s, a2s = np.where(inst_preds > 0)
+                    a1s, a2s = np.where(inst_preds != none_index)
                     for arg_ind in range(len(a1s)):
                         a1_ind = a1s[arg_ind]
                         a2_ind = a2s[arg_ind]

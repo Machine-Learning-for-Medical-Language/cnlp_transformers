@@ -177,7 +177,8 @@ class AutoProcessor(DataProcessor):
                 dataset_task2output = {}
                 for subtask in metadata['subtasks']:
                     dataset_task2output[subtask['task_name']] = subtask['output_mode']
-                
+
+            dataset_tasks = list(dataset_task2output.keys())
             if tasks is None:
                 active_tasks = set(dataset_task2output.keys())
             else:
