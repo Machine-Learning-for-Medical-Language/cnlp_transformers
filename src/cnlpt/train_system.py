@@ -205,6 +205,7 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
                 rel_attention_head_dims=model_args.head_features,
                 tagger=tagger,
                 relations=relations,
+                label_dictionary=dataset.get_labels(),
                 hier_head_config=dict(
                     n_layers=model_args.hier_num_layers,
                     d_inner=model_args.hier_hidden_dim,
