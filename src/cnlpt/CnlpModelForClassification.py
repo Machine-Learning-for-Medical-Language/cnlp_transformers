@@ -143,14 +143,15 @@ class CnlpConfig(PretrainedConfig):
 
     :param encoder_name: the encoder name to use with :meth:`transformers.AutoConfig.from_pretrained`
     :param typing.Optional[str] finetuning_task: the tasks for which this model is fine-tuned
-    :param typing.List[int] num_labels_list: the number of labels for each task
     :param int layer: the index of the encoder layer to extract features from
     :param bool tokens: if true, sentence-level classification is done based on averaged token embeddings for token(s) surrounded by <e> </e> special tokens
     :param int num_rel_attention_heads: the number of features/attention heads to use in the NxN relation classifier
     :param int rel_attention_head_dims: the number of parameters in each attention head in the NxN relation classifier
-    :param typing.List[bool] tagger: for each task, whether the task is a sequence tagging task
-    :param typing.List[bool] relations: for each task, whether the task is a relation extraction task
+    :param typing.Dict[str,bool] tagger: for each task, whether the task is a sequence tagging task
+    :param typing.Dict[str,bool] relations: for each task, whether the task is a relation extraction task
     :param bool use_prior_tasks: whether to use the outputs from the previous tasks as additional inputs for subsequent tasks
+    :param typing.Dict[] hier_head_config: If this is a hierarchical model, this is where the config parameters go
+    :param typing.Dict[str, typing.List[str]] label_dictionary: A mapping from task names to label sets
     :param \**kwargs: arguments for :class:`transformers.PretrainedConfig`
     """
     model_type='cnlpt'
@@ -159,13 +160,12 @@ class CnlpConfig(PretrainedConfig):
         self,
         encoder_name='roberta-base',
         finetuning_task=None,
-        num_labels_list=[],
         layer=-1,
         tokens=False,
         num_rel_attention_heads=12,
         rel_attention_head_dims=64,
-        tagger = [False],
-        relations = [False],
+        tagger = {},
+        relations = {},
         use_prior_tasks=False,
         hier_head_config=None,
         label_dictionary = None,
@@ -174,7 +174,6 @@ class CnlpConfig(PretrainedConfig):
         super().__init__(**kwargs)
         # self.name_or_path='cnlpt'
         self.finetuning_task = finetuning_task
-        self.num_labels_list = num_labels_list
         self.layer = layer
         self.tokens = tokens
         self.num_rel_attention_heads = num_rel_attention_heads
@@ -209,8 +208,6 @@ class CnlpModelForClassification(PreTrainedModel):
         the weights to use for each task when computing the loss
     :param float final_task_weight: the weight to use for the final task
         when computing the loss; default 1.0.
-    :param float argument_regularization: if provided, the argument
-        regularization to use when computing the loss
     :param bool freeze: whether to freeze the weights of the encoder
     :param bool bias_fit: whether to fine-tune only the bias of the encoder
     """
@@ -220,9 +217,8 @@ class CnlpModelForClassification(PreTrainedModel):
     def __init__(self,
                  config: config_class,
                  *,
-                 class_weights: Optional[List[float]] = None,
+                 class_weights: Optional[Dict[str, float]] = None,
                  final_task_weight: float = 1.0,
-                 argument_regularization: float = -1,
                  freeze: float = -1.0,
                  bias_fit=False,
                  ):
@@ -235,13 +231,18 @@ class CnlpModelForClassification(PreTrainedModel):
         encoder_model = AutoModel.from_config(encoder_config)
         self.encoder = encoder_model.from_pretrained(config.encoder_name)
         self.encoder.resize_token_embeddings(encoder_config.vocab_size)
+        
+        # This would seem to be redundant with the label list, which maps from tasks to labels,
+        # but this version is ordered. This will allow the user to specify an order for any methods
+        # where we feed the output of one task into the next.
+        # It also will be used as the canonical order of returning results/logits
+        self.tasks = config.finetuning_task
 
         if config.layer > len(encoder_model.encoder.layer):
             raise ValueError('The layer specified (%d) is too big for the specified encoder which has %d layers' % (
                 config.layer,
                 len(encoder_model.encoder.layer)
             ))
-        self.num_labels = config.num_labels_list
         
         if freeze > 0:
             freeze_encoder_weights(self.encoder, freeze)
@@ -251,20 +252,21 @@ class CnlpModelForClassification(PreTrainedModel):
                 if not 'bias' in name:
                     param.requires_grad = False
 
-        self.feature_extractors = nn.ModuleList()
-        self.logit_projectors = nn.ModuleList()
-        self.classifiers = nn.ModuleList()
+        self.feature_extractors = nn.ModuleDict()
+        self.classifiers = nn.ModuleDict()
+
         total_prev_task_labels = 0
-        for task_ind,task_num_labels in enumerate(self.num_labels):
-            self.feature_extractors.append(RepresentationProjectionLayer(config, layer=config.layer, tokens=config.tokens, tagger=config.tagger[task_ind], relations=config.relations[task_ind], num_attention_heads=config.num_rel_attention_heads, head_size=config.rel_attention_head_dims))
-            if config.relations[task_ind]:
+        for task_name,task_labels in config.label_dictionary.items():
+            task_num_labels = len(task_labels)
+            self.feature_extractors[task_name] = RepresentationProjectionLayer(config, layer=config.layer, tokens=config.tokens, tagger=config.tagger[task_name], relations=config.relations[task_name], num_attention_heads=config.num_rel_attention_heads, head_size=config.rel_attention_head_dims)
+            if config.relations[task_name]:
                 hidden_size = config.num_rel_attention_heads
                 if config.use_prior_tasks:
                     hidden_size += total_prev_task_labels
 
-                self.classifiers.append(ClassificationHead(config, task_num_labels, hidden_size=hidden_size))
+                self.classifiers[task_name] = ClassificationHead(config, task_num_labels, hidden_size=hidden_size)
             else:
-                self.classifiers.append(ClassificationHead(config, task_num_labels))
+                self.classifiers[task_name] = ClassificationHead(config, task_num_labels)
             total_prev_task_labels += task_num_labels
 
         # Are we operating as a sequence classifier (1 label per input sequence) or a tagger (1 label per input token in the sequence)
@@ -272,13 +274,13 @@ class CnlpModelForClassification(PreTrainedModel):
         self.relations = config.relations
 
         if class_weights is None:
-            self.class_weights = [None] * len(self.classifiers)
+            self.class_weights = {x: None for x in config.label_dictionary.keys()}
         else:
             self.class_weights = class_weights
 
+        self.label_dictionary = config.label_dictionary
         self.final_task_weight = final_task_weight
         self.use_prior_tasks = config.use_prior_tasks
-        self.argument_regularization = argument_regularization
         self.reg_temperature = 1.0
 
         # self.init_weights()
@@ -307,7 +309,7 @@ class CnlpModelForClassification(PreTrainedModel):
     def compute_loss(self,
                      task_logits: torch.FloatTensor,
                      labels: torch.LongTensor,
-                     task_ind,
+                     task_ind: int,
                      task_num_labels,
                      batch_size,
                      seq_len,
@@ -326,23 +328,24 @@ class CnlpModelForClassification(PreTrainedModel):
             state:
         :meta private:
         """
+        task_name = self.tasks[task_ind]
         if task_num_labels == 1:
             #  We are doing regression
             loss_fct = MSELoss()
             task_loss = loss_fct(task_logits.view(-1), labels.view(-1))
         else:
-            if not self.class_weights[task_ind] is None:
-                class_weights = torch.FloatTensor(self.class_weights[task_ind]).to(self.device)
+            if not self.class_weights[task_name] is None:
+                class_weights = torch.FloatTensor(self.class_weights[task_name]).to(self.device)
             else:
                 class_weights = None
             loss_fct = CrossEntropyLoss(weight=class_weights)
 
-            if self.relations[task_ind]:
+            if self.relations[task_name]:
                 task_labels = labels[:, :, state['task_label_ind']:state['task_label_ind'] + seq_len]
                 state['task_label_ind'] += seq_len
                 task_loss = loss_fct(task_logits.permute(0, 3, 1, 2),
                                      task_labels.type(torch.LongTensor).to(labels.device))
-            elif self.tagger[task_ind]:
+            elif self.tagger[task_name]:
                 # in cases where we are only given a single task the HF code will have one fewer dimension in the labels, so just add a dummy dimension to make our indexing work:
                 if labels.ndim == 2:
                     task_labels = labels
@@ -374,64 +377,8 @@ class CnlpModelForClassification(PreTrainedModel):
         if state['loss'] is None:
             state['loss'] = task_loss
         else:
-            task_weight = 1.0 if task_ind + 1 < len(self.num_labels) else self.final_task_weight
+            task_weight = 1.0 if task_ind + 1 < len(self.tasks) else self.final_task_weight
             state['loss'] += (task_weight * task_loss)
-
-    def apply_arg_reg(self,
-                      logits: List[torch.FloatTensor],
-                      attention_mask: torch.LongTensor,
-                      state: dict) -> None:
-        """
-        Applies argument regularization to the logits for a single batch on all tasks.
-
-        Args:
-            logits (`List[torch.FloatTensor]`): the computed logits of the batch.
-            attention_mask (`torch.LongTensor`): the attention mask for the batch.
-            state: the state dict containing the loss for the batch.
-        :meta private:
-        """
-        # standard e2e relation task -- two entity extractors and relation extractor.
-        prob_no_rel = softmax(logits[2], dim=3)[:, :, :, 0]
-
-        ## product gets us something like a joint probability over all relation categories.
-        # the downside is, we're penalizing the event "some relation being more likely than none"
-        # in the joint sense, but we never actually use that event anywhere, i.e., if no
-        # relation meets the threshold we will never create a relation.
-        # so maybe doing something like relu + sum makes more sense.
-        #
-        # prob_a1_norel = prob_no_rel.prod(dim=1)
-        # prob_a2_norel = prob_no_rel.prod(dim=2)
-        # prob_some_rel = relu ( 1 - (prob_a1_norel * prob_a2_norel) - 0.5)
-        # These values will be greater than 0 at position i if there is any relation that
-        # has i as arg1 or i as arg2.
-        prob_a1_rel = relu(0.5 - prob_no_rel).sum(dim=1)
-        prob_a2_rel = relu(0.5 - prob_no_rel).sum(dim=2)
-        prob_some_rel = prob_a1_rel + prob_a2_rel
-
-        # prob_no_e1_type = relu( softmax(logits[0], dim=2)[:,:,0] - 0.5)
-        # prob_no_e2_type = relu( softmax(logits[1], dim=2)[:,:,0] - 0.5)
-        probs_e1 = softmax(logits[0], dim=2)
-        probs_e2 = softmax(logits[1], dim=2)
-
-        # threshold: the penalty is possible if more than this number of probabilities are greater than the
-        # "no entity" threshold. we subtract 2 because we are removing the None category, and C-1 is the default
-        # case where there is no relation, only if more than that is an issue.
-        t1_threshold = self.num_labels[0] - 2
-        t2_threshold = self.num_labels[1] - 2
-
-        # we take p(none) - p(other relations) inside the sign.
-        # then take the sign, if there are any -1s, the sum will be less than tx_threshold and the inner part will be < 0,
-        # and relu will be 0. If there are no -1, the sum will be > tx_threshold and the innter part will be 1, relu also 1.
-        prob_no_e1_type = relu(
-            torch.sign(probs_e1[:, :, 0].unsqueeze(2) - probs_e1[:, :, 1:]).sum(dim=2) - t1_threshold)
-        prob_no_e2_type = relu(
-            torch.sign(probs_e2[:, :, 0].unsqueeze(2) - probs_e2[:, :, 1:]).sum(dim=2) - t2_threshold)
-
-        prob_no_ent = prob_no_e1_type * prob_no_e2_type
-
-        prob_rel_no_ent = prob_some_rel * prob_no_ent * attention_mask
-
-        state["loss"] += self.argument_regularization * prob_rel_no_ent.sum()
 
     def forward(
         self,
@@ -500,13 +447,14 @@ class CnlpModelForClassification(PreTrainedModel):
             task_label_ind=0
         )
 
-        for task_ind,task_num_labels in enumerate(self.num_labels):
-            features = self.feature_extractors[task_ind](outputs.hidden_states, event_tokens)
+        for task_ind, task_name in enumerate(self.tasks):
+            task_labels = self.label_dictionary[task_name]
+            features = self.feature_extractors[task_name](outputs.hidden_states, event_tokens)
             if self.use_prior_tasks:
                 # note: this specific way of incorporating previous logits doesn't help in my experiments with thyme/clinical tempeval
-                if self.relations[task_ind]:
+                if self.relations[task_name]:
                     features = self.predict_relations_with_previous_logits(features, logits)
-            task_logits = self.classifiers[task_ind](features)
+            task_logits = self.classifiers[task_name](features)
             logits.append(task_logits)
 
             if labels is not None:
@@ -514,14 +462,11 @@ class CnlpModelForClassification(PreTrainedModel):
                     task_logits,
                     labels,
                     task_ind,
-                    task_num_labels,
+                    len(task_labels),
                     batch_size,
                     seq_len,
                     state
                 )
-
-        if len(self.num_labels) == 3 and self.relations[-1] and self.argument_regularization > 0:
-            self.apply_arg_reg(logits, attention_mask, state)
 
         if self.training:
             return SequenceClassifierOutput(

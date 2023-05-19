@@ -230,10 +230,14 @@ class HierarchicalModel(PreTrainedModel):
             ))
         self.layer = self.config.layer
 
+        # This would seem to be redundant with the label list, which maps from tasks to labels,
+        # but this version is ordered. This will allow the user to specify an order for any methods
+        # where we feed the output of one task into the next.
+        # It also will be used as the canonical order of returning results/logits
+        self.tasks = config.finetuning_task
+
         if freeze > 0:
             freeze_encoder_weights(self.encoder, freeze)
-
-        self.num_labels = self.config.num_labels_list
 
         # Document-level transformer layer
         transformer_layer = EncoderLayer(
@@ -251,14 +255,18 @@ class HierarchicalModel(PreTrainedModel):
             ]
         )
 
-        self.classifiers = nn.ModuleList()
-        for task_num_labels in self.num_labels:
-            self.classifiers.append(ClassificationHead(self.config, task_num_labels))
+        self.classifiers = nn.ModuleDict()
+        # for task_num_labels in self.num_labels:
+        for task_name,task_labels in config.label_dictionary.items():
+            task_num_labels = len(task_labels)
+            self.classifiers[task_name] = ClassificationHead(self.config, task_num_labels)
 
         if class_weights is None:
-            self.class_weights = [None] * len(self.classifiers)
+            self.class_weights = {x: None for x in config.label_dictionary.keys()}
         else:
             self.class_weights = class_weights
+
+        self.label_dictionary = config.label_dictionary
 
     def forward(
         self,
@@ -372,22 +380,22 @@ class HierarchicalModel(PreTrainedModel):
         doc_rep = chunks_reps[:, 0, :]
 
         total_loss = 0
-        for task_ind, task_num_labels in enumerate(self.num_labels):
-            if not self.class_weights[task_ind] is None:
-                class_weights = torch.FloatTensor(self.class_weights[task_ind]).to(self.device)
+        for task_ind, task_name in enumerate(self.tasks):
+            if not self.class_weights[task_name] is None:
+                class_weights = torch.FloatTensor(self.class_weights[task_name]).to(self.device)
             else:
                 class_weights = None
             loss_fct = CrossEntropyLoss(weight=class_weights)
 
             # predict (B, 5)
-            task_logits = self.classifiers[task_ind](doc_rep)
+            task_logits = self.classifiers[task_name](doc_rep)
             logits.append(task_logits)
 
             if labels is not None:
                 task_labels = labels[:, task_ind]
                 task_loss = loss_fct(task_logits, task_labels.type(torch.LongTensor).to(labels.device))
                 total_loss += task_loss
-            
+
 
         if self.training:
             return SequenceClassifierOutput(

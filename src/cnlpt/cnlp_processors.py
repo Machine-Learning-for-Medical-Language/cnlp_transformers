@@ -158,10 +158,9 @@ class AutoProcessor(DataProcessor):
             ## and overwrite these.
             first_split = next(iter(self.dataset.values()))
             dataset_tasks = first_split.features.keys() - set(['text', 'text_a', 'text_b'])
-            active_tasks = tasks.intersection(dataset_tasks)
+            active_tasks = set(tasks).intersection(dataset_tasks)           
             active_tasks = list(active_tasks)
             active_tasks.sort()
-            self.dataset.tasks = active_tasks
             self.dataset.task_output_modes = {}
         elif ext_check_file.endswith('json'):
             self.dataset = load_dataset('json', data_files=data_files, field='data')
@@ -178,24 +177,36 @@ class AutoProcessor(DataProcessor):
                 dataset_task2output = {}
                 for subtask in metadata['subtasks']:
                     dataset_task2output[subtask['task_name']] = subtask['output_mode']
-                
+
+            dataset_tasks = list(dataset_task2output.keys())
             if tasks is None:
                 active_tasks = set(dataset_task2output.keys())
             else:
-                active_tasks = tasks.intersection(set(dataset_task2output.keys()))
+                active_tasks = set(tasks).intersection(set(dataset_task2output.keys()))
             
             active_tasks = list(active_tasks)
             active_tasks.sort()
 
-            self.dataset.tasks = active_tasks
             self.dataset.task_output_modes = dataset_task2output
         else:
             raise ValueError('Data file %s has an extension that we cannot handle (tried csv and json)' % (train_file))
 
-
+        logger.info('This dataset contains these tasks: %s' % (str(dataset_tasks)))
+        logger.info('These tasks overlap with user input: %s' % (str(active_tasks)))
             
+        self.dataset.tasks = active_tasks
         if len(self.dataset.task_output_modes) == 0:
             self.dataset.task_output_modes = infer_output_modes(self.dataset)
+
+        # convert label columns to strings
+        for task in self.dataset.tasks:
+            if self.dataset.task_output_modes[task] == classification:
+                task_str = task + '_str'
+                for split in self.dataset:
+                    # create a new column casting every element to string, remove old (int) column, rename new (str) column
+                    self.dataset[split] = self.dataset[split].add_column(task_str, [str(x) for x in self.dataset[split][task]])
+                    self.dataset[split] = self.dataset[split].remove_columns(task)
+                    self.dataset[split] = self.dataset[split].rename_column(task_str, task)
 
         # get any split of the data and ask for the set of unique labels for each task in the dataset from that split
         self.labels = get_unique_labels(self.dataset, self.dataset.tasks, self.dataset.task_output_modes)

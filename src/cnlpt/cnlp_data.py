@@ -15,11 +15,14 @@ from transformers import BatchEncoding
 from transformers.tokenization_utils import PreTrainedTokenizer
 from datasets import Features
 from dataclasses import dataclass, field, asdict, astuple
+import datasets
 from enum import Enum
 
 from .cnlp_processors import classification, tagging, relex, mtl, AutoProcessor
 
 special_tokens = ['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>', '<neg>']
+text_columns = ['text', 'text_a', 'text_b']
+none_column = '__None__'
 
 logger = logging.getLogger(__name__)
 
@@ -288,6 +291,8 @@ def cnlp_preprocess_data(
         # FIXME - not sure if this is right but doesn't get used much in our data
         raise NotImplementedError("2-sentence classification has not been re-implemented yet.")
         sentences = (examples['text_a'], examples['text_b'])        
+    else:
+        raise Exception('The data does not seem to have a text column (literally a column labeled "text" is required)')
     
     if hierarchical:
         padding = False
@@ -309,6 +314,10 @@ def cnlp_preprocess_data(
     if not inference:
         # Create a label map for each task in this dataset: { task1 => {label_0: 0, label_1: 1, label_2:, 2}, task2 => {label_0: 0, label_1:1} }
         label_map = {task: {label: i for i, label in enumerate(label_lists[task])} for task in tasks}
+        for task in tasks:
+            if none_column in label_map[task]:
+                raise Exception("There is a column named %s which is a reserved name" % (none_column))
+            label_map[task][none_column] = -100
 
         raw_labels = []
         labels = []
@@ -327,7 +336,7 @@ def cnlp_preprocess_data(
                 # labels is a list of lists, where each internal list is the set of tags for that instance.
             elif output_modes[task] == relex:
                 for inst_rels in raw_labels[task_ind]:
-                    if inst_rels == 'None':
+                    if inst_rels is None or inst_rels == 'None':
                         task_labels.append(['None'])
                     else:
                         # The label for a sentence with multiple relations looks like this:
@@ -368,7 +377,23 @@ def cnlp_preprocess_data(
     return result
 
 def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, output_modes:Dict[str,str], num_instances:int, max_length:int, label_lists: List[List[str]]):
+    '''
+    _build_pytorch_labels: we do two things here: map from labels in input space to ints in a softmax, and in a data
+    structure that can contain multiple task types such that the Trainer class will be happy with, and then that
+    the model.forward() can unpack easily to do the loss calculations.
+    '''
     labels_out = []
+
+    pad_classification = False
+    if relex in output_modes.values() or tagging in output_modes.values():
+        # we have tagging as the highest dimensional output
+        max_dims = 2
+        if classification in output_modes.values():
+            pad_classification = True
+    else:
+        # classification only
+        max_dims = 1
+
     for task_ind, task in enumerate(tasks):
         encoded_labels = []
         if output_modes[task] == tagging:
@@ -381,8 +406,8 @@ def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, ou
                 label_ids = []
                 for word_idx in word_ids:
                     # Special tokens have a word id that is None. We set the label to -100 so they are automatically
-                    # ignored in the loss function.
-                    if word_idx is None:
+                    # ignored in the loss function. Non-tagging tasks will be labeled as [-100], all label ids are -100
+                    if word_idx is None or labels[sent_ind][task_ind] == [-100]:
                         label_ids.append(-100)
                     # We set the label for the first token of each word.
                     elif word_idx != previous_word_idx:
@@ -444,22 +469,36 @@ def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, ou
                 encoded_labels.append(sent_labels)
             labels_out.append(encoded_labels)
             if out_of_bounds > 0:
-                logging.warn(
+                logger.warn(
                     'During relation processing, there were %d relations (out of %d total relations) where at least one argument was truncated so the relation could not be trained/predicted.' % (out_of_bounds, num_relations)
                 )
                 
         elif output_modes[task] == classification:
-            for sent_ind in range(num_instances):
-                encoded_labels.append( (labels[sent_ind][task_ind],) )
+            for inst_ind in range(num_instances):
+                # if we try to combine classification with tagging/relex, we end up with non-rectangular label
+                # arrays. so we need to pad out the classification target to be the length of the sequence
+                # so that we can concatenate it. we'll have to account for this in the forward() and in the
+                # compute metrics code as well.
+                if pad_classification:
+                    padded_inst = np.zeros( (max_length,1) ) - 100
+                    padded_inst[0] = labels[inst_ind][task_ind]
+                    encoded_labels.append( padded_inst )
+                else:
+                    encoded_labels.append(labels[inst_ind][task_ind])
             labels_out.append(np.array(encoded_labels))
     
     labels_unshaped =  list(zip(*labels_out))
     labels_shaped = []
+    
     for ind in range(len(labels_unshaped)):
-        if labels_unshaped[ind][0].ndim == 2:
+        if max_dims == 2:
+            ## relations or tagging and possibly classification too
             labels_shaped.append( np.concatenate( labels_unshaped[ind], axis=1 ) )
-        elif labels_unshaped[ind][0].ndim == 1:
-            labels_shaped.append( np.concatenate( labels_unshaped[ind], axis=0 ) )
+        elif max_dims == 1:
+            ## classification only
+            labels_shaped.append( labels_unshaped[ind] )
+        else:
+            raise Exception('This should not be possible that max_dims > 2.')
     
     return labels_shaped
 
@@ -617,11 +656,12 @@ class ClinicalNlpDataset(Dataset):
     ):
         self.args = args
         self.processors = []
-        self.class_weights = []
-        self.label_lists = []
+        self.class_weights = None
+        self.tasks_to_labels = {}
         self.hierarchical = hierarchical
-        self.features = None
         self.datasets = []
+        self.processed_dataset = []
+        self.output_modes = {}
 
         # Load data features from cache or dataset file
         self.label_lists = []
@@ -632,55 +672,137 @@ class ClinicalNlpDataset(Dataset):
             if self.args.max_seq_length < implicit_max_len:
                 raise ValueError('For the hierarchical model, the max seq length should be equal to the chunk length * num_chunks, otherwise what is the point?')
 
-        tasks = None if args.task_name is None else set(args.task_name)
+        tasks = None if args.task_name is None else list(args.task_name)
+        self.tasks = tasks
         for data_dir_ind, data_dir in enumerate(args.data_dir):
             dataset_processor = AutoProcessor(data_dir, tasks, max_train_items=args.max_train_items)
             self.processors.append(dataset_processor)
             
-            ## TODO get this working again
-            for classifier in range(dataset_processor.get_num_tasks()):
-                self.class_weights.append(None)
+            # Make sure that any overlapping task names have the same label sets and output mode definitions
+            self._reconcile_labels_lists(dataset_processor)
+            self._reconcile_output_modes(dataset_processor)
+
+            self.datasets.append(dataset_processor.dataset)
+
+        ## Each processed dataset will have been pruned to remove columns that the user _didn't_ ask for,
+        ## but we need to add columns for tasks that it doesn't have that the user did ask for, with the 
+        ## appropriate task types and  special values so pytorch knows not to compute losses over those 
+        ## tasks for those inputs. Need to  do that after we've read all datasets and inferred all the task 
+        ## types and label spaces.
+        self._reconcile_columns()
+        combined_dataset = self._concatenate_datasets()
+
+        self.processed_dataset = combined_dataset.map(
+            cnlp_preprocess_data,
+            batched=True,
+            load_from_cache_file=not args.overwrite_cache,
+            desc="Running tokenizer on dataset, organizing labels, creating hierarchical segments if necessary",
+            batch_size=100,
+            fn_kwargs = {
+                'tokenizer':tokenizer,
+                'max_length':args.max_seq_length,
+                'label_lists':self.tasks_to_labels,
+                'output_modes':self.output_modes,
+                'inference': not 'train' in combined_dataset,
+                'hierarchical':self.hierarchical,
+                'chunk_len':self.args.chunk_len,
+                'num_chunks':self.args.num_chunks,
+                'insert_empty_chunk_at_beginning':self.args.insert_empty_chunk_at_beginning,
+                'truncate_examples':self.args.truncate_examples,
+                'tasks': tasks,
+            }
+        )
+
+        if args.max_eval_items > 0:
+            new_validation = self.processed_dataset['validation'].train_test_split(test_size=args.max_eval_items)['test']
+            self.processed_dataset['validation'] = new_validation
+
+        self.num_train_instances += self.processed_dataset['train'].num_rows
+
+    def _reconcile_labels_lists(self, processor):
+        '''
+        given a new data processor, which extracted a label list for every task it contained,
+        we reconcile it with existing label list for the same task
+        '''
+        for task,labels in processor.get_labels().items():
+            if task in self.tasks_to_labels:
+                ## a subset of existing labels (WARN), superset of existing labels (WARN), mixture, or no overlap (ERROR)
+                new_labels = set(labels)
+                old_labels = set(self.tasks_to_labels[task])
+                if new_labels.isdisjoint(old_labels):
+                    raise Exception("The same task name has disjoint sets of labels in different dataset: %s vs. %s" % (str(str(old_labels), str(new_labels))))
+                elif new_labels != old_labels:
+                    logger.warn("Two different datasets have the same task name but not completely equal label lists: %s vs. %s. We will merge them." (str(old_labels), str(new_labels)))
+                    self.tasks_to_labels[task] = old_labels.union(new_labels)
+                else:
+                    ## they match completely, nothing to be done
+                    pass
+            else:
+                self.tasks_to_labels[task] = labels
+    
+    def _reconcile_output_modes(self, processor):
+        '''
+        given a new data processor, which inferred output modes for its tasks, make
+        sure those output modes agree with existing inferred output modes for any
+        same-named tasks.
+        '''
+        for task,output_mode in processor.get_output_modes().items():
+            if task in self.output_modes:
+                # There is an existing task with this name
+                existing_output_mode = self.output_modes[task]
+                if output_mode != existing_output_mode:
+                    raise Exception("The task %s has two different output modes in different datasets and might not be the same task: %s vs. %s" % (task, existing_output_mode, output_mode))
+            else:
+                self.output_modes[task] = output_mode
+
+    def _reconcile_columns(self):
+        '''
+        The overall dataset should get the superset of all task columns, even if some of the tasks aren't in
+        all of the component datasets
+        '''
+        tasks = self.tasks_to_labels.keys()
+
+        for dataset in self.datasets:
+            for split_name in dataset.keys():
+                for task in tasks:
+                    if task not in dataset[split_name].column_names:
+                        if self.output_modes[task] == tagging:
+                            dataset[split_name] = dataset[split_name].add_column(task, [none_column] * len(dataset[split_name]))
+                        elif self.output_modes[task] == relex:
+                            pass
+                        elif self.output_modes[task] == classification:
+                            dataset[split_name] = dataset[split_name].add_column(task, [none_column] * len(dataset[split_name]))
 
 
-            num_subtasks = dataset_processor.get_num_tasks()
-            self.label_lists.append(dataset_processor.get_labels())
-            task_dataset = dataset_processor.dataset.map(
-                cnlp_preprocess_data,
-                batched=True,
-                load_from_cache_file=not args.overwrite_cache,
-                desc="Running tokenizer on dataset, organizing labels, creating hierarchical segments if necessary",
-                batch_size=100,
-                fn_kwargs = {
-                    'tokenizer':tokenizer,
-                    'max_length':args.max_seq_length,
-                    'label_lists':self.label_lists[data_dir_ind],
-                    'output_modes':dataset_processor.get_output_modes(),
-                    'inference': not 'train' in dataset_processor.dataset,
-                    'hierarchical':self.hierarchical,
-                    'chunk_len':self.args.chunk_len,
-                    'num_chunks':self.args.num_chunks,
-                    'insert_empty_chunk_at_beginning':self.args.insert_empty_chunk_at_beginning,
-                    'truncate_examples':self.args.truncate_examples,
-                    'tasks': dataset_processor.get_classifiers(),
-                }
-            )
+                for column in dataset[split_name].column_names:
+                    if column not in tasks and column not in text_columns:
+                        dataset[split_name] = dataset[split_name].remove_columns(column)
 
-            if args.max_eval_items > 0:
-                new_validation = task_dataset['validation'].train_test_split(test_size=args.max_eval_items)['test']
-                task_dataset['validation'] = new_validation
-
-            self.datasets.append(task_dataset)
-            self.num_train_instances += task_dataset['train'].num_rows
-
+    def _concatenate_datasets(self):
+        ''' 
+        We have multiple dataset dicts, we need to create a single dataset dict
+        where we concatenate each of the splits first.
+        '''
+        datasets_by_split = {}
+        for dataset in self.datasets:
+            for split in dataset:
+                if split not in datasets_by_split:
+                    datasets_by_split[split] = []
+                datasets_by_split[split].append(dataset[split])
+        
+        for split_name, split_data in datasets_by_split.items():
+            datasets_by_split[split_name] = datasets.concatenate_datasets(split_data)
+        
+        return datasets.DatasetDict(datasets_by_split)
 
     def __len__(self) -> int:
         """
         Length method for this class.
 
         :rtype: int
-        :return: the number of instances in the dataset
+        :return: the number of datasets included in this dataset
         """
-        return len(self.features)
+        return len(self.datasets)
 
     def __getitem__(self, i):
         """
@@ -696,7 +818,7 @@ class ClinicalNlpDataset(Dataset):
         """
         Retrieve the label lists for all the tasks for the dataset.
 
-        :rtype: typing.List[typing.List[str]]
-        :return: the list of label lists
+        :rtype: typing.Dict[str,typing.List[str]]
+        :return: the dictionary of label lists indexed by task name
         """
-        return self.label_lists
+        return self.tasks_to_labels
