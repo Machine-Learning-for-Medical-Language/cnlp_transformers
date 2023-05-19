@@ -498,7 +498,7 @@ def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, ou
             ## classification only
             labels_shaped.append( labels_unshaped[ind] )
         else:
-            raise Exception('We have not yet accounted for the setting where the max_dims > 2. Can that happen with relations?')
+            raise Exception('This should not be possible that max_dims > 2.')
     
     return labels_shaped
 
@@ -756,6 +756,10 @@ class ClinicalNlpDataset(Dataset):
                 self.output_modes[task] = output_mode
 
     def _reconcile_columns(self):
+        '''
+        The overall dataset should get the superset of all task columns, even if some of the tasks aren't in
+        all of the component datasets
+        '''
         tasks = self.tasks_to_labels.keys()
 
         for dataset in self.datasets:

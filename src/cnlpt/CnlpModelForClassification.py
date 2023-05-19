@@ -143,7 +143,6 @@ class CnlpConfig(PretrainedConfig):
 
     :param encoder_name: the encoder name to use with :meth:`transformers.AutoConfig.from_pretrained`
     :param typing.Optional[str] finetuning_task: the tasks for which this model is fine-tuned
-    :param typing.List[int] num_labels_list: the number of labels for each task
     :param int layer: the index of the encoder layer to extract features from
     :param bool tokens: if true, sentence-level classification is done based on averaged token embeddings for token(s) surrounded by <e> </e> special tokens
     :param int num_rel_attention_heads: the number of features/attention heads to use in the NxN relation classifier
@@ -151,6 +150,8 @@ class CnlpConfig(PretrainedConfig):
     :param typing.Dict[str,bool] tagger: for each task, whether the task is a sequence tagging task
     :param typing.Dict[str,bool] relations: for each task, whether the task is a relation extraction task
     :param bool use_prior_tasks: whether to use the outputs from the previous tasks as additional inputs for subsequent tasks
+    :param typing.Dict[] hier_head_config: If this is a hierarchical model, this is where the config parameters go
+    :param typing.Dict[str, typing.List[str]] label_dictionary: A mapping from task names to label sets
     :param \**kwargs: arguments for :class:`transformers.PretrainedConfig`
     """
     model_type='cnlpt'
@@ -163,8 +164,8 @@ class CnlpConfig(PretrainedConfig):
         tokens=False,
         num_rel_attention_heads=12,
         rel_attention_head_dims=64,
-        tagger = [False],
-        relations = [False],
+        tagger = {},
+        relations = {},
         use_prior_tasks=False,
         hier_head_config=None,
         label_dictionary = None,
@@ -207,8 +208,6 @@ class CnlpModelForClassification(PreTrainedModel):
         the weights to use for each task when computing the loss
     :param float final_task_weight: the weight to use for the final task
         when computing the loss; default 1.0.
-    :param float argument_regularization: if provided, the argument
-        regularization to use when computing the loss
     :param bool freeze: whether to freeze the weights of the encoder
     :param bool bias_fit: whether to fine-tune only the bias of the encoder
     """
