@@ -18,6 +18,7 @@ from transformers.modeling_outputs import SequenceClassifierOutput
 from torch.nn.functional import softmax, relu
 import math
 import random
+from . import __version__ as cnlpt_version
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +186,7 @@ class CnlpConfig(PretrainedConfig):
         self.encoder_config = AutoConfig.from_pretrained(encoder_name).to_dict()
         self.hier_head_config = hier_head_config
         self.label_dictionary = label_dictionary
+        self.cnlpt_version = cnlpt_version
         if encoder_name.startswith('distilbert'):
             self.hidden_dropout_prob = self.encoder_config['dropout']
             self.hidden_size = self.encoder_config['dim']
