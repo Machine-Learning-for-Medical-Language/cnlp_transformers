@@ -280,16 +280,14 @@ def cnlp_preprocess_data(
     :rtype: typing.Union[typing.List[InputFeatures], typing.List[HierarchicalInputFeatures]]
     :return: the list of converted input features
     """
-    
+    sentences = []
+
     if max_length is None:
         max_length = tokenizer.max_len
 
     # Try to infer the structure based on column names
     if 'text' in examples.keys():
-        if character_level:
-            sentences = list(examples['text'])
-        else:
-            sentences = [example.split(' ') for example in examples['text']]
+        sentences = [example.split(' ') for example in examples['text']]
         num_instances = len(examples['text'])
     elif 'text_b' in examples.keys():
         # FIXME - not sure if this is right but doesn't get used much in our data
@@ -301,18 +299,26 @@ def cnlp_preprocess_data(
     else:
         padding = 'max_length'
 
-    try:
+
+    if character_level:
+        try:
+            result = tokenizer(
+                examples["text"],
+                max_length=max_length,
+                padding=True,
+                truncation=True,
+            )
+        except Exception as e:
+            print(f"Issue {e} given input: \n\n{sentences}")
+
+    else:
         result = tokenizer(
-            # stupid adhoc for clingen
-            [*map(str, sentences)],
+            sentences,
             max_length=max_length,
             padding=padding,
             truncation=True,
-            is_split_into_words=not character_level,
+            is_split_into_words=True,
         )
-    except Exception as e:
-        print(f"Issue {e} given input: \n\n{sentences}")
-
     # Now that we have the labels for each instances, and we've tokenized the input sentences, 
     # we need to solve the problem of aligning labels with word piece indexes for the tasks of tagging
     # (which has one label per pre-wordpiece token) and relations (which are defined as tuples which
@@ -413,7 +419,8 @@ def _build_word_id_tag_labels(word_ids:List[Optional[int]], labels:List, sent_in
             # the label_all_tokens flag.
         else:
             # Dongfang's logic for beginning or interior of a word
-            previous_word_idx = word_idx
+            label_ids.append(-100)
+        previous_word_idx = word_idx
     return np.expand_dims(np.array(label_ids), 1)
     
 
@@ -460,40 +467,7 @@ def _build_word_id_relex_labels(word_ids:List[Optional[int]], labels:List, sent_
 
 def _build_char_level_tag_labels(labels:List, sent_ind:int, task_ind:int):
     return np.expand_dims(np.array(labels[sent_ind][task_ind]), 1)
-    
 
-def _build_char_level_relex_labels(labels:List, sent_ind:int, task_ind:int):
-    out_of_bounds = 0
-    num_relations = len(labels[sent_ind][task_ind])
-    sent_labels = np.zeros( (max_length, max_length)) - 100
-
-    # need to figure out how to calculate out of bounds when nothing
-    # in the non-fast batch encoder helps
-    """
-    for wpi in wpi_to_tokeni.keys():
-        for wpi2 in wpi_to_tokeni.keys():
-            # leave the diagonals at -100 because you can't have a relation with itself and we
-            # don't want to consider it because it may screw up the learning to have 2 such similar
-            # tokens not involved in a relation.
-            if wpi != wpi2:
-                sent_labels[wpi,wpi2] = label_lists[task_ind].index('None')
-                            
-    for label in labels[sent_ind][task_ind]:
-        if label == "None":
-            continue
-                    
-        if not label[0] in tokeni_to_wpi or not label[1] in tokeni_to_wpi:
-            out_of_bounds +=1
-            continue
-                    
-
-        wpi1 = tokeni_to_wpi[label[0]]
-        wpi2 = tokeni_to_wpi[label[1]]
-        
-        sent_labels[wpi1][wpi2] = label[2]
-    return sent_labels, num_relations, out_of_bounds
-    """
-    return [], -1, -1
 
 def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, output_mode:List[str], num_instances:int, max_length:int, label_lists: List[List[str]], character_level:bool):
     labels_out = []
@@ -537,7 +511,7 @@ def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, ou
                     out_of_bounds += sent_out_of_bounds
                     num_relations += sent_num_relations
                     encoded_labels.append(
-                        
+                        sent_labels
                     )
                 elif character_level:
                     raise NotImplementedError(
@@ -552,12 +526,10 @@ def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, ou
                 logging.warn(
                     'During relation processing, there were %d relations (out of %d total relations) where at least one argument was truncated so the relation could not be trained/predicted.' % (out_of_bounds, num_relations)
                 )
-                
         elif output_mode[task_ind] == classification:
             for sent_ind in range(num_instances):
                 encoded_labels.append( (labels[sent_ind][task_ind],) )
             labels_out.append(np.array(encoded_labels))
-    
     labels_unshaped =  list(zip(*labels_out))
     labels_shaped = []
     for ind in range(len(labels_unshaped)):
@@ -565,7 +537,6 @@ def _build_pytorch_labels(result:BatchEncoding, tasks:List[str], labels:List, ou
             labels_shaped.append( np.concatenate( labels_unshaped[ind], axis=1 ) )
         elif labels_unshaped[ind][0].ndim == 1:
             labels_shaped.append( np.concatenate( labels_unshaped[ind], axis=0 ) )
-    
     return labels_shaped
 
 def _build_event_mask_word_piece(result:BatchEncoding, num_insts:int, event_start_token_id, event_end_token_id):
@@ -600,7 +571,6 @@ def _build_event_mask_character(result:BatchEncoding, num_insts:int):
         event_tokens.append(inst_event_tokens)
 
     return event_tokens
-    
 
 def truncate_features(feature: Union[InputFeatures, HierarchicalInputFeatures]):
     """
@@ -663,7 +633,6 @@ class DataTrainingArguments:
     task_name: List[str] = field(default_factory=lambda: None, metadata={
         "help": "A space-separated list of tasks to train on (mainly used as keys to internally track and display output)"})
     # field(
-        
     #     metadata={"help": "A space-separated list of tasks to train on: " + ", ".join(cnlp_processors.keys())})
 
     max_seq_length: int = field(
