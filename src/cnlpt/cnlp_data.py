@@ -312,18 +312,25 @@ def cnlp_preprocess_data(
     else:
         padding = "max_length"
 
-    try:
+    if character_level:
+        try:
+            result = tokenizer(
+                examples["text"],
+                max_length=max_length,
+                padding=True,
+                truncation=True,
+            )
+        except Exception as e:
+            print(f"Issue {e} given input: \n\n{sentences}")
+
+    else:
         result = tokenizer(
-            # stupid adhoc for clingen
-            [*map(str, sentences)],
+            sentences,
             max_length=max_length,
             padding=padding,
             truncation=True,
-            is_split_into_words=not character_level,
+            is_split_into_words=True,
         )
-    except Exception as e:
-        print(f"Issue {e} given input: \n\n{sentences}")
-
     # Now that we have the labels for each instances, and we've tokenized the input sentences,
     # we need to solve the problem of aligning labels with word piece indexes for the tasks of tagging
     # (which has one label per pre-wordpiece token) and relations (which are defined as tuples which
@@ -455,7 +462,8 @@ def _build_word_id_tag_labels(
             # the label_all_tokens flag.
         else:
             # Dongfang's logic for beginning or interior of a word
-            previous_word_idx = word_idx
+            label_ids.append(-100)
+        previous_word_idx = word_idx
     return np.expand_dims(np.array(label_ids), 1)
 
 
@@ -504,40 +512,6 @@ def _build_word_id_relex_labels(
 
 def _build_char_level_tag_labels(labels: List, sent_ind: int, task_ind: int):
     return np.expand_dims(np.array(labels[sent_ind][task_ind]), 1)
-
-
-def _build_char_level_relex_labels(labels: List, sent_ind: int, task_ind: int):
-    out_of_bounds = 0
-    num_relations = len(labels[sent_ind][task_ind])
-    sent_labels = np.zeros((max_length, max_length)) - 100
-
-    # need to figure out how to calculate out of bounds when nothing
-    # in the non-fast batch encoder helps
-    """
-    for wpi in wpi_to_tokeni.keys():
-        for wpi2 in wpi_to_tokeni.keys():
-            # leave the diagonals at -100 because you can't have a relation with itself and we
-            # don't want to consider it because it may screw up the learning to have 2 such similar
-            # tokens not involved in a relation.
-            if wpi != wpi2:
-                sent_labels[wpi,wpi2] = label_lists[task_ind].index('None')
-                            
-    for label in labels[sent_ind][task_ind]:
-        if label == "None":
-            continue
-                    
-        if not label[0] in tokeni_to_wpi or not label[1] in tokeni_to_wpi:
-            out_of_bounds +=1
-            continue
-                    
-
-        wpi1 = tokeni_to_wpi[label[0]]
-        wpi2 = tokeni_to_wpi[label[1]]
-        
-        sent_labels[wpi1][wpi2] = label[2]
-    return sent_labels, num_relations, out_of_bounds
-    """
-    return [], -1, -1
 
 
 def _build_pytorch_labels(
@@ -627,6 +601,7 @@ def _build_pytorch_labels(
     num_instances: int,
     max_length: int,
     label_lists: List[List[str]],
+    character_level: bool,
 ):
     """
     _build_pytorch_labels: we do two things here: map from labels in input space to ints in a softmax, and in a data
@@ -683,7 +658,7 @@ def _build_pytorch_labels(
                     )
                     out_of_bounds += sent_out_of_bounds
                     num_relations += sent_num_relations
-                    encoded_labels.append()
+                    encoded_labels.append(sent_labels)
                 elif character_level:
                     raise NotImplementedError(
                         "End to end relation label generation for non-fast character based tokenization not yet implemented"
@@ -855,7 +830,6 @@ class DataTrainingArguments:
         },
     )
     # field(
-
     #     metadata={"help": "A space-separated list of tasks to train on: " + ", ".join(cnlp_processors.keys())})
 
     max_seq_length: int = field(
