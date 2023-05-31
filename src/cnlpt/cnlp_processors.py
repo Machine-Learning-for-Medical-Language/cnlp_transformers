@@ -126,9 +126,6 @@ class AutoProcessor(DataProcessor):
             if output_mode == tagging:
                 unique_tags = set()
                 for label in unique_labels:
-                    print("TEXT INSTANCE TRACKING")
-                    print(unique_labels)
-                    print(dataset_task)
                     tags = str(label).split(' ')
                     unique_tags.update(tags)
                 unique_labels = list(unique_tags)
