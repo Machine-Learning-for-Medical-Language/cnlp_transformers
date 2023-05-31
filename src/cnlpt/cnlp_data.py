@@ -317,9 +317,10 @@ def cnlp_preprocess_data(
             result = tokenizer(
                 examples["text"],
                 max_length=max_length,
-                padding=True,
+                padding="max_length",
                 truncation=True,
             )
+
         except Exception as e:
             print(f"Issue {e} given input: \n\n{sentences}")
 
@@ -631,7 +632,7 @@ def _build_pytorch_labels(
                     )
                 elif character_level:
                     encoded_labels.append(
-                        _build_char_level_tag_labels(labels, sent_ind, task_ind)
+                        _build_char_level_tag_labels(result, labels, sent_ind, task_ind)
                     )
                 else:
                     raise NotImplementedError(
@@ -997,6 +998,7 @@ class ClinicalNlpDataset(Dataset):
                 "num_chunks": self.args.num_chunks,
                 "insert_empty_chunk_at_beginning": self.args.insert_empty_chunk_at_beginning,
                 "truncate_examples": self.args.truncate_examples,
+                "character_level": self.args.character_level,
                 "tasks": tasks,
             },
         )
