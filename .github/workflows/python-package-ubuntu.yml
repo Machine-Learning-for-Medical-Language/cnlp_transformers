@@ -7,7 +7,7 @@ on:
   push:
     branches:
       - main
-      - 'v[0-9]*'
+      - 'dev-v[0-9]*'
       - 'testable/**'
     paths:
       - 'src/**'
@@ -17,7 +17,7 @@ on:
   pull_request:
     branches:
       - main
-      - 'v[0-9]*'
+      - 'dev-v[0-9]*'
     paths:
       - 'src/**'
       - 'test/**'

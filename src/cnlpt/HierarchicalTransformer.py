@@ -4,15 +4,19 @@ Module containing the Hierarchical Transformer module, adapted from Xin Su.
 import logging
 import copy
 import random
-from typing import Optional, List
+from typing import Optional, List, cast
 
 import numpy as np
 from torch import nn
 import torch.nn.functional as F
 import torch
-from transformers.modeling_outputs import SequenceClassifierOutput
+from torch.nn import CrossEntropyLoss
 
-from .CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
+from transformers.modeling_outputs import SequenceClassifierOutput
+from transformers.modeling_utils import PreTrainedModel
+from transformers import AutoModel, AutoConfig
+
+from .CnlpModelForClassification import CnlpConfig, ClassificationHead, generalize_encoder_forward_kwargs, freeze_encoder_weights
 
 logger = logging.getLogger(__name__)
 
@@ -180,33 +184,7 @@ class EncoderLayer(nn.Module):
         return enc_output, enc_slf_attn
 
 
-class HierarchicalTransformerConfig(object):
-    """
-    Config object for hierarchical transformer's document-level encoder layers
-
-    Original author: Xin Su (https://github.com/xinsu626/DocTransformer)
-
-    Args:
-        n_layers: number of encoder layers
-        d_model: the dimensionality of the input and output of the encoder
-        d_inner: the inner hidden size of the positionwise FFN in the encoder
-        n_head: the number of attention heads
-        d_k: the size of the query and key vectors
-        d_v: the size of the value vector
-        dropout: the amount of dropout to use in training in both the
-          attention and FFN steps (default 0.1)
-    """
-    def __init__(self, n_layers, d_model, d_inner, n_head, d_k, d_v, dropout=0.1):
-        self.n_layers = n_layers
-        self.d_model = d_model
-        self.d_inner = d_inner
-        self.n_head = n_head
-        self.d_k = d_k
-        self.d_v = d_v
-        self.dropout = dropout
-
-
-class HierarchicalModel(CnlpModelForClassification):
+class HierarchicalModel(PreTrainedModel):
     """
     Hierarchical Transformer model (https://arxiv.org/abs/2105.06752)
 
@@ -217,7 +195,6 @@ class HierarchicalModel(CnlpModelForClassification):
         transformer_head_config:
         class_weights:
         final_task_weight:
-        argument_regularization:
         freeze:
     """
     base_model_prefix = "hier"
@@ -226,37 +203,62 @@ class HierarchicalModel(CnlpModelForClassification):
     def __init__(
         self,
         config: config_class,
-        transformer_head_config: HierarchicalTransformerConfig,
         *,
+        freeze: float = -1.0,
         class_weights: Optional[List[float]] = None,
-        final_task_weight: float = 1.0,
-        argument_regularization: float = -1,
-        freeze: bool = False,
     ):
         # Initialize common components
         super(HierarchicalModel, self).__init__(
             config,
-            class_weights=class_weights,
-            final_task_weight=final_task_weight,
-            argument_regularization=argument_regularization,
-            freeze=freeze,
         )
+
+        self.config = cast(CnlpConfig, self.config)  # for PyCharm
+
+        assert self.config.hier_head_config is not None, "Hierarchical model is being instantiated with no hierarchical head config"
+
+        encoder_config = AutoConfig.from_pretrained(self.config.encoder_name)
+        encoder_config.vocab_size = self.config.vocab_size
+        self.config.encoder_config = encoder_config.to_dict()
+        encoder_model = AutoModel.from_config(encoder_config)
+        self.encoder = encoder_model.from_pretrained(self.config.encoder_name)
+        self.encoder.resize_token_embeddings(encoder_config.vocab_size)
+
+        if self.config.layer > self.config.hier_head_config["n_layers"]:
+            raise ValueError('The layer specified (%d) is too big for the specified chunk transformer which has %d layers' % (
+                self.config.layer,
+                self.config.hier_head_config["n_layers"]
+            ))
+        self.layer = self.config.layer
+
+        if freeze > 0:
+            freeze_encoder_weights(self.encoder, freeze)
+
+        self.num_labels = self.config.num_labels_list
 
         # Document-level transformer layer
         transformer_layer = EncoderLayer(
-            d_model=transformer_head_config.d_model,
-            d_inner=transformer_head_config.d_inner,
-            n_head=transformer_head_config.n_head,
-            d_k=transformer_head_config.d_k,
-            d_v=transformer_head_config.d_v,
-            dropout=transformer_head_config.dropout,
+            d_model=self.config.hidden_size,
+            d_inner=self.config.hier_head_config["d_inner"],
+            n_head=self.config.hier_head_config["n_head"],
+            d_k=self.config.hier_head_config["d_k"],
+            d_v=self.config.hier_head_config["d_v"],
+            dropout=self.config.hier_head_config["dropout"],
         )
         self.transformer = nn.ModuleList(
             [
                 copy.deepcopy(transformer_layer)
-                for _ in range(transformer_head_config.n_layers)
+                for _ in range(self.config.hier_head_config["n_layers"])
             ]
         )
+
+        self.classifiers = nn.ModuleList()
+        for task_num_labels in self.num_labels:
+            self.classifiers.append(ClassificationHead(self.config, task_num_labels))
+
+        if class_weights is None:
+            self.class_weights = [None] * len(self.classifiers)
+        else:
+            self.class_weights = class_weights
 
     def forward(
         self,
@@ -268,7 +270,7 @@ class HierarchicalModel(CnlpModelForClassification):
         inputs_embeds=None,
         labels=None,
         output_attentions=None,
-        output_hidden_states=None,
+        output_hidden_states=False,
         event_tokens=None,
     ):
         """
@@ -293,7 +295,7 @@ class HierarchicalModel(CnlpModelForClassification):
                 If `self.num_labels[task_ind] == 1` a regression loss is computed (Mean-Square loss),
                 If `self.num_labels[task_ind] > 1` a classification loss is computed (Cross-Entropy).
             output_attentions (`bool`, *optional*): Whether or not to return the attentions tensors of all attention layers.
-            output_hidden_states: not used.
+            output_hidden_states: If True, return a matrix of shape (batch_size, num_chunks, hidden size) representing the contextualized embeddings of each chunk. The 0-th element of each chunk is the classifier representation for that instance.
             event_tokens: not currently used (only relevant for token classification)
 
         Returns:
@@ -306,7 +308,8 @@ class HierarchicalModel(CnlpModelForClassification):
             batch_size, num_chunks, chunk_len, embed_dim = inputs_embeds.shape
             flat_shape = (batch_size * num_chunks, chunk_len, embed_dim)
 
-        kwargs = self.generalize_encoder_forward_kwargs(
+        kwargs = generalize_encoder_forward_kwargs(
+            self.encoder,
             attention_mask=attention_mask.reshape(flat_shape[:3])
             if attention_mask is not None
             else None,
@@ -333,89 +336,65 @@ class HierarchicalModel(CnlpModelForClassification):
         )
 
         logits = []
+        hidden_states = None
 
-        state = dict(loss=None, task_label_ind=0)
+        # outputs.last_hidden_state.shape: (B * n_chunks, chunk_len, hidden_size)
+        # (B * n_chunk, hidden_size)
+        chunks_reps = outputs.last_hidden_state[...,0,:].reshape(batch_size, num_chunks, outputs.last_hidden_state.shape[-1])
 
+        # Use pre-trained model's position embedding
+        position_ids = torch.arange(
+            num_chunks, dtype=torch.long, device=chunks_reps.device
+        )  # (n_chunk)
+        position_ids = position_ids.unsqueeze(0).expand_as(
+            chunks_reps[:, :, 0]
+        )  # (B, n_chunk)
+        position_embeddings = self.encoder.embeddings.position_embeddings(
+            position_ids
+        )
+        chunks_reps = chunks_reps + position_embeddings
+
+        # document encoding (B, n_chunk, hidden_size)
+        for layer_ind, layer_module in enumerate(self.transformer):
+            chunks_reps, _ = layer_module(chunks_reps)
+
+            ## this case is mainly for when we are doing subsequent fine-tuning using a pre-trained
+            ## hierarchical model and we want to check whether an earlier layer might provide better
+            ## classification performance (e.g., if we think the last layer(s) are overfit to the pre-training
+            ## objective) Just short circuit rather than doing the whole computation.
+            if layer_ind+1 >= self.layer:
+                break
+
+        if output_hidden_states:
+            hidden_states = chunks_reps
+
+        # extract first Documents as rep. (B, hidden_size)
+        doc_rep = chunks_reps[:, 0, :]
+
+        total_loss = 0
         for task_ind, task_num_labels in enumerate(self.num_labels):
-            if self.use_prior_tasks:
-                raise NotImplementedError(
-                    "use_prior_tasks is not defined for hierarchical model"
-                )
-            if self.config.tokens:
-                raise NotImplementedError(
-                    "tokens projection is not defined for hierarchical model"
-                )
-            if self.config.tagger[task_ind]:
-                raise NotImplementedError(
-                    "tagger projection is not defined for hierarchical model"
-                )
-            if self.config.relations[task_ind]:
-                raise NotImplementedError(
-                    "relations projection is not defined for hierarchical model"
-                )
-
-            # outputs.last_hidden_state.shape: (B * n_chunks, chunk_len, hidden_size)
-
-            # (B * n_chunk, hidden_size)
-            chunks_reps = self.feature_extractors[task_ind](
-                outputs.hidden_states, event_tokens
-            )
-
-            # (B, n_chunk, hidden_size)
-            chunks_reps = chunks_reps.reshape(
-                batch_size, num_chunks, chunks_reps.shape[-1]
-            )
-
-            # Use pre-trained model's position embedding
-            position_ids = torch.arange(
-                num_chunks, dtype=torch.long, device=chunks_reps.device
-            )  # (n_chunk)
-            position_ids = position_ids.unsqueeze(0).expand_as(
-                chunks_reps[:, :, 0]
-            )  # (B, n_chunk)
-            position_embeddings = self.encoder.embeddings.position_embeddings(
-                position_ids
-            )
-            chunks_reps = chunks_reps + position_embeddings
-
-            # document encoding (B, n_chunk, hidden_size)
-            for layer_module in self.transformer:
-                chunks_reps, _ = layer_module(chunks_reps)
-
-            # extract first Documents as rep. (B, hidden_size)
-            doc_rep = chunks_reps[:, 0, :]
+            if not self.class_weights[task_ind] is None:
+                class_weights = torch.FloatTensor(self.class_weights[task_ind]).to(self.device)
+            else:
+                class_weights = None
+            loss_fct = CrossEntropyLoss(weight=class_weights)
 
             # predict (B, 5)
             task_logits = self.classifiers[task_ind](doc_rep)
             logits.append(task_logits)
 
             if labels is not None:
-                self.compute_loss(
-                    task_logits,
-                    labels,
-                    task_ind,
-                    task_num_labels,
-                    batch_size,
-                    -1,  # only used for relation adn tagger
-                    state,
-                )
-
-        if (
-            len(self.num_labels) == 3
-            and self.relations[-1]
-            and self.argument_regularization > 0
-        ):
-            # TODO: is the attention_mask in the right shape for this?
-            logger.warning("Attention mask may not be in the right shape for "
-                           "argument regularization with the hierarchical model.")
-            self.apply_arg_reg(logits, attention_mask, state)
+                task_labels = labels[:, task_ind]
+                task_loss = loss_fct(task_logits, task_labels.type(torch.LongTensor).to(labels.device))
+                total_loss += task_loss
+            
 
         if self.training:
             return SequenceClassifierOutput(
-                loss=state["loss"],
+                loss=total_loss,
                 logits=logits,
                 hidden_states=outputs.hidden_states,
                 attentions=outputs.attentions,
             )
         else:
-            return SequenceClassifierOutput(loss=state["loss"], logits=logits)
+            return SequenceClassifierOutput(loss=total_loss, logits=logits, hidden_states=hidden_states)

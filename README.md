@@ -62,7 +62,7 @@ If you want to modify code (e.g., for developing new models), then install local
    ```
 
 ## Fine-tuning
-The main entry point for fine-tuning is the ```train_system.py``` script. Run with no arguments to show an extensive list of options that are allowed, inheriting from and extending the Huggingface training options.
+The main entry point for fine-tuning is the ```cnlp_transformers/src/cnlpt/train_system.py``` script. Run with no arguments to show an extensive list of options that are allowed, inheriting from and extending the Huggingface training options.
 
 ### Workflow
 To use the library for fine-tuning, you'll need to take the following steps:
@@ -74,61 +74,43 @@ To use the library for fine-tuning, you'll need to take the following steps:
         { 'text': <text of instance>,
           'id': <instance id>
           '<sub-task 1 name>': <instance label>,
-          '<sub-task 2 name>: <instance label>,
+          '<sub-task 2 name>': <instance label>,
           ... // other labels
           }
         { }, // instance 2
         ...  // instances 3...N
     ],
       'metadata': {
-        'output_mode': [<list of output modes (e.g. tagging, relex, classification)>],
-        'task': <overall task/dataset name>,
-        'tasks': [<list of sub-task names>],
         'version': '<optional dataset versioning>',
-        '<sub-task 1 name>': '<sub-task 1 description>',
-        ...,
-        '<sub-task n name>': '<sub-task n description>'
+        'task': <overall task/dataset name>,
+        'subtasks': [
+          {
+            'task_name': '<sub-task 1 name>',
+            'output_mode': <sub-task output mode (e.g. tagging, relex, classification)>,
+          }
+          ...
+          {
+            'task_name': '<sub-task n name>'
+            'output_mode': <sub-task output mode (e.g. tagging, relex, classification)>,
+          }
+        ]
       }
     }
 ``` 
-Instance labels should be formatted the same way as in the csv/tsv example above, see specifically the formats for tagging and relations.
+Instance labels should be formatted the same way as in the csv/tsv example above, see specifically the formats for tagging and relations. The 'metadata' field can either be included in the train/dev/test files or as a separate metadata.json file.
+
 
 
 2. Run train_system.py with a ```--task_name``` from your data files and the ```--data-dir``` argument from Step 1.
 
-### Fine-tuning for classification: End-to-end example
-1. Download data from [Drug Review Dataset (Drugs.com) Data Set](https://archive.ics.uci.edu/ml/datasets/Drug+Review+Dataset+%28Drugs.com%29) and extract. Pay attention to their terms:
-   1. only use the data for research purposes
-   2. don't use the data for any commerical purposes
-   3. don't distribute the data to anyone else
-   4. cite us
 
-2. Run ```python -m cnlpt.data.transform_uci_drug <input dir> <output dir>``` to preprocess the data from the extract directory into a new directory. This will create {train,dev,test}.tsv in the output directory specified, where the sentiment ratings have been collapsed into 3 categories.
+### Step-by-step finetuning examples
+We provided the following step-by-step examples how to finetune in clinical NLP tasks:
 
-3. Fine-tune with something like: 
-```python -m cnlpt.train_system --task_name sentiment --data_dir ~/mnt/r/DeepLearning/mmtl/drug-sentiment/ --encoder_name roberta-base --do_train --cache cache/ --output_dir temp/ --overwrite_output_dir --evals_per_epoch 5 --do_eval --num_train_epochs 1 --learning_rate 1e-5 --report_to none```
+#### 1. [Classification task](examples/uci_drug/): using [Drug Review Dataset (Drugs.com) Data Set](https://archive.ics.uci.edu/ml/datasets/Drug+Review+Dataset+%28Drugs.com%29)
 
-On our hardware, that command results in eval performance like the following:
-```'eval_sentiment': {'acc': 0.8115933044017359, 'f1': [0.8981458951773809, 0.8000984130889407, 0.34115019542155217], 'acc_and_f1': [0.8548695997895583, 0.8058458587453383, 0.5763717499116441], 'recall': [0.9443307408923455, 0.8237082066869301, 0.25352697095435683], 'precision': [0.8562679781015125, 0.7778043530255919, 0.5213310580204779]}```
+#### 2. [Sequence tagging task](examples/chemprot/): using [ChemProt website](https://biocreative.bioinformatics.udel.edu/news/corpora/chemprot-corpus-biocreative-vi/)
 
-For a demo of how to run the system in colab: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1IVT53DBwFxLKftpIn5iKtF0g4xb9yuxm?usp=sharing)
-
-### Fine-tuning for tagging: End-to-end example
-1. Download the data from the [ChemProt website](https://biocreative.bioinformatics.udel.edu/news/corpora/chemprot-corpus-biocreative-vi/).  Note, the evaluation on the data will approximate since it is done in terms of the preprocessed data, *not* ChemProt's specified evaluation method.
-
-2. Unzip the folder and each of the contents in the folder.
-
-3. Run ```pip install scispacy https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.1/en_core_sci_sm-0.5.1.tar.gz``` to get dependencies for the preprocessing tokenization and sentence splitting.
-
-4. Preprocess the data with ```python -m cnlpt.data.transform_prot ChemProt_Corpus/ scispacy_chemprot/ chemprot```.  Note, this only gives us {train,dev}.tsv in `scispacy_chemprot` since there are no gold labels for the test data.
-
-5. Fine-tune with something like:
-```python -m cnlpt.train_system --task_name chemical_ner gene_ner --data_dir scispacy_chemprot/ --encoder_name allenai/scibert_scivocab_uncased  --do_train --do_eval --cache cache/ --output_dir temp/ --overwrite_output_dir --num_train_epochs 1 --learning_rate 5e-5 --lr_scheduler_type constant --per_device_train_batch_size 64 --per_device_eval_batch_size 64 --report_to none --save_strategy no --gradient_accumulation_steps 1 --eval_accumulation_steps 10 --weight_decay 0.2``` 
-
-6. On our hardware, the above hyperparameters gives us:
-```chemical_ner = {'acc': 0.989129012764844, 'token_f1': [0.8892991278884715, 0.0, 0.9942847410774819], 'f1': 0.8890444967852824, 'report': '\n              precision    recall  f1-score   support\n\n    CHEMICAL       0.89      0.89      0.89      7876\n\n   micro avg       0.89      0.89      0.89      7876\n   macro avg       0.89      0.89      0.89      7876\nweighted avg       0.89      0.89      0.89      7876\n'}```
-For chemical NER and the following for gene NER (`GENE-Y` are normalizable gene names and `GENE-N` are non-normalizable):
-```gene_ner = {'acc': 0.9835720382010852, 'token_f1': [0.5503875968992249, 0.8223125230882896, 0.0, 0.0, 0.9949847518170479], 'f1': 0.7477207783371888, 'report': '\n              precision    recall  f1-score   support\n\n      GENE-N       0.70      0.45      0.55      2355\n      GENE-Y       0.76      0.88      0.82      5013\n\n   micro avg       0.75      0.75      0.75      7368\n   macro avg       0.73      0.67      0.68      7368\nweighted avg       0.74      0.75      0.73      7368\n'}```
 
 ### Fine-tuning options
 Run ```python -m cnlpt.train_system -h``` to see all the available options. In addition to inherited Huggingface Transformers options, there are options to do the following:

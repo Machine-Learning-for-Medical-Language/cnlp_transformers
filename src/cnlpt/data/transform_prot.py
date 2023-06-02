@@ -10,8 +10,8 @@ from collections import defaultdict
 from itertools import groupby, tee
 from heapq import merge
 
-TEST_DIR = "development"
-TRAIN_DIR = "training"
+TEST_DIR = "chemprot_development"
+TRAIN_DIR = "chemprot_training"
 nlp = spacy.load("en_core_sci_sm")
 
 
@@ -404,10 +404,10 @@ def main():
     output_path = Path(sys.argv[2])
     mode = sys.argv[3]
     print("Generating Training Data")
-    train_path = os.path.join(input_path, "training")
+    train_path = os.path.join(input_path, TRAIN_DIR)
     train_df = get_dataframe(train_path, mode=mode.lower())
     print("Generating Development Data")
-    dev_path = os.path.join(input_path, "development")
+    dev_path = os.path.join(input_path, TEST_DIR)
 
     dev_df = get_dataframe(dev_path, mode=mode.lower())
 
