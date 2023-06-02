@@ -541,7 +541,7 @@ def main(
                 else model_args.encoder_name,
                 cache_dir=model_args.cache_dir,
                 # in this case we're looking at a fine-tuned model (?)
-                character_level=dara_args.character_level,
+                character_level=data_args.character_level,
             )
 
             if training_args.do_train:

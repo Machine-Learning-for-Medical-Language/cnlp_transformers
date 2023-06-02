@@ -469,7 +469,12 @@ def _build_word_id_tag_labels(
 
 
 def _build_word_id_relex_labels(
-    word_ids: List[Optional[int]], labels: List, sent_ind: int, task_ind: int
+    word_ids: List[Optional[int]],
+    labels: List,
+    sent_ind: int,
+    task_ind: int,
+    max_length: int,
+    label_lists: List[List[str]],
 ):
     out_of_bounds = 0
     num_relations = len(labels[sent_ind][task_ind])
@@ -519,7 +524,7 @@ def _build_pytorch_labels(
     result: BatchEncoding,
     tasks: List[str],
     labels: List,
-    output_mode: List[str],
+    output_modes: Dict[str, str],
     num_instances: int,
     max_length: int,
     label_lists: List[List[str]],
@@ -656,6 +661,8 @@ def _build_pytorch_labels(
                         labels,
                         sent_ind,
                         task_ind,
+                        max_length,
+                        label_lists,
                     )
                     out_of_bounds += sent_out_of_bounds
                     num_relations += sent_num_relations
