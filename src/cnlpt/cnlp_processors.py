@@ -197,6 +197,7 @@ class AutoProcessor(DataProcessor):
         if len(self.dataset.task_output_modes) == 0:
             self.dataset.task_output_modes = infer_output_modes(self.dataset)
 
+
         # get any split of the data and ask for the set of unique labels for each task in the dataset from that split
         self.labels = get_unique_labels(self.dataset, self.dataset.tasks, self.dataset.task_output_modes)
 

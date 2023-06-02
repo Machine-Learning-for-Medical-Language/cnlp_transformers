@@ -310,7 +310,7 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.encoder_name,
         cache_dir=model_args.cache_dir,
         add_prefix_space=True,
-        additional_special_tokens=['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>', '<neg>']
+        # additional_special_tokens=['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>', '<neg>']
     )
 
     model_name = model_args.model
@@ -453,6 +453,8 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
             config = AutoConfig.from_pretrained(
                 model_args.config_name if model_args.config_name else model_args.encoder_name,
                 cache_dir=model_args.cache_dir,
+                # in this case we're looking at a fine-tuned model (?)
+                character_level=dara_args.character_level,
             )
 
             if training_args.do_train:
@@ -498,7 +500,10 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
                                 num_rel_attention_heads=model_args.num_rel_feats,
                                 rel_attention_head_dims=model_args.head_features,
                                 tagger=tagger,
-                                relations=relations,)
+                                relations=relations,
+                                # in this case we're looking at a raw pretrained model (?)
+                                character_level=data_args.character_level,
+                                )
                                 #num_tokens=len(tokenizer))
             config.vocab_size = len(tokenizer)
             model = CnlpModelForClassification(
