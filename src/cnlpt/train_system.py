@@ -454,7 +454,7 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
                 model_args.config_name if model_args.config_name else model_args.encoder_name,
                 cache_dir=model_args.cache_dir,
                 # in this case we're looking at a fine-tuned model (?)
-                character_level=dara_args.character_level,
+                character_level=data_args.character_level,
             )
 
             if training_args.do_train:
