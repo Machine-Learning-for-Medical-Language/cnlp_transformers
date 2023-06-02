@@ -851,7 +851,7 @@ class ClinicalNlpDataset(Dataset):
                     "tokenizer": tokenizer,
                     "max_length": args.max_seq_length,
                     "label_lists": self.label_lists[data_dir_ind],
-                    "output_mode": dataset_processor.get_output_mode(),
+                    "output_modes": dataset_processor.get_output_modes(),
                     "inference": not "train" in dataset_processor.dataset,
                     "hierarchical": self.hierarchical,
                     "chunk_len": self.args.chunk_len,
