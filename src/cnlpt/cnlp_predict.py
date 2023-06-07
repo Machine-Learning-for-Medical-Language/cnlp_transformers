@@ -72,10 +72,8 @@ def write_predictions_for_dataset(
                             )
 
                     entities = get_entities(chunk_labels)
-                    writer.write(
-                        "Task %d (%s) - Index %d: %s\n"
-                        % (task_ind, task_name, index, str(entities))
-                    )
+                    # HERE
+                    writer.write('Task %d (%s) - Index %d: %s\n' % (task_ind, task_name, index, str(entities)))
             elif output_mode[task_name] == relex:
                 task_predictions = np.argmax(predictions[task_ind], axis=3)
                 relex_labels = task_labels[task_name]
@@ -96,6 +94,4 @@ def write_predictions_for_dataset(
                             % (task_ind, task_name, inst_ind, cat, a1_ind, a2_ind)
                         )
             else:
-                raise NotImplementedError(
-                    "Writing predictions is not implemented for this output_mode!"
-                )
+                raise NotImplementedError('Writing predictions is not implemented for this output_mode!')
