@@ -19,6 +19,7 @@ from torch.utils.data.dataset import Dataset
 from transformers.tokenization_utils import PreTrainedTokenizer
 import numpy as np
 import numpy  # for Sphinx
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -199,7 +200,8 @@ class AutoProcessor(DataProcessor):
             self.dataset.task_output_modes = infer_output_modes(self.dataset)
 
         # convert label columns to strings
-        for task in self.dataset.tasks:
+        logger.info("Converting columns to strings")
+        for task in tqdm(self.dataset.tasks):
             if self.dataset.task_output_modes[task] == classification:
                 task_str = task + '_str'
                 for split in self.dataset:

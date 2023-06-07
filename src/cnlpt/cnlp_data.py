@@ -313,7 +313,7 @@ def cnlp_preprocess_data(
     # contain pre-wordpiece token indices)
     if not inference:
         # Create a label map for each task in this dataset: { task1 => {label_0: 0, label_1: 1, label_2:, 2}, task2 => {label_0: 0, label_1:1} }
-        label_map = {task: {label: i for i, label in enumerate(label_lists[task])} for task in tasks}
+        label_map = {task: {label: i for i, label in enumerate(label_lists[task])} for task in label_lists.keys()}
         for task in tasks:
             if none_column in label_map[task]:
                 raise Exception("There is a column named %s which is a reserved name" % (none_column))
@@ -672,8 +672,9 @@ class ClinicalNlpDataset(Dataset):
             if self.args.max_seq_length < implicit_max_len:
                 raise ValueError('For the hierarchical model, the max seq length should be equal to the chunk length * num_chunks, otherwise what is the point?')
 
+        # if cli supplies no tasks, the processor will assume we want all the tasks, but we do need to have a conventional order
+        # for the model to use, so we need to still create a tasks variable.
         tasks = None if args.task_name is None else list(args.task_name)
-        self.tasks = tasks
         for data_dir_ind, data_dir in enumerate(args.data_dir):
             dataset_processor = AutoProcessor(data_dir, tasks, max_train_items=args.max_train_items)
             self.processors.append(dataset_processor)
@@ -692,6 +693,19 @@ class ClinicalNlpDataset(Dataset):
         self._reconcile_columns()
         combined_dataset = self._concatenate_datasets()
 
+        if tasks is None:
+            # i.e., cli did not supply any task ordering:
+            if 'train' in combined_dataset:
+                split = 'train'
+            elif 'dev' in combined_dataset:
+                split = 'dev'
+            else:
+                split = 'test'
+
+            tasks = list(combined_dataset[split].features.keys() - {'text', 'text_a', 'text_b'})
+
+        self.tasks = tasks
+        
         self.processed_dataset = combined_dataset.map(
             cnlp_preprocess_data,
             batched=True,
