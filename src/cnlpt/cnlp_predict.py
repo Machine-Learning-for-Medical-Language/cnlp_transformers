@@ -26,25 +26,28 @@ def remove_newline(review):
     return review
 
 
+def write_predictions_for_dataset(
+    output_fn: str,
+    trainer: Trainer,
+    dataset: ClinicalNlpDataset,
+    split_name: str,
+    dataset_ind: int,
+    output_mode: Dict[str, str],
+    tokenizer: PreTrainedTokenizer,
+    output_prob: bool = False,
+):
+    task_labels = dataset.get_labels()
+    start_ind = end_ind = 0
+    for ind in range(dataset_ind):
+        start_ind += len(dataset.datasets[ind][split_name])
+    end_ind = start_ind + len(dataset.datasets[dataset_ind][split_name])
+
+
 def compute_disagreements(
     preds: np.ndarray,
     labels: np.ndarray,
     output_mode: str,
 ) -> np.ndarray:
-    """
-    Function that defines and computes the metrics used for each task.
-    When adding a task definition to this file, add a branch to this
-    function defining what its evaluation metric invocation should be.
-    If the new task is a simple classification task, a sensible default
-    is defined; falling back on this will trigger a warning.
-
-    :param str task_name: the task name used to index into cnlp_processors
-    :param numpy.ndarray preds: the predicted labels from the model
-    :param numpy.ndarray labels: the true labels
-    :rtype: typing.Dict[str, typing.Any]
-    :return: a dictionary containing evaluation metrics
-    """
-
     assert len(preds) == len(
         labels
     ), f"Predictions and labels have mismatched lengths {len(preds)} and {len(labels)}"
