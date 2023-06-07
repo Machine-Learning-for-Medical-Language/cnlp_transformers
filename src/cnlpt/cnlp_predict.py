@@ -26,23 +26,6 @@ def remove_newline(review):
     return review
 
 
-def write_predictions_for_dataset(
-    output_fn: str,
-    trainer: Trainer,
-    dataset: ClinicalNlpDataset,
-    split_name: str,
-    dataset_ind: int,
-    output_mode: Dict[str, str],
-    tokenizer: PreTrainedTokenizer,
-    output_prob: bool = False,
-):
-    task_labels = dataset.get_labels()
-    start_ind = end_ind = 0
-    for ind in range(dataset_ind):
-        start_ind += len(dataset.datasets[ind][split_name])
-    end_ind = start_ind + len(dataset.datasets[dataset_ind][split_name])
-
-
 def compute_disagreements(
     preds: np.ndarray,
     labels: np.ndarray,
