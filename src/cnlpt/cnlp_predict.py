@@ -18,7 +18,6 @@ def write_predictions_for_dataset(
     output_mode: Dict[str, str],
     tokenizer: PreTrainedTokenizer,
     output_prob: bool = False,
-):
     task_labels = dataset.get_labels()
     start_ind = end_ind = 0
     for ind in range(dataset_ind):
@@ -55,7 +54,8 @@ def write_predictions_for_dataset(
             elif output_mode[task_name] == tagging:
                 task_predictions = np.argmax(predictions[task_ind], axis=2)
                 tagging_labels = task_labels[task_name]
-                for index, pred_seq in enumerate(task_predictions):
+                for index, seq_pair in enumerate(zip(task_predictions, tagging_labels)):
+                    pred_seq, true_seq = seq_pair
                     wpind_to_ind = {}
                     chunk_labels = []
 
@@ -70,10 +70,7 @@ def write_predictions_for_dataset(
                             chunk_labels.append(
                                 tagging_labels[task_predictions[index][token_ind]]
                             )
-
-                    entities = get_entities(chunk_labels)
-                    # HERE
-                    writer.write('Task %d (%s) - Index %d: %s\n' % (task_ind, task_name, index, str(entities)))
+                    writer.write('Task %d (%s) - Index %d: %s \n' % (task_ind, task_name, index, str(entities)))
             elif output_mode[task_name] == relex:
                 task_predictions = np.argmax(predictions[task_ind], axis=3)
                 relex_labels = task_labels[task_name]
@@ -94,4 +91,6 @@ def write_predictions_for_dataset(
                             % (task_ind, task_name, inst_ind, cat, a1_ind, a2_ind)
                         )
             else:
-                raise NotImplementedError('Writing predictions is not implemented for this output_mode!')
+                raise NotImplementedError(
+                    "Writing predictions is not implemented for this output_mode!"
+                )
