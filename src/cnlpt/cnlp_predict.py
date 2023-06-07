@@ -18,6 +18,7 @@ def write_predictions_for_dataset(
     output_mode: Dict[str, str],
     tokenizer: PreTrainedTokenizer,
     output_prob: bool = False,
+):
     task_labels = dataset.get_labels()
     start_ind = end_ind = 0
     for ind in range(dataset_ind):
@@ -54,24 +55,26 @@ def write_predictions_for_dataset(
             elif output_mode[task_name] == tagging:
                 task_predictions = np.argmax(predictions[task_ind], axis=2)
                 tagging_labels = task_labels[task_name]
-                for index, seq_pair in enumerate(zip(task_predictions, tagging_labels)):
-                    pred_seq, true_seq = seq_pair
+                for index, pred_seq in enumerate(task_predictions):
                     wpind_to_ind = {}
                     chunk_labels = []
 
                     token_inds = eval_dataset["input_ids"][index]
-                    text = eval_dataset["text"][index]
-                    predicted_labels = [
-                        tagging_labels[task_predictions[index][i[0]]]
-                        for i in filter(
-                            lambda s: not all(i == -100 for i in s[1]),
-                            enumerate(eval_dataset["label"][index]),
-                        )
-                    ]
-                    true_ner = eval_dataset[task_name][index]
+                    tokens = tokenizer.convert_ids_to_tokens(token_inds)
+                    for token_ind in range(1, len(tokens)):
+                        if token_inds[token_ind] <= 2:
+                            break
+                        ## FIXME
+                        if tokens[token_ind].startswith("Ġ"):
+                            wpind_to_ind[token_ind] = len(wpind_to_ind)
+                            chunk_labels.append(
+                                tagging_labels[task_predictions[index][token_ind]]
+                            )
 
+                    entities = get_entities(chunk_labels)
                     writer.write(
-                        f"{eval_dataset.column_names} {text} : {len(text.split())} true ner {true_ner}  {predicted_labels} {len(predicted_labels)} \n"
+                        "Task %d (%s) - Index %d: %s\n"
+                        % (task_ind, task_name, index, str(entities))
                     )
             elif output_mode[task_name] == relex:
                 task_predictions = np.argmax(predictions[task_ind], axis=3)
