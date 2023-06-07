@@ -60,24 +60,25 @@ def write_predictions_for_dataset(
                     chunk_labels = []
 
                     token_inds = eval_dataset["input_ids"][index]
-                    tokens = tokenizer.convert_ids_to_tokens(token_inds)
-                    for token_ind in range(1, len(tokens)):
-                        if token_inds[token_ind] <= 2:
-                            break
-                        ## FIXME
-                        if tokens[token_ind].startswith("Ġ"):
-                            wpind_to_ind[token_ind] = len(wpind_to_ind)
-                            chunk_labels.append(
-                                tagging_labels[task_predictions[index][token_ind]]
-                            )
-                    writer.write('Task %d (%s) - Index %d: %s \n' % (task_ind, task_name, index, str(entities)))
+                    text = eval_dataset["text"][index]
+                    predicted_labels = [
+                        tagging_labels[task_predictions[index][i[0]]]
+                        for i in filter(
+                            lambda s: not all(i == -100 for i in s[1]),
+                            enumerate(eval_dataset["label"][index]),
+                        )
+                    ]
+                    true_ner = eval_dataset[task_name][index]
+
+                    writer.write(
+                        f"{eval_dataset.column_names} {text} : {len(text.split())} true ner {true_ner}  {predicted_labels} {len(predicted_labels)} \n"
+                    )
             elif output_mode[task_name] == relex:
                 task_predictions = np.argmax(predictions[task_ind], axis=3)
                 relex_labels = task_labels[task_name]
                 none_index = (
                     relex_labels.index("None") if "None" in relex_labels else -1
                 )
-                # assert task_labels[0] == 'None', 'The first labeled relation category should always be "None" but for task %s it is %s' % (task_names[task_ind], task_labels[0])
 
                 for inst_ind in range(task_predictions.shape[0]):
                     inst_preds = task_predictions[inst_ind]
