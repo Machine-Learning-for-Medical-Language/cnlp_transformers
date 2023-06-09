@@ -151,13 +151,12 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
     )
 
     try:
-        task_names = []
+        task_names = data_args.task_name
         num_labels = {}
         output_mode = {}
         tagger = {}
         relations = {}
         for task in dataset.tasks_to_labels.keys():
-            task_names.append(task)
             num_labels[task] = len(dataset.tasks_to_labels[task])
             task_output_mode = dataset.output_modes[task]
             output_mode[task] = task_output_mode
