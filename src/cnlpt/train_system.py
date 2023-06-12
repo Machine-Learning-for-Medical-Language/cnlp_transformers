@@ -173,8 +173,9 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
     # The .from_pretrained methods guarantee that only one local process can concurrently
     # download model & vocab.
     if model_name == 'cnn':
-        model = CnnSentenceClassifier(len(tokenizer), 
-                                      num_labels_list=num_labels,
+        model = CnnSentenceClassifier(len(tokenizer),
+                                      task_names=task_names,
+                                      num_labels_dict=num_labels,
                                       embed_dims=model_args.cnn_embed_dim,
                                       num_filters=model_args.cnn_num_filters,
                                       filters=model_args.cnn_filter_sizes,
@@ -185,7 +186,8 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
             model.load_state_dict(torch.load(model_path))
     elif model_name == 'lstm':
         model = LstmSentenceClassifier(len(tokenizer),
-                                       num_labels_list=num_labels,
+                                       task_names=task_names,
+                                       num_labels_dict=num_labels,
                                        embed_dims=model_args.lstm_embed_dim,
                                        hidden_size=model_args.lstm_hidden_size,
                                        )
