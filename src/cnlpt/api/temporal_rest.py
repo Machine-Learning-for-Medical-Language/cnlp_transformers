@@ -123,8 +123,8 @@ async def startup_event():
             relation_label_dict = { val:ind for ind,val in enumerate(relation_label_list)}
             print(relation_label_list)
 
-    
-    if (task_list := config_dict.get('finetuning_task', None)) is not None:
+    task_list = config_dict.get('finetuning_task', None)
+    if task_list is not None:
         print("Overwriting finetuning task order")
         for task_ind, task_name in enumerate(task_list):
             task_order[task_name] = task_ind
