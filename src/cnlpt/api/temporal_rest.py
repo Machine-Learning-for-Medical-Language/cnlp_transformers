@@ -101,7 +101,8 @@ async def startup_event():
     # For newer models (version >= 0.6.0), the label dictionary is saved with the model
     # config. we can look for it to preserve backwards compatibility for now but
     # should eventually remove the hardcoded label lists from our inference tools.
-    if (label_dict := config_dict.get('label_dictionary', None)) is not None:
+    label_dict = config_dict.get('label_dictionary', None)
+    if label_dict is not None:
         # some older versions have one label dictionary per dataset, future versions should just
         # have a task-keyed dictionary
         if type(label_dict) == list:
