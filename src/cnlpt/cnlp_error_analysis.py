@@ -4,18 +4,16 @@ from datasets import Dataset
 from transformers import Trainer, PreTrainedTokenizer
 from .cnlp_processors import tagging, relex, classification
 from .cnlp_data import ClinicalNlpDataset
-from seqeval.metrics.sequence_labeling import get_entities
 from typing import Dict
 
 
-def write_predictions_for_dataset(
+def write_errors_for_dataset(
     output_fn: str,
     trainer: Trainer,
     dataset: ClinicalNlpDataset,
     split_name: str,
     dataset_ind: int,
     output_mode: Dict[str, str],
-    tokenizer: PreTrainedTokenizer,
 ):
     task_labels = dataset.get_labels()
     start_ind = end_ind = 0
@@ -29,6 +27,7 @@ def write_predictions_for_dataset(
         )
         predictions = trainer.predict(test_dataset=eval_dataset).predictions
         for task_ind, task_name in enumerate(dataset.tasks):
+
             if output_mode[task_name] == classification:
                 task_predictions = np.argmax(predictions[task_ind], axis=1)
                 for index, item in enumerate(task_predictions):
