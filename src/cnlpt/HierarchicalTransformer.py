@@ -4,7 +4,7 @@ Module containing the Hierarchical Transformer module, adapted from Xin Su.
 import logging
 import copy
 import random
-from typing import Optional, List, cast
+from typing import Optional, List, cast, Dict
 
 import numpy as np
 from torch import nn
@@ -261,12 +261,30 @@ class HierarchicalModel(PreTrainedModel):
             task_num_labels = len(task_labels)
             self.classifiers[task_name] = ClassificationHead(self.config, task_num_labels)
 
+        self.label_dictionary = config.label_dictionary
+        self.set_class_weights(class_weights)
+
+    def remove_task_classifiers(self, tasks=None):
+        if tasks is None:
+            self.classifiers = nn.ModuleDict()
+            self.tasks = []
+            self.class_weights = {}
+        else:
+            for task in tasks:
+                self.classifiers.pop(task)
+                self.tasks.remove(task)
+                self.class_weights.pop(task)
+
+    def add_task_classifier(self, task_name: str, label_dictionary: Dict[str, List]):
+        self.tasks.append(task_name)
+        self.classifiers[task_name] = ClassificationHead(self.config, len(label_dictionary))
+        self.label_dictionary[task_name] = label_dictionary
+
+    def set_class_weights(self, class_weights: Optional[List[float]] = None):
         if class_weights is None:
-            self.class_weights = {x: None for x in config.label_dictionary.keys()}
+            self.class_weights = {x: None for x in self.label_dictionary.keys()}
         else:
             self.class_weights = class_weights
-
-        self.label_dictionary = config.label_dictionary
 
     def forward(
         self,

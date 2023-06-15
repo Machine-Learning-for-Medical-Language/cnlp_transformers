@@ -199,7 +199,7 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
         if is_hub_model(encoder_name):
             config = CnlpConfig(
                 encoder_name,
-                data_args.task_name,
+                data_args.task_name if data_args.task_name is not None else dataset.tasks,
                 layer=model_args.layer,
                 tokens=model_args.token,
                 num_rel_attention_heads=model_args.num_rel_feats,
@@ -239,6 +239,13 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
 
             logger.info("Loading pre-trained hierarchical model...")
             model = AutoModel.from_pretrained(encoder_name, config=config)
+
+            model.remove_task_classifiers()
+            for task in data_args.task_name:
+                if task not in config.finetuning_task:
+                    model.add_task_classifier(task, dataset.get_labels()[task])
+            model.set_class_weights(dataset.class_weights)
+
     else:
         # by default cnlpt model, but need to check which encoder they want
         encoder_name = model_args.encoder_name
