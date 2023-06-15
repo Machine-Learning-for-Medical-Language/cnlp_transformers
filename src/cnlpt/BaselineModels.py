@@ -1,20 +1,34 @@
+from typing import Dict, List
+
 import torch
 from torch import nn
 import torch.nn.functional as F
 
 class CnnSentenceClassifier(nn.Module):
-    def __init__(self, vocab_size, embed_dims=100, num_labels_list=[2,], num_filters=25, dropout=0.2, filters=(1,2,3)):
+    def __init__(
+        self,
+        vocab_size,
+        task_names: List[str],
+        num_labels_dict: Dict[str, int],
+        embed_dims=100,
+        num_filters=25,
+        dropout=0.2,
+        filters=(1,2,3)
+    ):
         super(CnnSentenceClassifier, self).__init__()
-        self.dropout =  dropout
+        self.dropout = dropout
 
         self.embed = nn.Embedding(num_embeddings=vocab_size, embedding_dim=embed_dims)
         self.convs = nn.ModuleList( [nn.Conv1d(embed_dims, num_filters, x) for x in filters] )
         self.loss_fn = nn.CrossEntropyLoss()
         
         self.fcs = nn.ModuleList()
-        for task_num_labels in num_labels_list:
-            self.fcs.append(nn.Linear(num_filters * len(filters), task_num_labels))
 
+        self.task_names = task_names
+        for task_name in self.task_names:
+            if task_name not in num_labels_dict:
+                raise ValueError("Misalignment between task_names and num_labels_dict")
+            self.fcs.append(nn.Linear(num_filters * len(filters), num_labels_dict[task_name]))
 
     def forward(
         self,
@@ -47,17 +61,29 @@ class CnnSentenceClassifier(nn.Module):
 
 
 class LstmSentenceClassifier(nn.Module):
-    def __init__(self, vocab_size, embed_dims=100, num_labels_list=[2,], dropout=0.2, hidden_size=100):
+    def __init__(
+        self,
+        vocab_size,
+        task_names: List[str],
+        num_labels_dict: Dict[str, int],
+        embed_dims=100,
+        dropout=0.2,
+        hidden_size=100
+    ):
         super(LstmSentenceClassifier, self).__init__()
-        self.dropout =  dropout
+        self.dropout = dropout
 
         self.embed = nn.Embedding(num_embeddings=vocab_size, embedding_dim=embed_dims)
         self.lstm = nn.LSTM(input_size = embed_dims, hidden_size=hidden_size, bidirectional=True)
         self.loss_fn = nn.CrossEntropyLoss()
         
         self.fcs = nn.ModuleList()
-        for task_num_labels in num_labels_list:
-            self.fcs.append(nn.Linear(4*hidden_size, task_num_labels))
+
+        self.task_names = task_names
+        for task_name in self.task_names:
+            if task_name not in num_labels_dict:
+                raise ValueError("Misalignment between task_names and num_labels_dict")
+            self.fcs.append(nn.Linear(4*hidden_size, num_labels_dict[task_name]))
 
     def forward(
         self,
