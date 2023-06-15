@@ -60,6 +60,70 @@ from collections import defaultdict
 AutoConfig.register("cnlpt", CnlpConfig)
 
 logger = logging.getLogger(__name__)
+# For debugging early stopping logging
+class EvalCallback(TrainerCallback):
+    """ """
+
+    def on_evaluate(self, args, state, control, **kwargs):
+        """
+
+        Args:
+          args:
+          state:
+          control:
+          **kwargs:
+
+        Returns:
+
+        """
+        if state.is_world_process_zero:
+            model_dict = {}
+            if "model" in kwargs:
+                model = kwargs["model"]
+                if (
+                    hasattr(model, "best_score")
+                    and model.best_score > eval_state["best_score"]
+                ):
+                    model_dict = {
+                        "best_score": model.best_score,
+                        "best_step": state.global_step,
+                        "best_epoch": state.epoch,
+                    }
+            state_dict = {
+                "curr_epoch": state.epoch,
+                "max_epochs": state.num_train_epochs,
+                "curr_step": state.global_step,
+                "max_steps": state.max_steps,
+            }
+            state_dict.update(model_dict)
+            eval_state.update(state_dict)
+
+
+# For stopping with actual_epochs while
+# spoofing the lr scheduler with num_train_epochs
+# as described in the README
+class StopperCallback(TrainerCallback):
+    """ """
+
+    def __init__(self, last_step=-1, last_epoch=-1):
+        self.last_step = last_step
+        self.last_epoch = last_epoch
+
+    def on_step_end(self, args, state, control, **kwargs):
+        """
+
+        Args:
+          args:
+          state:
+          control:
+          **kwargs:
+
+        Returns:
+
+        """
+        control.should_training_stop = (
+            self.last_epoch > 0 and state.epoch >= self.last_epoch
+        ) or (self.last_step > 0 and state.global_step >= self.last_step)
 
 
 eval_state = defaultdict(lambda: -1)
