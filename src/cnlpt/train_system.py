@@ -39,6 +39,7 @@ from transformers import (
     Trainer,
     TrainerCallback,
     set_seed,
+    TrainerCallback,
 )
 from transformers.file_utils import CONFIG_NAME
 from transformers.training_args import IntervalStrategy
@@ -60,6 +61,13 @@ from collections import defaultdict
 AutoConfig.register("cnlpt", CnlpConfig)
 
 logger = logging.getLogger(__name__)
+
+
+from collections import defaultdict
+
+eval_state = defaultdict(lambda: -1)
+
+
 # For debugging early stopping logging
 class EvalCallback(TrainerCallback):
     """ """
@@ -808,10 +816,15 @@ def main(
                                 ) as f:
                                     json.dump(model_args.to_dict(), f)
                         for task_ind, task_name in enumerate(metrics):
-                            with open(output_eval_file, "w") as writer:
-                                # logger.info("***** Eval results for task %s *****" % (task_name))
+                            with open(output_eval_file, "a") as writer:
+                                logger.info(
+                                    "***** Eval results for task %s *****" % (task_name)
+                                )
+                                writer.write(
+                                    f"\n\n***** Eval results for task {task_name} *****\n\n"
+                                )
                                 for key, value in metrics[task_name].items():
-                                    # logger.info("  %s = %s", key, value)
+                                    logger.info("  %s = %s", key, value)
                                     writer.write("%s = %s\n" % (key, value))
 
                     if training_args.error_analysis:
