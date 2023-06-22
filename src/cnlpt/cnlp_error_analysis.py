@@ -2,19 +2,20 @@ import numpy as np
 from transformers.trainer_utils import EvalPrediction
 
 from datasets import Dataset
-from transformers import Trainer, PreTrainedTokenizer, EvalPrediction
+from transformers.trainer import Trainer
+from transformers.trainer_utils import EvalPrediction
 from .cnlp_processors import tagging, relex, classification
 from .cnlp_data import ClinicalNlpDataset
-from typing import Dict, List
-
+from typing import Dict, List, Set
+from collections import defaultdict
 
 def collect_disagreements(
     task_names: List[str],
     p: EvalPrediction,
     max_seq_length: int,
     dataset: ClinicalNlpDataset,
-):
-    disagree_inds = {}
+) -> Dict[int, Set[str]]:
+    inds_to_labels = defaultdict(lambda : set())
     task_label_ind = 0
 
     for task_ind, task_name in enumerate(task_names):
@@ -33,7 +34,7 @@ def collect_disagreements(
             labels = p.label_ids[
                 :, :, task_label_ind : task_label_ind + data_args.max_seq_length
             ].squeeze()
-            task_label_ind += data_args.max_seq_length
+            task_label_ind += max_seq_length
         elif p.label_ids.ndim == 3:
             if tagger:
                 labels = p.label_ids[
@@ -44,12 +45,13 @@ def collect_disagreements(
             task_label_ind += 1
         elif p.label_ids.ndim == 2:
             labels = p.label_ids[:, task_ind].squeeze()
-        disagree_inds[task_name] = compute_disagreements(
+        for prediction_index in compute_disagreements(
             preds,
             labels,
             dataset.output_modes[task_name],
-        )
-
+        ):
+            inds_to_labels[prediction_index].add(task_name)
+    return inds_to_labels
 
 def compute_disagreements(
     preds: np.ndarray,
