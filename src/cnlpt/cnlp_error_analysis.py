@@ -9,13 +9,14 @@ from .cnlp_data import ClinicalNlpDataset
 from typing import Dict, List, Set
 from collections import defaultdict
 
+
 def collect_disagreements(
     task_names: List[str],
     p: EvalPrediction,
     max_seq_length: int,
     dataset: ClinicalNlpDataset,
 ) -> Dict[int, Set[str]]:
-    inds_to_labels = defaultdict(lambda : set())
+    inds_to_labels = defaultdict(lambda: set())
     task_label_ind = 0
 
     for task_ind, task_name in enumerate(task_names):
@@ -53,6 +54,7 @@ def collect_disagreements(
             inds_to_labels[prediction_index].add(task_name)
     return inds_to_labels
 
+
 def compute_disagreements(
     preds: np.ndarray,
     labels: np.ndarray,
@@ -79,17 +81,14 @@ def compute_disagreements(
     if output_mode == classification:
         return classification_disagreements(preds=preds, labels=labels)
     elif output_mode == tagging:
-        return tagging_disagreements(
-            preds=preds, labels=labels
-        )
+        return tagging_disagreements(preds=preds, labels=labels)
     elif output_mode == relex:
         return relation_disagreements(
-            preds=preds, labels=labels,
+            preds=preds,
+            labels=labels,
         )
     else:
-        raise Exception(
-            "As yet unsupported task in cnlpt"
-        )
+        raise Exception("As yet unsupported task in cnlpt")
 
 
 def classification_disagreements(preds: np.ndarray, labels: np.ndarray):
