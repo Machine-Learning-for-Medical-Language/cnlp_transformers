@@ -1,4 +1,5 @@
 import numpy as np
+from transformers.trainer_utils import EvalPrediction
 
 from datasets import Dataset
 from transformers import Trainer, PreTrainedTokenizer
@@ -6,6 +7,37 @@ from .cnlp_processors import tagging, relex, classification
 from .cnlp_data import ClinicalNlpDataset
 from typing import Dict
 
+
+def collect_disagreements(p: EvalPrediction):
+    disagree_inds = {}
+    task_label_ind = 0
+
+    for task_ind, task_name in enumerate(task_names):
+        if tagger[task_name]:
+            preds = np.argmax(p.predictions[task_ind], axis=2)
+            # labels will be -100 where we don't need to tag
+        elif relations[task_name]:
+            preds = np.argmax(p.predictions[task_ind], axis=3)
+        else:
+            preds = np.argmax(p.predictions[task_ind], axis=1)
+
+        if relations[task_name]:
+            # relation labels
+            labels = p.label_ids[
+                :, :, task_label_ind : task_label_ind + data_args.max_seq_length
+            ].squeeze()
+            task_label_ind += data_args.max_seq_length
+        elif p.label_ids.ndim == 3:
+            if tagger[task_name]:
+                labels = p.label_ids[
+                    :, :, task_label_ind : task_label_ind + 1
+                ].squeeze()
+            else:
+                labels = p.label_ids[:, 0, task_label_ind].squeeze()
+            task_label_ind += 1
+        elif p.label_ids.ndim == 2:
+            labels = p.label_ids[:, task_ind].squeeze()
+        disagree_inds[task_name] = compute_disagreements()
 
 def write_errors_for_dataset(
     output_fn: str,
@@ -15,6 +47,7 @@ def write_errors_for_dataset(
     dataset_ind: int,
     output_mode: Dict[str, str],
 ):
+
     task_labels = dataset.get_labels()
     start_ind = end_ind = 0
     for ind in range(dataset_ind):
