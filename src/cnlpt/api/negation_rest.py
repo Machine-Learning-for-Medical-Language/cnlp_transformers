@@ -27,7 +27,7 @@ import logging
 from time import time
 
 app = FastAPI()
-model_name = "tmills/cnlpt-negation-roberta-sharpseed"
+model_name = "mlml-chip/negation_pubmedbert_sharpseed"
 logger = logging.getLogger('Negation_REST_Processor')
 logger.setLevel(logging.DEBUG)
 
