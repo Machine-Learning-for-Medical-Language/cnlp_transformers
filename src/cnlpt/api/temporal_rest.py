@@ -28,7 +28,7 @@ from time import time
 from nltk.tokenize import wordpunct_tokenize as tokenize
 
 app = FastAPI()
-model_name = "tmills/thyme1-e2e"
+model_name = "mlml-chip/thyme2_colon_e2e"
 logger = logging.getLogger('Temporal_REST_Processor')
 logger.setLevel(logging.INFO)
 
@@ -45,10 +45,6 @@ relation_label_dict = { val:ind for ind,val in enumerate(relation_label_list)}
 
 dtr_label_list = ["AFTER", "BEFORE", "BEFORE/OVERLAP", "OVERLAP"]
 old_dtr_label_list = ["BEFORE", "OVERLAP", "BEFORE/OVERLAP", "AFTER"]
-
-tasks = ['timex', 'event', 'tlinkx']
-# The default ordering from THYME 1 model
-task_order = {'event':0, 'timex': 1, 'tlinkx': 2}
 
 labels = [ timex_label_list, event_label_list, relation_label_list]
 max_length = 128
@@ -123,12 +119,13 @@ async def startup_event():
             relation_label_dict = { val:ind for ind,val in enumerate(relation_label_list)}
             print(relation_label_list)
 
-    task_list = config_dict.get('finetuning_task', None)
-    if task_list is not None:
+    app.state.tasks = config_dict.get('finetuning_task', None)
+    app.state.task_order = {}
+    if app.state.tasks is not None:
         print("Overwriting finetuning task order")
-        for task_ind, task_name in enumerate(task_list):
-            task_order[task_name] = task_ind
-        print(task_order)
+        for task_ind, task_name in enumerate(app.state.tasks):
+            app.state.task_order[task_name] = task_ind
+        print(app.state.task_order)
     else:
         print("Didn't find a new task ordering in the model config")
 
@@ -159,14 +156,14 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
         logger.debug('Instance string is %s' % (inst_str))
         instances.append(inst_str)
 
-    dataset = get_dataset(instances, app.state.tokenizer, labels, tasks, max_length)
+    dataset = get_dataset(instances, app.state.tokenizer, labels, app.state.tasks, max_length)
     preproc_end = time()
 
     output = app.state.trainer.predict(test_dataset=dataset)
 
-    timex_predictions = np.argmax(output.predictions[task_order['timex']], axis=2)
-    event_predictions = np.argmax(output.predictions[task_order['event']], axis=2)
-    rel_predictions = np.argmax(output.predictions[task_order['tlinkx']], axis=3)
+    timex_predictions = np.argmax(output.predictions[app.state.task_order['timex']], axis=2)
+    event_predictions = np.argmax(output.predictions[app.state.task_order['event']], axis=2)
+    rel_predictions = np.argmax(output.predictions[app.state.task_order['tlinkx']], axis=3)
     rel_inds = np.where(rel_predictions != relation_label_dict["None"])
 
     logging.debug('Found relation indices: %s' % (str(rel_inds)))
