@@ -59,7 +59,7 @@ def compute_disagreements(
     preds: np.ndarray,
     labels: np.ndarray,
     output_mode: str,
-):
+) -> np.ndarray:
     """
     Function that defines and computes the metrics used for each task.
 
@@ -91,21 +91,23 @@ def compute_disagreements(
         raise Exception("As yet unsupported task in cnlpt")
 
 
-def classification_disagreements(preds: np.ndarray, labels: np.ndarray):
+def classification_disagreements(preds: np.ndarray, labels: np.ndarray) -> np.ndarray:
     (indices,) = np.where(np.not_equal(preds, labels))
     return indices
 
 
-def tagging_disagreements(preds: np.ndarray, labels: np.ndarray):
+def tagging_disagreements(preds: np.ndarray, labels: np.ndarray) -> np.ndarray:
     (indices,) = np.where([*map(any, np.not_equal(preds, labels))])
     return indices
 
 
-def relation_disagreements(preds: np.ndarray, labels: np.ndarray):
+def relation_disagreements(preds: np.ndarray, labels: np.ndarray) -> np.ndarray:
     (indices,) = np.where([*map(lambda s: s.any(), np.not_equal(preds, labels))])
     return indices
 
 
+# Long term - get the disagreements using this module,
+# then pass the disagreements to cnlp_predict to avoid duplicating
 def write_errors_for_dataset(
     output_fn: str,
     trainer: Trainer,
@@ -113,6 +115,8 @@ def write_errors_for_dataset(
     split_name: str,
     dataset_ind: int,
     output_mode: Dict[str, str],
+    prediction: EvalPrediction,
+    error_inds: np.ndarray = np.array([]),
 ):
 
     task_labels = dataset.get_labels()
@@ -124,8 +128,8 @@ def write_errors_for_dataset(
     with open(output_fn, "w") as writer:
         eval_dataset = Dataset.from_dict(
             dataset.processed_dataset[split_name][start_ind:end_ind]
-        )
-        predictions = trainer.predict(test_dataset=eval_dataset).predictions
+        )[error_inds] # need to ensure can be accessed like this a la numpy
+        predictions = prediction[error_inds]
         for task_ind, task_name in enumerate(dataset.tasks):
 
             if output_mode[task_name] == classification:
