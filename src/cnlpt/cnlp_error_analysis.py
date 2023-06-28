@@ -1,8 +1,8 @@
 import numpy as np
+import pandas as pd
 from transformers.trainer_utils import EvalPrediction
 
 from datasets import Dataset
-from transformers.trainer import Trainer
 from transformers.trainer_utils import EvalPrediction
 from .cnlp_processors import tagging, relex, classification
 from .cnlp_data import ClinicalNlpDataset
@@ -106,11 +106,124 @@ def relation_disagreements(preds: np.ndarray, labels: np.ndarray) -> np.ndarray:
     return indices
 
 
+def write_errors_for_dataset(
+    split_name: str,
+    dataset_ind: int,
+    dataset: ClinicalNlpDataset,
+    prediction: EvalPrediction,
+    output_mode: Dict[str, str],
+    inds2tasks: Dict[int, Set[str]],
+):
+    start_ind = 0
+    for ind in range(dataset_ind):
+        start_ind += len(dataset.datasets[ind][split_name])
+    end_ind = start_ind + len(dataset.datasets[dataset_ind][split_name])
+
+    task2ind = {task_name: task_ind for task_ind, task_name in enumerate(dataset.tasks)}
+    eval_dataset = Dataset.from_dict(
+        dataset.processed_dataset[split_name][start_ind:end_ind]
+    )
+
+    out_table = pd.DataFrame(
+        columns=["text", *sorted(dataset.tasks)], index=sorted(inds2tasks.keys())
+    )
+
+    out_table["text"] = eval_dataset["text"][sorted(inds2tasks.keys())]
+
+    task2labels = dataset.get_labels()
+
+    for instance_index, error_tasks in inds2tasks.items():
+        out_table.loc[instance_index] = pd.Series(
+            errors_dict(
+                instance_index,
+                task2labels,
+                error_tasks,
+                prediction,
+                eval_dataset,
+                output_mode,
+                task2ind,
+            )
+        )
+
+
+def errors_dict(
+    instance_index: int,
+    task2labels: Dict[str, List[str]],
+    error_tasks: Set[str],
+    prediction: EvalPrediction,
+    eval_dataset: Dataset,
+    output_mode: Dict[str, str],
+    task2ind: Dict[str, int],
+) -> Dict[str, str]:
+    return {
+        error_task: get_error_string(
+            instance_index,
+            task2labels[error_task],
+            error_task,
+            prediction,
+            eval_dataset,
+            output_mode,
+            task2ind,
+        )
+        for error_task in error_tasks
+    }
+
+
+def get_error_string(
+    instance_index: int,
+    task_labels: List[str],
+    error_task: str,
+    prediction: EvalPrediction,
+    eval_dataset: Dataset,
+    output_mode: Dict[str, str],
+    task2ind: Dict[str, int],
+) -> str:
+    ground_truth = eval_dataset[error_task][instance_index]
+    task_prediction = prediction[task2ind[error_task]][instance_index]
+    task_type = output_mode[error_task]
+    if task_type == classification:
+        return classification_print(task_labels, ground_truth, task_prediction)
+    elif task_type == tagging:
+        return tagging_print(task_labels, ground_truth, task_prediction)
+    elif task_type == relex:
+        return relex_print(task_labels, ground_truth, task_prediction)
+    else:
+        return "UNSUPPORTED TASK TYPE"
+
+
+def classification_print(
+    task_labels: List[str],
+    ground_truth: str,
+    task_prediction: np.ndarray,
+) -> str:
+    resolved_prediction = np.argmax(task_prediction, axis=0)
+    predicted_label = task_labels[resolved_prediction]
+    return f"GOLD: {ground_truth} PREDICTED: {predicted_label}"
+
+
+def tagging_print(
+    task_labels: List[str],
+    ground_truth: str,
+    task_prediction: np.ndarray,
+) -> str:
+    resolved_prediction = np.argmax(task_prediction, axis=1)
+
+    return ""
+
+
+def relex_print(
+    task_labels: List[str],
+    ground_truth: str,
+    task_prediction: np.ndarray,
+) -> str:
+    resolved_prediction = np.argmax(task_prediction, axis=2)
+    return ""
+
+
 # Long term - get the disagreements using this module,
 # then pass the disagreements to cnlp_predict to avoid duplicating
-def write_errors_for_dataset(
+def Old_write_errors_for_dataset(
     output_fn: str,
-    trainer: Trainer,
     dataset: ClinicalNlpDataset,
     split_name: str,
     dataset_ind: int,
@@ -128,8 +241,8 @@ def write_errors_for_dataset(
     with open(output_fn, "w") as writer:
         eval_dataset = Dataset.from_dict(
             dataset.processed_dataset[split_name][start_ind:end_ind]
-        )[error_inds] # need to ensure can be accessed like this a la numpy
-        predictions = prediction[error_inds]
+        )
+        predictions = prediction
         for task_ind, task_name in enumerate(dataset.tasks):
 
             if output_mode[task_name] == classification:
