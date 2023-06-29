@@ -10,12 +10,13 @@ from typing import Dict, List, Set
 from collections import defaultdict
 from itertools import chain
 
+
 def collect_disagreements(
     task_names: List[str],
     p: EvalPrediction,
     max_seq_length: int,
     dataset: ClinicalNlpDataset,
-        #) -> Dict[int, Set[str]]:
+    # ) -> Dict[int, Set[str]]:
 ) -> Dict[str, np.ndarray]:
     # inds_to_labels = defaultdict(lambda: set())
     labels_to_inds = {}
@@ -48,12 +49,12 @@ def collect_disagreements(
             task_label_ind += 1
         elif p.label_ids.ndim == 2:
             labels = p.label_ids[:, task_ind].squeeze()
-        # for prediction_index in compute_disagreements(
-        #     preds,
-        #     labels,
-        #     dataset.output_modes[task_name],
-        # ):
-        #     inds_to_labels[prediction_index].a
+            # for prediction_index in compute_disagreements(
+            #     preds,
+            #     labels,
+            #     dataset.output_modes[task_name],
+            # ):
+            #     inds_to_labels[prediction_index].a
             dd(task_name)
     return inds_to_labels
 
@@ -127,7 +128,6 @@ def write_errors_for_dataset(
         dataset.processed_dataset[split_name][start_ind:end_ind]
     )
 
-    
     # out_table = pd.DataFrame(
     #     columns=["text", *sorted(dataset.tasks)], index=sorted(inds2tasks.keys())
     # )
@@ -135,27 +135,30 @@ def write_errors_for_dataset(
     # dummy for now
     task2inds = {}
 
+    # redundant but you never can tell
+    relevant_indices = sorted(set(chain.from_iterable(task2inds.values())))
+
     out_table = pd.DataFrame(
-        columns = ["text", *sorted(dataset.tasks)],
-        index=set(chain.from_iterable(task2inds.values())
+        columns=["text", *sorted(dataset.tasks)],
+        index=relevant_indices,
     )
 
-    out_table["text"] = eval_dataset["text"][sorted(inds2tasks.keys())]
+    out_table["text"] = eval_dataset["text"][relevant_indices]
 
     task2labels = dataset.get_labels()
 
-    for instance_index, error_tasks in inds2tasks.items():
-        out_table.loc[instance_index] = pd.Series(
-            errors_dict(
-                instance_index,
-                task2labels,
-                error_tasks,
-                prediction,
-                eval_dataset,
-                output_mode,
-                task2ind,
-            )
-        )
+    # for instance_index, error_tasks in inds2tasks.items():
+    #     out_table.loc[instance_index] = pd.Series(
+    #         errors_dict(
+    #             instance_index,
+    #             task2labels,
+    #             error_tasks,
+    #             prediction,
+    #             eval_dataset,
+    #             output_mode,
+    #             task2ind,
+    #         )
+    #     )
 
 
 def errors_dict(
