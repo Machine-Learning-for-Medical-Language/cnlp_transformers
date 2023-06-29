@@ -6,9 +6,10 @@ from datasets import Dataset
 from transformers.trainer_utils import EvalPrediction
 from .cnlp_processors import tagging, relex, classification
 from .cnlp_data import ClinicalNlpDataset
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Tuple
 from collections import defaultdict
 from itertools import chain
+from operator import itemgetter
 
 
 def collect_disagreements(
@@ -33,6 +34,8 @@ def collect_disagreements(
         else:
             preds = np.argmax(p.predictions[task_ind], axis=1)
 
+        labels = np.array([])  # so the type checker doesn't complain
+
         if relations:
             # relation labels
             labels = p.label_ids[
@@ -55,8 +58,12 @@ def collect_disagreements(
             #     dataset.output_modes[task_name],
             # ):
             #     inds_to_labels[prediction_index].a
-            dd(task_name)
-    return inds_to_labels
+        labels_to_inds[task_name] = compute_disagreements(
+            preds,
+            labels,
+            dataset.output_modes[task_name],
+        )
+    return labels_to_inds
 
 
 def compute_disagreements(
@@ -116,7 +123,8 @@ def write_errors_for_dataset(
     dataset: ClinicalNlpDataset,
     prediction: EvalPrediction,
     output_mode: Dict[str, str],
-    inds2tasks: Dict[int, Set[str]],
+    # inds2tasks: Dict[int, Set[str]],
+    labels2inds: Dict[str, np.ndarray],
 ):
     start_ind = 0
     for ind in range(dataset_ind):
@@ -147,92 +155,123 @@ def write_errors_for_dataset(
 
     task2labels = dataset.get_labels()
 
-    # for instance_index, error_tasks in inds2tasks.items():
-    #     out_table.loc[instance_index] = pd.Series(
-    #         errors_dict(
-    #             instance_index,
-    #             task2labels,
-    #             error_tasks,
-    #             prediction,
-    #             eval_dataset,
-    #             output_mode,
-    #             task2ind,
-    #         )
-    #     )
-
-
-def errors_dict(
-    instance_index: int,
-    task2labels: Dict[str, List[str]],
-    error_tasks: Set[str],
-    prediction: EvalPrediction,
-    eval_dataset: Dataset,
-    output_mode: Dict[str, str],
-    task2ind: Dict[str, int],
-) -> Dict[str, str]:
-    return {
-        error_task: get_error_string(
-            instance_index,
-            task2labels[error_task],
-            error_task,
+    for task_label, error_inds in labels2inds.items():
+        out_table[task_label][error_inds] = get_error_list(
+            task_label,
             prediction,
-            eval_dataset,
-            output_mode,
+            task2labels,
             task2ind,
+            output_mode,
+            error_inds,
+            eval_dataset,
         )
-        for error_task in error_tasks
-    }
 
 
-def get_error_string(
-    instance_index: int,
-    task_labels: List[str],
+# might be more efficient to return a pd.Series or something for the
+# assignment and populate it via a generator but for now just use a list
+def get_error_list(
     error_task: str,
     prediction: EvalPrediction,
-    eval_dataset: Dataset,
-    output_mode: Dict[str, str],
+    task2labels: Dict[str, List[str]],
     task2ind: Dict[str, int],
-) -> str:
-    ground_truth = eval_dataset[error_task][instance_index]
-    task_prediction = prediction[task2ind[error_task]][instance_index]
+    output_mode: Dict[str, str],
+    error_inds: np.ndarray,
+    eval_dataset: Dataset,
+) -> List[str]:
+    ground_truth = eval_dataset[error_task][error_inds]
+    task_prediction = prediction[task2ind[error_task]][error_inds]
     task_type = output_mode[error_task]
+    task_labels = task2labels[error_task]
+    # get the feeling this doesn't work for multiple tasks but we'll
+    # probe those data structures when we run the code
+    torch_labels = eval_dataset["label"]
     if task_type == classification:
-        return classification_print(task_labels, ground_truth, task_prediction)
+        return get_classification_prints(task_labels, ground_truth, task_prediction)
     elif task_type == tagging:
-        return tagging_print(task_labels, ground_truth, task_prediction)
+        return get_tagging_prints(
+            task_labels, ground_truth, task_prediction, torch_labels
+        )
     elif task_type == relex:
-        return relex_print(task_labels, ground_truth, task_prediction)
+        return get_relex_prints(
+            task_labels, ground_truth, task_prediction, torch_labels
+        )
     else:
-        return "UNSUPPORTED TASK TYPE"
+        return len(error_inds) * ["UNSUPPORTED TASK TYPE"]
 
 
-def classification_print(
-    task_labels: List[str],
-    ground_truth: str,
-    task_prediction: np.ndarray,
-) -> str:
-    resolved_prediction = np.argmax(task_prediction, axis=0)
-    predicted_label = task_labels[resolved_prediction]
-    return f"GOLD: {ground_truth} PREDICTED: {predicted_label}"
+def get_classification_prints(
+    classification_labels: List[str],
+    ground_truths: List[str],
+    task_predictions: np.ndarray,
+) -> List[str]:
+    resolved_predictions = np.argmax(task_predictions, axis=1)
+    predicted_labels = [*map(itemgetter(classification_labels), resolved_predictions)]
+
+    def clean_string(gp: Tuple[str, str]) -> str:
+        ground, predicted = gp
+        return f"Ground: {ground} , Predicted {predicted}"
+
+    return [*map(clean_string, zip(ground_truths, predicted_labels))]
 
 
-def tagging_print(
-    task_labels: List[str],
-    ground_truth: str,
-    task_prediction: np.ndarray,
-) -> str:
-    resolved_prediction = np.argmax(task_prediction, axis=1)
+def get_tagging_prints(
+    tagging_labels: List[str],
+    ground_truths: List[str],
+    task_predictions: np.ndarray,
+    torch_labels: np.ndarray,
+) -> List[str]:
+    resolved_predictions = np.argmax(task_predictions, axis=2)
 
-    return ""
+    def human_readable_labels(index: int) -> List[str]:
+        return [
+            tagging_labels[resolved_predictions[index][i[0]]]
+            for i in filter(
+                lambda s: any(i != -100 for i in s[1]),
+                enumerate(torch_labels[index]),
+            )
+        ]
+
+    # do naive approach for now
+    def clean_string(gp: Tuple[str, str]) -> str:
+        ground, predicted = gp
+        pred_str = " ".join(predicted)
+
+        return f"Ground: {ground} , Predicted {pred_str}"
+
+    return [
+        *map(
+            clean_string,
+            zip(ground_truths, map(human_readable_labels, resolved_predictions)),
+        )
+    ]
 
 
-def relex_print(
-    task_labels: List[str],
-    ground_truth: str,
-    task_prediction: np.ndarray,
-) -> str:
-    resolved_prediction = np.argmax(task_prediction, axis=2)
-    return ""
+def get_relex_prints(
+    relex_labels: List[str],
+    ground_truths: List[str],
+    task_predictions: np.ndarray,
+    torch_labels: np.ndarray,
+) -> List[str]:
+    resolved_predictions = np.argmax(task_predictions, axis=3)
+
+    def human_readable_labels(index: int) -> List[str]:
+        return [""]
+
+    # do naive approach for now
+    def clean_string(gp: Tuple[str, str]) -> str:
+        ground, predicted = gp
+        pred_str = " ".join(predicted)
+
+        return f"Ground: {ground} , Predicted {pred_str}"
+
+    return [
+        *map(
+            clean_string,
+            zip(ground_truths, map(human_readable_labels, resolved_predictions)),
+        )
+    ]
+
+
 
 
 # Long term - get the disagreements using this module,
@@ -277,7 +316,7 @@ def Old_write_errors_for_dataset(
                     chunk_labels = []
 
                     token_inds = eval_dataset["input_ids"][index]
-                    text = eval_dataset["text"][index]
+                    text = eval_datasd_aet["text"][index]
                     predicted_labels = [
                         tagging_labels[task_predictions[index][i[0]]]
                         for i in filter(
