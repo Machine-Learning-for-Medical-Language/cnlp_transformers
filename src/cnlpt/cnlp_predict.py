@@ -85,6 +85,11 @@ def write_predictions_for_dataset(
 
                 for inst_ind in range(task_predictions.shape[0]):
                     inst_preds = task_predictions[inst_ind]
+                    text = eval_dataset["text"][inst_ind]
+                    label = eval_dataset["label"][inst_ind]
+                    true_relex = eval_dataset[task_name][inst_ind]
+                    columns = eval_dataset.column_names
+
                     a1s, a2s = np.where(inst_preds != none_index)
                     for arg_ind in range(len(a1s)):
                         a1_ind = a1s[arg_ind]
