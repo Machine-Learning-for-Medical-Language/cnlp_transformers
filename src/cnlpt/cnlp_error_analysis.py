@@ -164,6 +164,9 @@ def write_errors_for_dataset(
             error_inds,
             eval_dataset,
         )
+        print(f"Processed {len(error_inds)} for {task_label}")
+
+        print(out_table[task_label])
 
 
 # might be more efficient to return a pd.Series or something for the
