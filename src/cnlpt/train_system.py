@@ -44,9 +44,18 @@ from transformers.data.processors.utils import (
 from transformers.file_utils import CONFIG_NAME
 from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.training_args import IntervalStrategy
+import json
 
 sys.path.append(os.path.join(os.getcwd()))
-import json
+from .cnlp_processors import tagging, relex, classification
+from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
+from .cnlp_metrics import cnlp_compute_metrics
+from .cnlp_args import CnlpTrainingArguments, ModelArguments
+from .cnlp_predict import write_predictions_for_dataset
+from .cnlp_error_analysis import write_errors_for_dataset
+from .CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
+from .BaselineModels import CnnSentenceClassifier, LstmSentenceClassifier
+from .HierarchicalTransformer import HierarchicalModel
 
 import requests
 from transformers import HfArgumentParser, Trainer, set_seed
@@ -727,7 +736,8 @@ def main(
                     training_args.output_dir,
                     f"test_predictions_%s_%d.txt" % (subdir, dataset_ind),
                 )
-                write_predictions_for_dataset(
+                # write_predictions_for_dataset(
+                write_errors_for_dataset(
                     output_test_predictions_file,
                     trainer,
                     dataset,
