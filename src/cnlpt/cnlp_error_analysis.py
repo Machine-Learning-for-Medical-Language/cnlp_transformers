@@ -213,6 +213,20 @@ def get_classification_prints(
 
     return [*map(clean_string, zip(ground_truths, predicted_labels))]
 
+# def relevant_inds(torch_labels: np.ndarray) -> List[int]:
+#     def first(t: Tuple[int, int]) -> int:
+#         first, _ = t
+#         return first
+
+#     def word_beginning(t: Tuple[int, int]) -> bool:
+#         index, label = t
+#         return label != -100 
+
+#     filter(
+#         lambda s: any(i != -100 for i in s[1]),
+#         enumerate(torch_labels),
+#     )
+
 
 def get_tagging_prints(
     tagging_labels: List[str],
@@ -255,7 +269,8 @@ def get_relex_prints(
     resolved_predictions = np.argmax(task_predictions, axis=3)
 
     def human_readable_labels(index: int) -> List[str]:
-        return [""]
+        #resolved_predictions[index]  shape is sent length x sent length
+        relevant_inds = [*filter(lambda s: )]
 
     # do naive approach for now
     def clean_string(gp: Tuple[str, str]) -> str:
