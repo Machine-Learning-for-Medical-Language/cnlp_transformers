@@ -6,8 +6,7 @@ from datasets import Dataset
 from transformers.trainer_utils import EvalPrediction
 from .cnlp_processors import tagging, relex, classification
 from .cnlp_data import ClinicalNlpDataset
-from typing import Dict, List, Set, Tuple
-from collections import defaultdict
+from typing import Dict, List, Tuple
 from itertools import chain
 from operator import itemgetter
 
@@ -213,6 +212,7 @@ def get_classification_prints(
 
     return [*map(clean_string, zip(ground_truths, predicted_labels))]
 
+
 # def relevant_inds(torch_labels: np.ndarray) -> List[int]:
 #     def first(t: Tuple[int, int]) -> int:
 #         first, _ = t
@@ -220,7 +220,7 @@ def get_classification_prints(
 
 #     def word_beginning(t: Tuple[int, int]) -> bool:
 #         index, label = t
-#         return label != -100 
+#         return label != -100
 
 #     filter(
 #         lambda s: any(i != -100 for i in s[1]),
@@ -267,17 +267,44 @@ def get_relex_prints(
     torch_labels: np.ndarray,
 ) -> List[str]:
     resolved_predictions = np.argmax(task_predictions, axis=3)
+    none_index = relex_labels.index("None") if "None" in relex_labels else -1
 
-    def human_readable_labels(index: int) -> List[str]:
-        #resolved_predictions[index]  shape is sent length x sent length
-        relevant_inds = [*filter(lambda s: )]
+    def reduced_matrix(prediction: np.ndarray, relevant_inds: list[int]) -> np.ndarray:
+        return np.array([row[relevant_inds] for row in prediction[relevant_inds]])
+
+    def cell2cnlptstr(index_val_pair: tuple[tuple[int, int], int]) -> str:
+        index, value = index_val_pair
+        first_token, second_token = index
+        return f"({first_token}, {second_token}, {relex_labels[value]})"
+
+    def matrix_to_label(matrix: np.ndarray) -> str:
+        if all(map(lambda s: s == none_index, matrix.flatten())):
+            return "none"
+
+        return " , ".join(
+            map(
+                cell2cnlptstr,
+                filter(lambda s: s[1] == none_index, np.ndenumerate(matrix)),
+            )
+        )
+
+    def human_readable_labels(index: int) -> str:
+        # resolved_predictions[index]  shape is sent length x sent length
+        # not the same shape insanity that we had for tagging
+        relevant_inds, _ = zip(
+            *filter(lambda s: s[1] != -100, enumerate(torch_labels[index]))
+        )
+
+        reduced_prediction = reduced_matrix(task_predictions[index], relevant_inds)
+
+        return matrix_to_label(reduced_prediction)
 
     # do naive approach for now
-    def clean_string(gp: Tuple[str, str]) -> str:
+    def clean_string(gp: tuple[str, str]) -> str:
         ground, predicted = gp
         pred_str = " ".join(predicted)
 
-        return f"Ground: {ground} , Predicted {pred_str}"
+        return f"ground: {ground} , predicted {pred_str}"
 
     return [
         *map(
@@ -285,85 +312,3 @@ def get_relex_prints(
             zip(ground_truths, map(human_readable_labels, resolved_predictions)),
         )
     ]
-
-
-
-
-# Long term - get the disagreements using this module,
-# then pass the disagreements to cnlp_predict to avoid duplicating
-def Old_write_errors_for_dataset(
-    output_fn: str,
-    dataset: ClinicalNlpDataset,
-    split_name: str,
-    dataset_ind: int,
-    output_mode: Dict[str, str],
-    prediction: EvalPrediction,
-    error_inds: np.ndarray = np.array([]),
-):
-
-    task_labels = dataset.get_labels()
-    start_ind = end_ind = 0
-    for ind in range(dataset_ind):
-        start_ind += len(dataset.datasets[ind][split_name])
-    end_ind = start_ind + len(dataset.datasets[dataset_ind][split_name])
-
-    with open(output_fn, "w") as writer:
-        eval_dataset = Dataset.from_dict(
-            dataset.processed_dataset[split_name][start_ind:end_ind]
-        )
-        predictions = prediction
-        for task_ind, task_name in enumerate(dataset.tasks):
-
-            if output_mode[task_name] == classification:
-                task_predictions = np.argmax(predictions[task_ind], axis=1)
-                for index, item in enumerate(task_predictions):
-                    item = task_labels[task_name][item]
-                    writer.write(
-                        "Task %d (%s) - Index %d - %s\n"
-                        % (task_ind, task_name, index, item)
-                    )
-            elif output_mode[task_name] == tagging:
-                task_predictions = np.argmax(predictions[task_ind], axis=2)
-                tagging_labels = task_labels[task_name]
-                for index, seq_pair in enumerate(zip(task_predictions, tagging_labels)):
-                    pred_seq, true_seq = seq_pair
-                    wpind_to_ind = {}
-                    chunk_labels = []
-
-                    token_inds = eval_dataset["input_ids"][index]
-                    text = eval_datasd_aet["text"][index]
-                    predicted_labels = [
-                        tagging_labels[task_predictions[index][i[0]]]
-                        for i in filter(
-                            lambda s: not all(i == -100 for i in s[1]),
-                            enumerate(eval_dataset["label"][index]),
-                        )
-                    ]
-                    true_ner = eval_dataset[task_name][index]
-
-                    writer.write(
-                        f"{eval_dataset.column_names} {text} : {len(text.split())} true ner {true_ner}  {predicted_labels} {len(predicted_labels)} \n"
-                    )
-            elif output_mode[task_name] == relex:
-                task_predictions = np.argmax(predictions[task_ind], axis=3)
-                relex_labels = task_labels[task_name]
-                none_index = (
-                    relex_labels.index("None") if "None" in relex_labels else -1
-                )
-                # assert task_labels[0] == 'None', 'The first labeled relation category should always be "None" but for task %s it is %s' % (task_names[task_ind], task_labels[0])
-
-                for inst_ind in range(task_predictions.shape[0]):
-                    inst_preds = task_predictions[inst_ind]
-                    a1s, a2s = np.where(inst_preds != none_index)
-                    for arg_ind in range(len(a1s)):
-                        a1_ind = a1s[arg_ind]
-                        a2_ind = a2s[arg_ind]
-                        cat = relex_labels[inst_preds[a1_ind][a2_ind]]
-                        writer.write(
-                            "Task %d (%s) - Index %d - %s(%d, %d)\n"
-                            % (task_ind, task_name, inst_ind, cat, a1_ind, a2_ind)
-                        )
-            else:
-                raise NotImplementedError(
-                    "Writing predictions is not implemented for this output_mode!"
-                )
