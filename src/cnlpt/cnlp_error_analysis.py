@@ -151,7 +151,7 @@ def populate_errors_for_dataset(
     raw_prediction = trainer.predict(test_dataset=eval_dataset)
 
     task2_error_inds = collect_disagreements(
-        sorted(dataset.tasks), raw_prediction, dataset.args.max_seq_length, output_mode
+        dataset.tasks, raw_prediction, dataset.args.max_seq_length, output_mode
     )
     # redundant but you never can tell
     relevant_indices = sorted(set(chain.from_iterable(task2_error_inds.values())))
@@ -196,7 +196,9 @@ def get_error_list(
     task_labels = task2labels[error_task]
     # get the feeling this doesn't work for multiple tasks but we'll
     # probe those data structures when we run the code
-    torch_labels = np.array(eval_dataset["label"])
+    torch_labels = np.array(eval_dataset["label"])[
+        error_inds
+    ]  # should have only been indexing these?
     if task_type == classification:
         return get_classification_prints(task_labels, ground_truth, task_prediction)
     elif task_type == tagging:
@@ -236,11 +238,12 @@ def get_tagging_prints(
 
     def human_readable_labels(index: int) -> str:
         return " ".join(
-            tagging_labels[resolved_predictions[index][i[0]]]
-            for i in filter(
-                lambda s: any(i != -100 for i in s[1]),
-                enumerate(torch_labels[index]),
-            )
+            [
+                tagging_labels[label_idx]
+                for label_idx in resolved_predictions[index][
+                    np.where(torch_labels[index] != -100)
+                ]
+            ]
         )
 
     # do naive approach for now
@@ -267,9 +270,6 @@ def get_relex_prints(
     resolved_predictions = np.argmax(task_predictions, axis=3)
     none_index = relex_labels.index("None") if "None" in relex_labels else -1
 
-    def reduced_matrix(prediction: np.ndarray, relevant_inds: List[int]) -> np.ndarray:
-        return np.array([row[relevant_inds] for row in prediction[relevant_inds]])
-
     def cell2cnlptstr(index_val_pair: Tuple[Tuple[int, ...], int]) -> str:
         index, value = index_val_pair
         first_token, second_token = index
@@ -290,11 +290,14 @@ def get_relex_prints(
         # resolved_predictions[index]  shape is sent length x sent length
         # not the same shape insanity that we had for tagging
 
-        relevant_inds, _ = zip(
-            *filter(lambda s: s[1] != -100, enumerate(torch_labels[index]))
+        reduced_prediction = np.array(
+            [
+                pred_row[np.where(ground_row != -100)]
+                for pred_row, ground_row in zip(
+                    resolved_predictions[index], torch_labels[index]
+                )
+            ]
         )
-
-        reduced_prediction = reduced_matrix(resolved_predictions[index], [*relevant_inds])
 
         return matrix_to_label(reduced_prediction)
 
@@ -308,6 +311,9 @@ def get_relex_prints(
     return [
         *map(
             clean_string,
-            zip(ground_truths, map(human_readable_labels, range(resolved_predictions.shape[0]))),
+            zip(
+                ground_truths,
+                map(human_readable_labels, range(resolved_predictions.shape[0])),
+            ),
         )
     ]
