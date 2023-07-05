@@ -1,3 +1,4 @@
+
 import numpy as np
 import pandas as pd
 
@@ -292,13 +293,17 @@ def get_relex_prints(
 
         reduced_prediction = np.array(
             [
-                pred_row[np.where(ground_row != -100)]
-                for pred_row, ground_row in zip(
-                    resolved_predictions[index], torch_labels[index]
+                *filter(
+                    len,
+                    [
+                        pred_row[np.where(ground_row != -100)]
+                        for pred_row, ground_row in zip(
+                            resolved_predictions[index], torch_labels[index]
+                        )
+                    ],
                 )
             ]
         )
-
         return matrix_to_label(reduced_prediction)
 
     # do naive approach for now
