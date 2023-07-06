@@ -10,7 +10,7 @@ from typing import Callable, Dict, Optional, List, Union, Tuple
 import numpy as np
 import torch
 from torch.utils.data.dataset import Dataset
-from transformers import BatchEncoding
+from transformers import BatchEncoding, InputExample
 # from transformers.data.processors.utils import DataProcessor, InputExample
 from transformers.tokenization_utils import PreTrainedTokenizer
 from datasets import Features
@@ -113,16 +113,15 @@ def cnlp_convert_features_to_hierarchical(
     Chunk an instance of InputFeatures into an instance of HierarchicalInputFeatures
     for the hierarchical model.
 
-    :param BatchEncoding features: the dictionary containing mappings from properties to lists of values for each instance for each of those properties
-    :param int chunk_len: the maximum length of a chunk
-    :param int num_chunks: the maximum number of chunks in the instance
-    :param int cls_id: the tokenizer's ID representing the CLS token
-    :param int sep_id: the tokenizer's ID representing the SEP token
-    :param int pad_id: the tokenizer's ID representing the PAD token
-    :param bool insert_empty_chunk_at_beginning: whether to insert an
+    :param features: the dictionary containing mappings from properties to lists of values for each instance for each of those properties
+    :param chunk_len: the maximum length of a chunk
+    :param num_chunks: the maximum number of chunks in the instance
+    :param cls_id: the tokenizer's ID representing the CLS token
+    :param sep_id: the tokenizer's ID representing the SEP token
+    :param pad_id: the tokenizer's ID representing the PAD token
+    :param insert_empty_chunk_at_beginning: whether to insert an
         empty chunk at the beginning of the instance
-    :rtype: HierarchicalInputFeatures
-    :return: an instance of `HierarchicalInputFeatures` containing the chunked instance
+    :return: an instance of `BatchEncoding` containing the chunked instance
     """
 
     for ind in range(len(features['input_ids'])):
@@ -234,7 +233,7 @@ def cnlp_convert_features_to_hierarchical(
 
 
 def cnlp_preprocess_data(
-    examples,
+    examples: List[InputExample],
     tokenizer: PreTrainedTokenizer,
     max_length: Optional[int] = None,
     tasks: List[str] = None,
@@ -253,30 +252,29 @@ def cnlp_preprocess_data(
     and converts the examples into a list of :class:`InputFeatures` or
     :class:`HierarchicalInputFeatures`, depending on the model.
 
-    :param typing.List[transformers.data.processors.utils.InputExample] examples:
+    :param examples:
         the list of examples to convert
-    :param transformers.tokenization_utils.PreTrainedTokenizer tokenizer: the tokenizer
-    :param typing.Optional[int] max_length: the maximum sequence length
+    :param tokenizer: the tokenizer
+    :param max_length: the maximum sequence length
         at which to truncate examples
-    :param List[str] tasks: the task name(s) in a list, used to index the labels in the examples list.
-    :param typing.Optional[typing.Dict[str,List[str]]] label_list: a mapping from 
+    :param tasks: the task name(s) in a list, used to index the labels in the examples list.
+    :param label_list: a mapping from
         tasks to the list of labels for each task. If not provided explicitly, it will be retrieved from
         the processor with :meth:`transformers.DataProcessor.get_labels`.
-    :param typing.Optional[Dict[str,str]] output_modes: the output modes for this task.
+    :param output_modes: the output modes for this task.
         If not provided explicitly, it will be retrieved from
         :data:`cnlpt.cnlp_processors.cnlp_output_modes`.
-    :param bool inference: whether we're doing training or inference only -- if inference mode the labels associated with examples can't be trusted.
-    :param bool hierarchical: whether to structure the data for the hierarchical
+    :param inference: whether we're doing training or inference only -- if inference mode the labels associated with examples can't be trusted.
+    :param hierarchical: whether to structure the data for the hierarchical
         model (:class:`cnlpt.HierarchicalTransformer.HierarchicalModel`)
-    :param int chunk_len: for the hierarchical model, the length of each
+    :param chunk_len: for the hierarchical model, the length of each
         chunk in tokens
-    :param int num_chunks: for the hierarchical model, the number of chunks
-    :param bool insert_empty_chunk_at_beginning: for the hierarchical model,
+    :param num_chunks: for the hierarchical model, the number of chunks
+    :param insert_empty_chunk_at_beginning: for the hierarchical model,
         whether to insert an empty chunk at the beginning of the list of chunks
         (equivalent in theory to a CLS chunk).
-    :param bool truncate_examples: whether to truncate the string representation
+    :param truncate_examples: whether to truncate the string representation
         of the example instances printed to the log
-    :rtype: typing.Union[typing.List[InputFeatures], typing.List[HierarchicalInputFeatures]]
     :return: the list of converted input features
     """
     
@@ -526,13 +524,11 @@ def _build_event_mask(result:BatchEncoding, num_insts:int, event_start_token_id,
 
     return event_tokens
 
-def truncate_features(feature: Union[InputFeatures, HierarchicalInputFeatures]):
+def truncate_features(feature: Union[InputFeatures, HierarchicalInputFeatures]) -> str:
     """
     Method to produce a truncated string representation of a feature.
 
-    :param typing.Union[InputFeatures, HierarchicalInputFeatures] feature:
-        the feature to represent
-    :rtype: str
+    :param feature: the feature to represent
     :return: the truncated representation of the feature
     :meta private:
     """
@@ -634,13 +630,13 @@ class ClinicalNlpDataset(Dataset):
     Copy-pasted from GlueDataset with glue task-specific code changed;
     moved into here to be self-contained.
 
-    :param DataTrainingArguments args: the data training args for this experiment
-    :param transformers.tokenization_utils.PreTrainedTokenizer tokenizer: the tokenizer
-    :param typing.Optional[int] limit_length: if provided, the number of
+    :param args: the data training args for this experiment
+    :param tokenizer: the tokenizer
+    :param limit_length: if provided, the number of
         examples to include in the dataset
-    :param typing.Optional[str] cache_dir: if provided, the directory to save/load a cache
+    :param cache_dir: if provided, the directory to save/load a cache
         of this dataset
-    :param bool hierarchical: whether to structure the data for the hierarchical
+    :param hierarchical: whether to structure the data for the hierarchical
         model (:class:`cnlpt.HierarchicalTransformer.HierarchicalModel`)
     """
     args: DataTrainingArguments
@@ -793,10 +789,10 @@ class ClinicalNlpDataset(Dataset):
                         dataset[split_name] = dataset[split_name].remove_columns(column)
 
     def _concatenate_datasets(self):
-        ''' 
+        """
         We have multiple dataset dicts, we need to create a single dataset dict
         where we concatenate each of the splits first.
-        '''
+        """
         datasets_by_split = {}
         for dataset in self.datasets:
             for split in dataset:
@@ -813,26 +809,23 @@ class ClinicalNlpDataset(Dataset):
         """
         Length method for this class.
 
-        :rtype: int
         :return: the number of datasets included in this dataset
         """
         return len(self.datasets)
 
-    def __getitem__(self, i):
+    def __getitem__(self, i) -> Union[InputFeatures, HierarchicalInputFeatures]:
         """
         Getitem method for this class.
 
         :param i: the index of the example to retrieve
-        :rtype: typing.Union[InputFeatures, HierarchicalInputFeatures]
         :return: the example at index `i`
         """
         return self.features[i]
 
-    def get_labels(self):
+    def get_labels(self) -> Dict[str, List[str]]:
         """
         Retrieve the label lists for all the tasks for the dataset.
 
-        :rtype: typing.Dict[str,typing.List[str]]
         :return: the dictionary of label lists indexed by task name
         """
         return self.tasks_to_labels
