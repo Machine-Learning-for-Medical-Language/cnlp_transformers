@@ -198,8 +198,8 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
         encoder_name = model_args.config_name if model_args.config_name else model_args.encoder_name
         if is_hub_model(encoder_name):
             config = CnlpConfig(
-                encoder_name,
-                data_args.task_name if data_args.task_name is not None else dataset.tasks,
+                encoder_name=encoder_name,
+                finetuning_task=data_args.task_name if data_args.task_name is not None else dataset.tasks,
                 layer=model_args.layer,
                 tokens=model_args.token,
                 num_rel_attention_heads=model_args.num_rel_feats,
@@ -316,16 +316,18 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
             # model card from https://huggingface.co/models
             # By default, we use model card as the starting point to fine-tune
             encoder_name = model_args.config_name if model_args.config_name else model_args.encoder_name
-            config = CnlpConfig(encoder_name,
-                                finetuning_task=data_args.task_name,
-                                layer=model_args.layer,
-                                tokens=model_args.token,
-                                num_rel_attention_heads=model_args.num_rel_feats,
-                                rel_attention_head_dims=model_args.head_features,
-                                tagger=tagger,
-                                relations=relations,
-                                label_dictionary=dataset.get_labels())
-                                #num_tokens=len(tokenizer))
+            config = CnlpConfig(
+                encoder_name=encoder_name,
+                finetuning_task=data_args.task_name,
+                layer=model_args.layer,
+                tokens=model_args.token,
+                num_rel_attention_heads=model_args.num_rel_feats,
+                rel_attention_head_dims=model_args.head_features,
+                tagger=tagger,
+                relations=relations,
+                label_dictionary=dataset.get_labels(),
+                #num_tokens=len(tokenizer),
+            )
             config.vocab_size = len(tokenizer)
             model = CnlpModelForClassification(
                 config=config,

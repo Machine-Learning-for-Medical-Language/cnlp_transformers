@@ -159,6 +159,7 @@ class CnlpConfig(PretrainedConfig):
 
     def __init__(
         self,
+        *,
         encoder_name='roberta-base',
         finetuning_task=None,
         layer=-1,
