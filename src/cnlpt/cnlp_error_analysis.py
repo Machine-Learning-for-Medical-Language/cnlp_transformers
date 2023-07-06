@@ -1,3 +1,4 @@
+
 import numpy as np
 import pandas as pd
 
@@ -192,7 +193,7 @@ def populate_errors_for_dataset(
 # assignment and populate it via a generator but for now just use a list
 def get_error_list(
     error_task: str,
-    task2boundaries: Dict[str, Tuple[int,int]],
+    task2boundaries: Dict[str, Tuple[int, int]],
     prediction: EvalPrediction,
     task2labels: Dict[str, List[str]],
     task2ind: Dict[str, int],
@@ -256,11 +257,13 @@ def get_tagging_prints(
     resolved_predictions = np.argmax(task_predictions, axis=2)
 
     def human_readable_labels(index: int) -> str:
+        # since resolved predictions is num errors x seq length
+        # and torch labels is num errors x seq length x 1
         return " ".join(
             [
                 tagging_labels[label_idx]
                 for label_idx in resolved_predictions[index][
-                    np.where(torch_labels[index] != -100)
+                    np.where(torch_labels[index].reshape(-1) != -100)
                 ]
             ]
         )
@@ -275,7 +278,10 @@ def get_tagging_prints(
     return [
         *map(
             clean_string,
-            zip(ground_truths, map(human_readable_labels, resolved_predictions)),
+            zip(
+                ground_truths,
+                map(human_readable_labels, range(resolved_predictions.shape[0])),
+            ),
         )
     ]
 
