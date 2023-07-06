@@ -11,7 +11,6 @@ import numpy as np
 import torch
 from torch.utils.data.dataset import Dataset
 from transformers import BatchEncoding, InputExample
-# from transformers.data.processors.utils import DataProcessor, InputExample
 from transformers.tokenization_utils import PreTrainedTokenizer
 from datasets import Features
 from dataclasses import dataclass, field, asdict, astuple
@@ -121,7 +120,7 @@ def cnlp_convert_features_to_hierarchical(
     :param pad_id: the tokenizer's ID representing the PAD token
     :param insert_empty_chunk_at_beginning: whether to insert an
         empty chunk at the beginning of the instance
-    :return: an instance of `BatchEncoding` containing the chunked instance
+    :return: an instance of :class:`transformers.BatchEncoding` containing the chunked instance
     """
 
     for ind in range(len(features['input_ids'])):
@@ -740,7 +739,7 @@ class ClinicalNlpDataset(Dataset):
                 new_labels = set(labels)
                 old_labels = set(self.tasks_to_labels[task])
                 if new_labels.isdisjoint(old_labels):
-                    raise Exception("The same task name has disjoint sets of labels in different dataset: %s vs. %s" % (str(str(old_labels), str(new_labels))))
+                    raise Exception("The same task name has disjoint sets of labels in different dataset: %s vs. %s" % (str(old_labels), str(new_labels)))
                 elif new_labels != old_labels:
                     logger.warn("Two different datasets have the same task name but not completely equal label lists: %s vs. %s. We will merge them." (str(old_labels), str(new_labels)))
                     self.tasks_to_labels[task] = old_labels.union(new_labels)
