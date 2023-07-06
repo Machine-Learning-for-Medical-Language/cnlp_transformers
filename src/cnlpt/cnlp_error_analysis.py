@@ -1,4 +1,3 @@
-
 import numpy as np
 import pandas as pd
 
@@ -17,10 +16,12 @@ def collect_disagreements(
     max_seq_length: int,
     output_modes,
     # ) -> Dict[int, Set[str]]:
-) -> Dict[str, np.ndarray]:
+) -> Tuple[Dict[str, np.ndarray], Dict[str, Tuple[int, int]]]:
     # inds_to_labels = defaultdict(lambda: set())
     labels_to_inds = {}
     task_label_ind = 0
+
+    tasklabel2labelboundaries = {}
 
     for task_ind, task_name in enumerate(task_names):
         tagger = output_modes[task_name] == tagging
@@ -40,6 +41,10 @@ def collect_disagreements(
             labels = p.label_ids[
                 :, :, task_label_ind : task_label_ind + max_seq_length
             ].squeeze()
+            tasklabel2labelboundaries[task_name] = (
+                task_label_ind,
+                task_label_ind + max_seq_length,
+            )
             task_label_ind += max_seq_length
         elif p.label_ids.ndim == 3:
             if tagger:
@@ -48,6 +53,8 @@ def collect_disagreements(
                 ].squeeze()
             else:
                 labels = p.label_ids[:, 0, task_label_ind].squeeze()
+            # guessing second case is padded inds
+            tasklabel2labelboundaries[task_name] = (task_label_ind, task_label_ind + 1)
             task_label_ind += 1
         elif p.label_ids.ndim == 2:
             labels = p.label_ids[:, task_ind].squeeze()
@@ -62,7 +69,7 @@ def collect_disagreements(
             labels,
             output_modes[task_name],
         )
-    return labels_to_inds
+    return labels_to_inds, tasklabel2labelboundaries
 
 
 def compute_disagreements(
@@ -151,7 +158,7 @@ def populate_errors_for_dataset(
     )
     raw_prediction = trainer.predict(test_dataset=eval_dataset)
 
-    task2_error_inds = collect_disagreements(
+    task2_error_inds, task2_label_boundaries = collect_disagreements(
         dataset.tasks, raw_prediction, dataset.args.max_seq_length, output_mode
     )
     # redundant but you never can tell
@@ -168,6 +175,7 @@ def populate_errors_for_dataset(
     for task_label, error_inds in task2_error_inds.items():
         out_table[task_label][error_inds] = get_error_list(
             task_label,
+            task2_label_boundaries,
             raw_prediction.predictions,
             task2labels,
             task2datasetind,
@@ -184,6 +192,7 @@ def populate_errors_for_dataset(
 # assignment and populate it via a generator but for now just use a list
 def get_error_list(
     error_task: str,
+    task2boundaries: Dict[str, Tuple[int,int]],
     prediction: EvalPrediction,
     task2labels: Dict[str, List[str]],
     task2ind: Dict[str, int],
@@ -191,24 +200,33 @@ def get_error_list(
     error_inds: np.ndarray,
     eval_dataset: Dataset,
 ) -> List[str]:
+
     ground_truth = np.array(eval_dataset[error_task])[error_inds]
     task_prediction = prediction[task2ind[error_task]][error_inds]
     task_type = output_mode[error_task]
     task_labels = task2labels[error_task]
     # get the feeling this doesn't work for multiple tasks but we'll
     # probe those data structures when we run the code
-    torch_labels = np.array(eval_dataset["label"])[
+    all_torch_labels = np.array(eval_dataset["label"])[
         error_inds
     ]  # should have only been indexing these?
     if task_type == classification:
         return get_classification_prints(task_labels, ground_truth, task_prediction)
     elif task_type == tagging:
+        task_torch_labels = all_torch_labels
+        if error_task in task2boundaries.keys():
+            labels_start, labels_end = task2boundaries[error_task]
+            task_torch_labels = all_torch_labels[:, :, labels_start:labels_end]
         return get_tagging_prints(
-            task_labels, ground_truth, task_prediction, torch_labels
+            task_labels, ground_truth, task_prediction, task_torch_labels
         )
     elif task_type == relex:
+        task_torch_labels = all_torch_labels
+        if error_task in task2boundaries.keys():
+            labels_start, labels_end = task2boundaries[error_task]
+            task_torch_labels = all_torch_labels[:, :, labels_start:labels_end]
         return get_relex_prints(
-            task_labels, ground_truth, task_prediction, torch_labels
+            task_labels, ground_truth, task_prediction, task_torch_labels
         )
     else:
         return len(error_inds) * ["UNSUPPORTED TASK TYPE"]
