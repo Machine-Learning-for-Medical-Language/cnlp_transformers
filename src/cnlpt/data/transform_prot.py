@@ -12,7 +12,14 @@ from heapq import merge
 
 TEST_DIR = "chemprot_development"
 TRAIN_DIR = "chemprot_training"
-nlp = spacy.load("en_core_sci_sm")
+
+nlp = None
+try:
+    import scispacy
+    nlp = spacy.load("en_core_sci_sm")
+except ImportError:
+    print(f"scispacy not installed; cannot run transform_prot.")
+    sys.exit(1)
 
 
 def remove_newline(review):
@@ -56,7 +63,10 @@ def get_intersect(ls1, ls2):
 
 
 def to_stanza_style_dict(text):
-    processed_doc = nlp(text)
+    if nlp is not None:
+        processed_doc = nlp(text)
+    else:
+        raise RuntimeError("nlp object not initialized but execution proceeded??")
 
     def sent_dict(spacy_sent):
         return [
