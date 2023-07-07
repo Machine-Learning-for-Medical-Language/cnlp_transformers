@@ -8,6 +8,7 @@ Submodules
    :maxdepth: 4
 
    cnlpt.data.preprocess_i2b2_2008
+   cnlpt.data.transform_prot
    cnlpt.data.transform_uci_drug
 
 Module contents
