@@ -61,6 +61,8 @@ from transformers import HfArgumentParser, Trainer, set_seed
 
 from collections import deque
 
+from collections import deque
+
 from transformers import (
     HfArgumentParser,
     Trainer,
@@ -610,7 +612,6 @@ def main(
                 bias_fit=training_args.bias_fit,
             )
 
-    best_eval_results = None
     output_eval_file = os.path.join(training_args.output_dir, f"eval_results.txt")
     if training_args.do_train:
         # TODO: This assumes that if there are multiple training sets, they all have the same length, but
@@ -674,6 +675,9 @@ def main(
                     dataset.output_modes[task_name],
                     dataset.tasks_to_labels[task_name],
                 )
+
+                task_label_to_label_packet[task_name] = (preds, labels)
+
                 # FIXME - Defaulting to accuracy for model selection score, when it should be task-specific
                 if training_args.model_selection_score is not None:
                     score = metrics[task_name].get(
@@ -763,6 +767,18 @@ def main(
                             )
                         )
 
+                    if training_args.error_analysis:
+                        if len(current_prediction_packet) > 0:
+                            current_prediction_packet.pop()
+                        # in theory if we can consolidate this into
+                        # cnlp_compute_metrics but that's maybe more of a
+                        # commitment than is a good idea right now
+                        current_prediction_packet.append(
+                            (
+                                task_label_to_label_packet,
+                                task_label_to_boundaries,
+                            )
+                        )
             return metrics
 
         return compute_metrics_fn
