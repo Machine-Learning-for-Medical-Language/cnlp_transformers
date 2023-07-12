@@ -8,7 +8,7 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 #
-# Unless required by applicable law or agreed to in writing, software
+# Unless require wdd by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
@@ -60,14 +60,14 @@ from .HierarchicalTransformer import HierarchicalModel
 import requests
 from transformers import HfArgumentParser, Trainer, set_seed
 
-from .BaselineModels import CnnSentenceClassifier, LstmSentenceClassifier
-from .cnlp_args import CnlpTrainingArguments, ModelArguments
-from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
-from .cnlp_metrics import cnlp_compute_metrics
-from .cnlp_predict import write_predictions_for_dataset
-from .cnlp_processors import classification, relex, tagging
-from .CnlpModelForClassification import CnlpConfig, CnlpModelForClassification
-from .HierarchicalTransformer import HierarchicalModel
+from collections import deque
+
+from transformers import (
+    HfArgumentParser,
+    Trainer,
+    set_seed,
+)
+import json
 
 AutoConfig.register("cnlpt", CnlpConfig)
 
@@ -89,6 +89,51 @@ def is_hub_model(model_name: str) -> bool:
         pass
 
     return False
+
+
+def structure_labels(
+    p: EvalPrediction,
+    task_name: str,
+    task_ind: int,
+    task_label_ind: int,
+    max_seq_length: int,
+    tagger: Dict[str, bool],
+    relations: Dict[str, bool],
+    task_label_to_boundaries: Dict[str, Tuple[int, int]],
+) -> Tuple[np.ndarray, np.ndarray, int]:
+    # disagreement collection stuff for this scope
+
+    pad = 0
+
+    if tagger[task_name]:
+        preds = np.argmax(p.predictions[task_ind], axis=2)
+        # labels will be -100 where we don't need to tag
+    elif relations[task_name]:
+        preds = np.argmax(p.predictions[task_ind], axis=3)
+    else:
+        preds = np.argmax(p.predictions[task_ind], axis=1)
+
+    if relations[task_name]:
+        # relation labels
+        labels = p.label_ids[
+            :, :, task_label_ind : task_label_ind + max_seq_length
+        ].squeeze()
+        task_label_to_boundaries[task_name] = (
+            task_label_ind,
+            task_label_ind + max_seq_length,
+        )
+        pad = max_seq_length
+    elif p.label_ids.ndim == 3:
+        if tagger[task_name]:
+            labels = p.label_ids[:, :, task_label_ind : task_label_ind + 1].squeeze()
+        else:
+            labels = p.label_ids[:, 0, task_label_ind].squeeze()
+        task_label_to_boundaries[task_name] = (task_label_ind, task_label_ind + 1)
+        pad = 1
+    elif p.label_ids.ndim == 2:
+        labels = p.label_ids[:, task_ind].squeeze()
+
+    return preds, labels, pad
 
 
 def is_cnlpt_model(model_path: str) -> bool:
@@ -488,7 +533,6 @@ def main(
                 bias_fit=training_args.bias_fit,
             )
 
-    best_eval_results = None
     output_eval_file = os.path.join(training_args.output_dir, f"eval_results.txt")
 
     if training_args.do_train:
@@ -517,6 +561,8 @@ def main(
             logger.info("Evaluation strategy not specified so evaluating every epoch")
             training_args.evaluation_strategy = IntervalStrategy.EPOCH
 
+    current_prediction_packet = deque()
+
     def build_compute_metrics_fn(
         task_names: List[str], model, dataset: ClinicalNlpDataset
     ) -> Callable[[EvalPrediction], Dict]:
@@ -525,31 +571,22 @@ def main(
             task_scores = []
             task_label_ind = 0
 
-            for task_ind, task_name in enumerate(task_names):
-                if tagger[task_name]:
-                    preds = np.argmax(p.predictions[task_ind], axis=2)
-                    # labels will be -100 where we don't need to tag
-                elif relations[task_name]:
-                    preds = np.argmax(p.predictions[task_ind], axis=3)
-                else:
-                    preds = np.argmax(p.predictions[task_ind], axis=1)
+            # disagreement collection stuff for this scope
+            task_label_to_boundaries = {}
+            task_label_to_label_packet = {}
 
-                if relations[task_name]:
-                    # relation labels
-                    labels = p.label_ids[
-                        :, :, task_label_ind : task_label_ind + data_args.max_seq_length
-                    ].squeeze()
-                    task_label_ind += data_args.max_seq_length
-                elif p.label_ids.ndim == 3:
-                    if tagger[task_name]:
-                        labels = p.label_ids[
-                            :, :, task_label_ind : task_label_ind + 1
-                        ].squeeze()
-                    else:
-                        labels = p.label_ids[:, 0, task_label_ind].squeeze()
-                    task_label_ind += 1
-                elif p.label_ids.ndim == 2:
-                    labels = p.label_ids[:, task_ind].squeeze()
+            for task_ind, task_name in enumerate(task_names):
+                preds, labels, pad = structure_labels(
+                    p,
+                    task_name,
+                    task_ind,
+                    task_label_ind,
+                    data_args.max_seq_length,
+                    tagger,
+                    relations,
+                    task_label_to_boundaries,
+                )
+                task_label_ind += pad
 
                 metrics[task_name] = cnlp_compute_metrics(
                     task_name,
@@ -558,6 +595,9 @@ def main(
                     dataset.output_modes[task_name],
                     dataset.tasks_to_labels[task_name],
                 )
+
+                task_label_to_label_packet[task_name] = (preds, labels)
+
                 # FIXME - Defaulting to accuracy for model selection score, when it should be task-specific
                 if training_args.model_selection_score is not None:
                     score = metrics[task_name].get(
@@ -633,6 +673,18 @@ def main(
                     model.best_score = one_score
                     model.best_eval_results = metrics
 
+                    if training_args.error_analysis:
+                        if len(current_prediction_packet) > 0:
+                            current_prediction_packet.pop()
+                        # in theory if we can consolidate this into
+                        # cnlp_compute_metrics but that's maybe more of a
+                        # commitment than is a good idea right now
+                        current_prediction_packet.append(
+                            (
+                                task_label_to_label_packet,
+                                task_label_to_boundaries,
+                            )
+                        )
             return metrics
 
         return compute_metrics_fn
