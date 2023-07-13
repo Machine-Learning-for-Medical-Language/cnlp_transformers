@@ -18,12 +18,12 @@ def restructure_prediction(
     max_seq_length: int,
     tagger: Dict[str, bool],
     relations: Dict[str, bool],
-):
+) -> Tuple[Dict[str, Tuple[np.ndarray, np.ndarray]], Dict[str, Tuple[int, int]]]:
     task_label_ind = 0
 
     # disagreement collection stuff for this scope
-    task_label_to_boundaries = {}
-    task_label_to_label_packet = {}
+    task_label_to_boundaries: Dict[str, Tuple[int, int]] = {}
+    task_label_to_label_packet: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
 
     for task_ind, task_name in enumerate(task_names):
         preds, labels, pad = structure_labels(
@@ -93,76 +93,16 @@ def relation_disagreements(preds: np.ndarray, labels: np.ndarray) -> np.ndarray:
     return indices
 
 
-def write_errors_for_dataset(
-    output_fn,
-    trainer,
-    dataset,
-    split_name,
-    dataset_ind,
-    output_mode,
-    tokenizer,
-):
-
-    populate_errors_for_dataset(trainer, split_name, dataset_ind, dataset, output_mode)
-
-
-def populate_errors_for_dataset(
-    raw_prediction: EvalPrediction,
+def process_prediction(
+    error_analysis: bool,
+    task_to_label_packet: Dict[str, Tuple[np.ndarray, np.ndarray]],
+    task_to_label_boundaries: Dict[str, Tuple[int, int]],
     split_name: str,
     dataset_ind: int,
     dataset: ClinicalNlpDataset,
     output_mode: Dict[str, str],
 ):
-    start_ind = end_ind = 0
-    for ind in range(dataset_ind):
-        start_ind += len(dataset.datasets[ind][split_name])
-    end_ind = start_ind + len(dataset.datasets[dataset_ind][split_name])
-
-    task2datasetind = {
-        task_name: task_ind for task_ind, task_name in enumerate(dataset.tasks)
-    }
-    eval_dataset = Dataset.from_dict(
-        dataset.processed_dataset[split_name][start_ind:end_ind]
-    )
-    # raw_prediction = trainer.predict(test_dataset=eval_dataset)
-
-    task2_error_inds, task2_label_boundaries = collect_disagreements(
-        dataset.tasks, raw_prediction, dataset.args.max_seq_length, output_mode
-    )
-    # redundant but you never can tell
-    relevant_indices = sorted(set(chain.from_iterable(task2_error_inds.values())))
-
-    out_table = pd.DataFrame(
-        columns=["text", *sorted(dataset.tasks)],
-        index=relevant_indices,
-    )
-
-    out_table["text"] = [eval_dataset["text"][index] for index in relevant_indices]
-
-    task2labels = dataset.get_labels()
-    for task_label, error_inds in task2_error_inds.items():
-        out_table[task_label][error_inds] = get_output_list(
-            task_label,
-            task2_label_boundaries,
-            raw_prediction.predictions,
-            task2labels,
-            task2datasetind,
-            output_mode,
-            error_inds,
-            eval_dataset,
-        )
-        print(f"Processed {len(error_inds)} for {task_label}")
-
-        print(out_table[task_label])
-
-
-def process_prediction(
-    error_analysis: bool,
-    task_to_label_packet: Dict[str, Tuple[np.ndarray, np.ndarray]],
-    task_to_label_boundaries: Dict[str, Tuple[int, int]],
-    output_mode: Dict[str, str],
-):
-    task_to_error_inds = defaultdict(lambda: None)
+    task_to_error_inds: Dict[str, Union[None, np.ndarray]] = defaultdict(lambda: None)
     if error_analysis:
         for task, label_packet in task_to_label_packet.items():
             preds, labels = label_packet
@@ -170,7 +110,22 @@ def process_prediction(
                 preds, labels, output_mode[task]
             )
 
-    relevant_indices = sorted(set(chain.from_iterable(task_to_error_inds.values())))
+    start_ind = end_ind = 0
+    for ind in range(dataset_ind):
+        start_ind += len(dataset.datasets[ind][split_name])
+    end_ind = start_ind + len(dataset.datasets[dataset_ind][split_name])
+
+    eval_dataset = Dataset.from_dict(
+        dataset.processed_dataset[split_name][start_ind:end_ind]
+    )
+
+    if error_analysis:
+        relevant_indices = set(
+            chain.from_iterable(filter(None, task_to_error_inds.values()))
+        )
+
+    else:
+        relevant_indices = set(range(len(eval_dataset["text"])))
 
     out_table = pd.DataFrame(
         columns=["text", *sorted(dataset.tasks)],
@@ -180,44 +135,65 @@ def process_prediction(
     out_table["text"] = [eval_dataset["text"][index] for index in relevant_indices]
 
     task2labels = dataset.get_labels()
-    for task_label, error_inds in task_to_error_inds.items():
-        out_table[task_label][error_inds] = get_output_list(
-            task_label,
-            task_to_label_boundaries,
-            raw_prediction.predictions,
-            task2labels,
-            task2datasetind,
-            output_mode,
-            error_inds,
-            eval_dataset,
-        )
-        print(f"Processed {len(error_inds)} for {task_label}")
-
-        print(out_table[task_label])
+    # for task_label, error_inds in task_to_error_inds.items():
+    for task_name, packet in task_to_label_packet.items():
+        preds, labels = packet
+        torch_labels = np.array(eval_dataset["labels"])
+        task_labels = task2labels[task_name]
+        if error_analysis:
+            error_inds = task_to_error_inds[task_name]
+            out_table[task_name][error_inds] = get_output_list(
+                error_analysis,
+                task_name,
+                task_labels,
+                task_to_label_boundaries,
+                preds,
+                labels,
+                output_mode,
+                error_inds,
+                torch_labels,
+            )
+        else:
+            out_table[task_name] = get_output_list(
+                error_analysis,
+                task_name,
+                task_labels,
+                task_to_label_boundaries,
+                preds,
+                labels,
+                output_mode,
+                None,
+                torch_labels,
+            )
 
 
 # might be more efficient to return a pd.Series or something for the
 # assignment and populate it via a generator but for now just use a list
 def get_output_list(
+    error_analysis: bool,
     pred_task: str,
+    task_labels: List[str],
     task2boundaries: Dict[str, Tuple[int, int]],
-    prediction: EvalPrediction,
-    task2labels: Dict[str, List[str]],
-    task2ind: Dict[str, int],
+    prediction: np.ndarray,
+    labels: np.ndarray,
     output_mode: Dict[str, str],
     error_inds: Union[np.ndarray, None],
-    eval_dataset: Dataset,
+    torch_labels: np.ndarray,
 ) -> List[str]:
-    if error_inds is not None:
-        ground_truth = np.array(eval_dataset[pred_task])[error_inds]
-        task_prediction = prediction[task2ind[pred_task]][error_inds]
-        all_torch_labels = np.array(eval_dataset["label"])[error_inds]
+    if error_inds is not None and error_analysis:
+        ground_truth = labels[
+            error_inds
+        ]  # np.array(eval_dataset[pred_task])[error_inds]
+        task_prediction = prediction[error_inds]  # [task2ind[pred_task]][error_inds]
+        all_torch_labels = torch_labels[
+            error_inds
+        ]  # np.array(eval_dataset["label"])[error_inds]
     else:
-        ground_truth = np.array(eval_dataset[pred_task])
-        task_prediction = prediction[task2ind[pred_task]]
-        all_torch_labels = np.array(eval_dataset["label"])
+        ground_truth = labels  # np.array(eval_dataset[pred_task])
+        task_prediction = prediction  # [task2ind[pred_task]]
+        all_torch_labels = torch_labels  # np.array(eval_dataset["label"])
     task_type = output_mode[pred_task]
-    task_labels = task2labels[pred_task]
+    # task_labels = task2labels[pred_task]
     # get the feeling this doesn't work for multiple tasks but we'll
     # probe those data structures when we run the code
     if task_type == classification:
@@ -245,10 +221,10 @@ def get_output_list(
 
 def get_classification_prints(
     classification_labels: List[str],
-    ground_truths: List[str],
+    ground_truths: np.ndarray,  # List[str],
     task_predictions: np.ndarray,
 ) -> List[str]:
-    resolved_predictions = np.argmax(task_predictions, axis=1)
+    resolved_predictions = task_predictions  # np.argmax(task_predictions, axis=1)
     predicted_labels = [*map(itemgetter(classification_labels), resolved_predictions)]
 
     def clean_string(gp: Tuple[str, str]) -> str:
@@ -260,11 +236,11 @@ def get_classification_prints(
 
 def get_tagging_prints(
     tagging_labels: List[str],
-    ground_truths: List[str],
+    ground_truths: np.ndarray,  # List[str],
     task_predictions: np.ndarray,
     torch_labels: np.ndarray,
 ) -> List[str]:
-    resolved_predictions = np.argmax(task_predictions, axis=2)
+    resolved_predictions = task_predictions  # np.argmax(task_predictions, axis=2)
 
     def human_readable_labels(index: int) -> str:
         # since resolved predictions is num errors x seq length
@@ -298,11 +274,11 @@ def get_tagging_prints(
 
 def get_relex_prints(
     relex_labels: List[str],
-    ground_truths: List[str],
+    ground_truths: np.ndarray,  # List[str],
     task_predictions: np.ndarray,
     torch_labels: np.ndarray,
 ) -> List[str]:
-    resolved_predictions = np.argmax(task_predictions, axis=3)
+    resolved_predictions = task_predictions  # np.argmax(task_predictions, axis=3)
     none_index = relex_labels.index("None") if "None" in relex_labels else -1
 
     def cell2cnlptstr(index_val_pair: Tuple[Tuple[int, ...], int]) -> str:
