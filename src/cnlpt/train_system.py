@@ -234,7 +234,12 @@ def main(
             config = AutoConfig.from_pretrained(
                     encoder_name,
                     cache_dir=model_args.cache_dir,
+                    layer=model_args.layer
                 )
+            config.finetuning_task = data_args.task_name
+            config.relations = relations
+            config.tagger = tagger
+            config.label_dictionary = {} # this gets filled in later
 
             ## TODO: check if user overwrote parameters in command line that could change behavior of the model and warn
             #if data_args.chunk_len is not None:
@@ -244,8 +249,7 @@ def main(
 
             model.remove_task_classifiers()
             for task in data_args.task_name:
-                if task not in config.finetuning_task:
-                    model.add_task_classifier(task, dataset.get_labels()[task])
+                model.add_task_classifier(task, dataset.get_labels()[task])
             model.set_class_weights(dataset.class_weights)
 
     else:

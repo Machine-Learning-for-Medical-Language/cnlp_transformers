@@ -74,6 +74,7 @@ def initialize_cnlpt_model(app, model_name, cuda=True, batch_size=8):
     AutoModel.register(CnlpConfig, CnlpModelForClassification)
 
     config = AutoConfig.from_pretrained(model_name)
+    app.state.config = config
     app.state.tokenizer = AutoTokenizer.from_pretrained(model_name,
                                                   config=config)
     model = CnlpModelForClassification.from_pretrained(model_name, cache_dir=os.getenv('HF_CACHE'), config=config)
