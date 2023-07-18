@@ -51,7 +51,7 @@ from .cnlp_processors import tagging, relex, classification
 from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
 from .cnlp_metrics import cnlp_compute_metrics
 from .cnlp_args import CnlpTrainingArguments, ModelArguments
-from .cnlp_error_analysis import process_prediction
+from .cnlp_predict import process_prediction
 from .CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
 from .BaselineModels import CnnSentenceClassifier, LstmSentenceClassifier
 from .HierarchicalTransformer import HierarchicalModel
