@@ -1,4 +1,14 @@
-from typing import Dict
+import pandas as pd
+
+from datasets import Dataset
+from transformers.trainer_utils import EvalPrediction
+from .cnlp_processors import tagging, relex, classification
+from .cnlp_data import ClinicalNlpDataset
+from .train_system import structure_labels
+from typing import Dict, List, Tuple, Union
+from itertools import chain
+from operator import itemgetter
+from collections import defaultdict
 
 import numpy as np
 from datasets import Dataset
@@ -9,97 +19,296 @@ from .cnlp_data import ClinicalNlpDataset
 from .cnlp_processors import classification, relex, tagging
 
 
-def write_predictions_for_dataset(
-    output_fn: str,
-    trainer: Trainer,
-    dataset: ClinicalNlpDataset,
-    split_name: str,
-    dataset_ind: int,
-    output_mode: Dict[str, str],
-    tokenizer: PreTrainedTokenizer,
-    output_prob: bool = False,
-):
-    task_labels = dataset.get_labels()
-    start_ind = end_ind = 0
-    for ind in range(dataset_ind):
-        start_ind += len(dataset.datasets[ind][split_name])
-    end_ind = start_ind + len(dataset.datasets[dataset_ind][split_name])
+def compute_disagreements(
+    preds: np.ndarray,
+    labels: np.ndarray,
+    output_mode: str,
+) -> np.ndarray:
+    """
+    Function that defines and computes the metrics used for each task.
+    When adding a task definition to this file, add a branch to this
+    function defining what its evaluation metric invocation should be.
+    If the new task is a simple classification task, a sensible default
+    is defined; falling back on this will trigger a warning.
 
-    with open(output_fn, "w") as writer:
-        eval_dataset = Dataset.from_dict(
-            dataset.processed_dataset[split_name][start_ind:end_ind]
+    :param str task_name: the task name used to index into cnlp_processors
+    :param numpy.ndarray preds: the predicted labels from the model
+    :param numpy.ndarray labels: the true labels
+    :rtype: typing.Dict[str, typing.Any]
+    :return: a dictionary containing evaluation metrics
+    """
+
+    assert len(preds) == len(
+        labels
+    ), f"Predictions and labels have mismatched lengths {len(preds)} and {len(labels)}"
+    if output_mode == classification:
+        return classification_disagreements(preds=preds, labels=labels)
+    elif output_mode == tagging:
+        return tagging_disagreements(preds=preds, labels=labels)
+    elif output_mode == relex:
+        return relation_disagreements(
+            preds=preds,
+            labels=labels,
         )
-        predictions = trainer.predict(test_dataset=eval_dataset).predictions
-        for task_ind, task_name in enumerate(dataset.tasks):
-            if output_prob and output_mode[task_name] != classification:
-                raise NotImplementedError(
-                    "Writing predictions is not implemented for this output_mode!"
-                )
+    else:
+        raise Exception("As yet unsupported task in cnlpt")
 
-            if output_mode[task_name] == classification:
-                task_predictions = predictions[task_ind]
-                for index, logits in enumerate(task_predictions):
-                    task_prediction_idx = np.argmax(logits, axis=1)
-                    item = task_labels[task_name][task_prediction_idx]
-                    prob_value = logits[task_prediction_idx]
-                    if output_prob:
-                        writer.write(
-                            "Task %d (%s) - Index %d - %s - %.6f\n"
-                            % (task_ind, task_name, index, item, prob_value)
+
+def classification_disagreements(preds: np.ndarray, labels: np.ndarray) -> np.ndarray:
+    (indices,) = np.where(np.not_equal(preds, labels))
+    return indices
+
+
+def tagging_disagreements(preds: np.ndarray, labels: np.ndarray) -> np.ndarray:
+    (indices,) = np.where([*map(any, np.not_equal(preds, labels))])
+    return indices
+
+
+def relation_disagreements(preds: np.ndarray, labels: np.ndarray) -> np.ndarray:
+    (indices,) = np.where([*map(lambda s: s.any(), np.not_equal(preds, labels))])
+    return indices
+
+
+def process_prediction(
+    task_names: List[str],
+    output_fn: str,
+    error_analysis: bool,
+    task_to_label_packet: Dict[str, Tuple[np.ndarray, np.ndarray]],
+    task_to_label_boundaries: Dict[str, Tuple[int, int]],
+    eval_dataset,
+    task2labels: Dict[str, List[str]],
+    # split_name: str,
+    # dataset_ind: int,
+    # dataset: ClinicalNlpDataset,
+    output_mode: Dict[str, str],
+):
+    task_to_error_inds: Dict[str, Union[None, np.ndarray]] = defaultdict(lambda: None)
+    if error_analysis:
+        for task, label_packet in task_to_label_packet.items():
+            preds, labels = label_packet
+            task_to_error_inds[task] = compute_disagreements(
+                preds, labels, output_mode[task]
+            )
+
+    # start_ind = end_ind = 0
+    # for ind in range(dataset_ind):
+    #     start_ind += len(dataset.datasets[ind][split_name])
+    # end_ind = start_ind + len(dataset.datasets[dataset_ind][split_name])
+
+    # eval_dataset = Dataset.from_dict(
+    #     dataset.processed_dataset[split_name][start_ind:end_ind]
+    # )
+
+    if error_analysis:
+        relevant_indices = set(
+            chain.from_iterable(filter(None, task_to_error_inds.values()))
+        )
+
+    else:
+        relevant_indices = set(range(len(eval_dataset["text"])))
+
+    out_table = pd.DataFrame(
+        columns=["text", *sorted(task_names)],
+        index=relevant_indices,
+    )
+
+    out_table["text"] = [eval_dataset["text"][index] for index in relevant_indices]
+
+    # task2labels = dataset.get_labels()
+    # for task_label, error_inds in task_to_error_inds.items():
+    for task_name, packet in task_to_label_packet.items():
+        preds, labels = packet
+        torch_labels = np.array(eval_dataset["labels"])
+        task_labels = task2labels[task_name]
+        if error_analysis:
+            error_inds = task_to_error_inds[task_name]
+            out_table[task_name][error_inds] = get_output_list(
+                error_analysis,
+                task_name,
+                task_labels,
+                task_to_label_boundaries,
+                preds,
+                labels,
+                output_mode,
+                error_inds,
+                torch_labels,
+            )
+        else:
+            out_table[task_name] = get_output_list(
+                error_analysis,
+                task_name,
+                task_labels,
+                task_to_label_boundaries,
+                preds,
+                labels,
+                output_mode,
+                None,
+                torch_labels,
+            )
+
+
+# might be more efficient to return a pd.Series or something for the
+# assignment and populate it via a generator but for now just use a list
+def get_output_list(
+    error_analysis: bool,
+    pred_task: str,
+    task_labels: List[str],
+    task2boundaries: Dict[str, Tuple[int, int]],
+    prediction: np.ndarray,
+    labels: np.ndarray,
+    output_mode: Dict[str, str],
+    error_inds: Union[np.ndarray, None],
+    torch_labels: np.ndarray,
+) -> List[str]:
+    if error_inds is not None and error_analysis:
+        ground_truth = labels[
+            error_inds
+        ]  # np.array(eval_dataset[pred_task])[error_inds]
+        task_prediction = prediction[error_inds]  # [task2ind[pred_task]][error_inds]
+        all_torch_labels = torch_labels[
+            error_inds
+        ]  # np.array(eval_dataset["label"])[error_inds]
+    else:
+        ground_truth = labels  # np.array(eval_dataset[pred_task])
+        task_prediction = prediction  # [task2ind[pred_task]]
+        all_torch_labels = torch_labels  # np.array(eval_dataset["label"])
+    task_type = output_mode[pred_task]
+    # task_labels = task2labels[pred_task]
+    # get the feeling this doesn't work for multiple tasks but we'll
+    # probe those data structures when we run the code
+    if task_type == classification:
+        return get_classification_prints(task_labels, ground_truth, task_prediction)
+    elif task_type == tagging:
+        task_torch_labels = all_torch_labels
+        if pred_task in task2boundaries.keys():
+            labels_start, labels_end = task2boundaries[pred_task]
+            task_torch_labels = all_torch_labels[:, :, labels_start:labels_end]
+        return get_tagging_prints(
+            task_labels, ground_truth, task_prediction, task_torch_labels
+        )
+    elif task_type == relex:
+        task_torch_labels = all_torch_labels
+        if pred_task in task2boundaries.keys():
+            labels_start, labels_end = task2boundaries[pred_task]
+            task_torch_labels = all_torch_labels[:, :, labels_start:labels_end]
+        return get_relex_prints(
+            task_labels, ground_truth, task_prediction, task_torch_labels
+        )
+    else:
+        # since error_inds is now possibly None
+        return len(all_torch_labels) * ["UNSUPPORTED TASK TYPE"]
+
+
+def get_classification_prints(
+    classification_labels: List[str],
+    ground_truths: np.ndarray,  # List[str],
+    task_predictions: np.ndarray,
+) -> List[str]:
+    resolved_predictions = task_predictions  # np.argmax(task_predictions, axis=1)
+    predicted_labels = [*map(itemgetter(classification_labels), resolved_predictions)]
+
+    def clean_string(gp: Tuple[str, str]) -> str:
+        ground, predicted = gp
+        return f"Ground: {ground} , Predicted {predicted}"
+
+    return [*map(clean_string, zip(ground_truths, predicted_labels))]
+
+
+def get_tagging_prints(
+    tagging_labels: List[str],
+    ground_truths: np.ndarray,  # List[str],
+    task_predictions: np.ndarray,
+    torch_labels: np.ndarray,
+) -> List[str]:
+    resolved_predictions = task_predictions  # np.argmax(task_predictions, axis=2)
+
+    def human_readable_labels(index: int) -> str:
+        # since resolved predictions is num errors x seq length
+        # and torch labels is num errors x seq length x 1
+        return " ".join(
+            [
+                tagging_labels[label_idx]
+                for label_idx in resolved_predictions[index][
+                    np.where(torch_labels[index].reshape(-1) != -100)
+                ]
+            ]
+        )
+
+    # do naive approach for now
+    def clean_string(gp: Tuple[str, str]) -> str:
+        ground, predicted = gp
+        pred_str = " ".join(predicted)
+
+        return f"Ground: {ground} , Predicted {pred_str}"
+
+    return [
+        *map(
+            clean_string,
+            zip(
+                ground_truths,
+                map(human_readable_labels, range(resolved_predictions.shape[0])),
+            ),
+        )
+    ]
+
+
+def get_relex_prints(
+    relex_labels: List[str],
+    ground_truths: np.ndarray,  # List[str],
+    task_predictions: np.ndarray,
+    torch_labels: np.ndarray,
+) -> List[str]:
+    resolved_predictions = task_predictions  # np.argmax(task_predictions, axis=3)
+    none_index = relex_labels.index("None") if "None" in relex_labels else -1
+
+    def cell2cnlptstr(index_val_pair: Tuple[Tuple[int, ...], int]) -> str:
+        index, value = index_val_pair
+        first_token, second_token = index
+        return f"({first_token}, {second_token}, {relex_labels[value]})"
+
+    def matrix_to_label(matrix: np.ndarray) -> str:
+        if all(map(lambda s: s == none_index, matrix.flatten())):
+            return "none"
+
+        return " , ".join(
+            map(
+                cell2cnlptstr,
+                filter(lambda s: s[1] == none_index, np.ndenumerate(matrix)),
+            )
+        )
+
+    def human_readable_labels(index: int) -> str:
+        # resolved_predictions[index]  shape is sent length x sent length
+        # not the same shape insanity that we had for tagging
+
+        reduced_prediction = np.array(
+            [
+                *filter(
+                    len,
+                    [
+                        pred_row[np.where(ground_row != -100)]
+                        for pred_row, ground_row in zip(
+                            resolved_predictions[index], torch_labels[index]
                         )
-                    else:
-                        writer.write(
-                            "Task %d (%s) - Index %d - %s\n"
-                            % (task_ind, task_name, index, item)
-                        )
-            elif output_mode[task_name] == tagging:
-                task_predictions = np.argmax(predictions[task_ind], axis=2)
-                tagging_labels = task_labels[task_name]
-                for index, pred_seq in enumerate(task_predictions):
-                    wpind_to_ind = {}
-                    chunk_labels = []
-
-                    token_inds = eval_dataset["input_ids"][index]
-                    tokens = tokenizer.convert_ids_to_tokens(token_inds)
-                    for token_ind in range(1, len(tokens)):
-                        if token_inds[token_ind] <= 2:
-                            break
-                        ## FIXME
-                        if tokens[token_ind].startswith("Ġ"):
-                            wpind_to_ind[token_ind] = len(wpind_to_ind)
-                            chunk_labels.append(
-                                tagging_labels[task_predictions[index][token_ind]]
-                            )
-
-                    entities = get_entities(chunk_labels)
-                    writer.write(
-                        "Task %d (%s) - Index %d: %s\n"
-                        % (task_ind, task_name, index, str(entities))
-                    )
-            elif output_mode[task_name] == relex:
-                task_predictions = np.argmax(predictions[task_ind], axis=3)
-                relex_labels = task_labels[task_name]
-                none_index = (
-                    relex_labels.index("None") if "None" in relex_labels else -1
+                    ],
                 )
+            ]
+        )
+        return matrix_to_label(reduced_prediction)
 
-                for inst_ind in range(task_predictions.shape[0]):
-                    inst_preds = task_predictions[inst_ind]
-                    text = eval_dataset["text"][inst_ind]
-                    label = eval_dataset["label"][inst_ind]
-                    true_relex = eval_dataset[task_name][inst_ind]
-                    columns = eval_dataset.column_names
+    # do naive approach for now
+    def clean_string(gp: Tuple[str, str]) -> str:
+        ground, predicted = gp
+        pred_str = " ".join(predicted)
 
-                    a1s, a2s = np.where(inst_preds != none_index)
-                    for arg_ind in range(len(a1s)):
-                        a1_ind = a1s[arg_ind]
-                        a2_ind = a2s[arg_ind]
-                        cat = relex_labels[inst_preds[a1_ind][a2_ind]]
-                        writer.write(
-                            "Task %d (%s) - Index %d - %s(%d, %d)\n"
-                            % (task_ind, task_name, inst_ind, cat, a1_ind, a2_ind)
-                        )
-            else:
-                raise NotImplementedError(
-                    "Writing predictions is not implemented for this output_mode!"
-                )
+        return f"ground: {ground} , predicted {pred_str}"
+
+    return [
+        *map(
+            clean_string,
+            zip(
+                ground_truths,
+                map(human_readable_labels, range(resolved_predictions.shape[0])),
+            ),
+        )
+    ]
