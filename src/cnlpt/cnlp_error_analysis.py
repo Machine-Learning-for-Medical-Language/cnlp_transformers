@@ -12,36 +12,6 @@ from operator import itemgetter
 from collections import defaultdict
 
 
-def restructure_prediction(
-    task_names: List[str],
-    raw_prediction: EvalPrediction,
-    max_seq_length: int,
-    tagger: Dict[str, bool],
-    relations: Dict[str, bool],
-) -> Tuple[Dict[str, Tuple[np.ndarray, np.ndarray]], Dict[str, Tuple[int, int]]]:
-    task_label_ind = 0
-
-    # disagreement collection stuff for this scope
-    task_label_to_boundaries: Dict[str, Tuple[int, int]] = {}
-    task_label_to_label_packet: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
-
-    for task_ind, task_name in enumerate(task_names):
-        preds, labels, pad = structure_labels(
-            raw_prediction,
-            task_name,
-            task_ind,
-            task_label_ind,
-            max_seq_length,
-            tagger,
-            relations,
-            task_label_to_boundaries,
-        )
-        task_label_ind += pad
-
-        task_label_to_label_packet[task_name] = (preds, labels)
-    return task_label_to_label_packet, task_label_to_boundaries
-
-
 def compute_disagreements(
     preds: np.ndarray,
     labels: np.ndarray,
@@ -94,12 +64,16 @@ def relation_disagreements(preds: np.ndarray, labels: np.ndarray) -> np.ndarray:
 
 
 def process_prediction(
+        task_names: List[str],
+    output_fn: str,
     error_analysis: bool,
     task_to_label_packet: Dict[str, Tuple[np.ndarray, np.ndarray]],
     task_to_label_boundaries: Dict[str, Tuple[int, int]],
-    split_name: str,
-    dataset_ind: int,
-    dataset: ClinicalNlpDataset,
+    eval_dataset,
+        task2labels: Dict[str, List[str]],
+    # split_name: str,
+    # dataset_ind: int,
+    # dataset: ClinicalNlpDataset,
     output_mode: Dict[str, str],
 ):
     task_to_error_inds: Dict[str, Union[None, np.ndarray]] = defaultdict(lambda: None)
@@ -110,14 +84,14 @@ def process_prediction(
                 preds, labels, output_mode[task]
             )
 
-    start_ind = end_ind = 0
-    for ind in range(dataset_ind):
-        start_ind += len(dataset.datasets[ind][split_name])
-    end_ind = start_ind + len(dataset.datasets[dataset_ind][split_name])
+    # start_ind = end_ind = 0
+    # for ind in range(dataset_ind):
+    #     start_ind += len(dataset.datasets[ind][split_name])
+    # end_ind = start_ind + len(dataset.datasets[dataset_ind][split_name])
 
-    eval_dataset = Dataset.from_dict(
-        dataset.processed_dataset[split_name][start_ind:end_ind]
-    )
+    # eval_dataset = Dataset.from_dict(
+    #     dataset.processed_dataset[split_name][start_ind:end_ind]
+    # )
 
     if error_analysis:
         relevant_indices = set(
@@ -128,13 +102,13 @@ def process_prediction(
         relevant_indices = set(range(len(eval_dataset["text"])))
 
     out_table = pd.DataFrame(
-        columns=["text", *sorted(dataset.tasks)],
+        columns=["text", *sorted(task_names)],
         index=relevant_indices,
     )
 
     out_table["text"] = [eval_dataset["text"][index] for index in relevant_indices]
 
-    task2labels = dataset.get_labels()
+    # task2labels = dataset.get_labels()
     # for task_label, error_inds in task_to_error_inds.items():
     for task_name, packet in task_to_label_packet.items():
         preds, labels = packet

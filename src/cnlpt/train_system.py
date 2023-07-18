@@ -51,8 +51,7 @@ from .cnlp_processors import tagging, relex, classification
 from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
 from .cnlp_metrics import cnlp_compute_metrics
 from .cnlp_args import CnlpTrainingArguments, ModelArguments
-from .cnlp_predict import write_predictions_for_dataset
-from .cnlp_error_analysis import write_errors_for_dataset
+from .cnlp_error_analysis import process_prediction
 from .CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
 from .BaselineModels import CnnSentenceClassifier, LstmSentenceClassifier
 from .HierarchicalTransformer import HierarchicalModel
@@ -88,6 +87,49 @@ def is_hub_model(model_name: str) -> bool:
         pass
 
     return False
+
+
+def get_dataset_segment(
+    split_name: str,
+    dataset_ind: int,
+    dataset: ClinicalNlpDataset,
+):
+    start_ind = end_ind = 0
+    for ind in range(dataset_ind):
+        start_ind += len(dataset.datasets[ind][split_name])
+    end_ind = start_ind + len(dataset.datasets[dataset_ind][split_name])
+
+    return Dataset.from_dict(dataset.processed_dataset[split_name][start_ind:end_ind])
+
+
+def restructure_prediction(
+    task_names: List[str],
+    raw_prediction: EvalPrediction,
+    max_seq_length: int,
+    tagger: Dict[str, bool],
+    relations: Dict[str, bool],
+) -> Tuple[Dict[str, Tuple[np.ndarray, np.ndarray]], Dict[str, Tuple[int, int]]]:
+    task_label_ind = 0
+
+    # disagreement collection stuff for this scope
+    task_label_to_boundaries: Dict[str, Tuple[int, int]] = {}
+    task_label_to_label_packet: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
+
+    for task_ind, task_name in enumerate(task_names):
+        preds, labels, pad = structure_labels(
+            raw_prediction,
+            task_name,
+            task_ind,
+            task_label_ind,
+            max_seq_length,
+            tagger,
+            relations,
+            task_label_to_boundaries,
+        )
+        task_label_ind += pad
+
+        task_label_to_label_packet[task_name] = (preds, labels)
+    return task_label_to_label_packet, task_label_to_boundaries
 
 
 def structure_labels(
@@ -643,6 +685,9 @@ def main(
 
     # Evaluation
     eval_results = {}
+
+    task_to_label_space = dataset.get_labels()
+
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
         eval_dataset = dataset.processed_dataset["validation"]
@@ -677,21 +722,33 @@ def main(
                     ),
                 )
                 # use trainer to predict
+
+            (
+                task_to_label_packet,
+                task_to_label_boundaries,
+            ) = current_prediction_packet.pop()
+
             for dataset_ind, dataset_path in enumerate(data_args.data_dir):
                 subdir = os.path.split(dataset_path.rstrip("/"))[1]
                 output_eval_predictions_file = os.path.join(
                     training_args.output_dir,
                     f"eval_predictions_%s_%d.txt" % (subdir, dataset_ind),
                 )
-                write_predictions_for_dataset(
-                    output_eval_predictions_file,
-                    trainer,
-                    dataset,
-                    "validation",
-                    dataset_ind,
-                    output_mode,
-                    tokenizer,
+
+                dataset_dev_segment = get_dataset_segment(
+                    "Validation", dataset_ind, dataset
                 )
+                if data_args.error_analysis:
+                    process_prediction(
+                        task_names,
+                        output_eval_predictions_file,
+                        True,
+                        task_to_label_packet,
+                        task_to_label_boundaries,
+                        dataset_dev_segment,
+                        task_to_label_space,
+                        output_mode,
+                    )
 
         eval_results.update(eval_result)
 
@@ -709,19 +766,33 @@ def main(
                     training_args.output_dir,
                     f"test_predictions_%s_%d.txt" % (subdir, dataset_ind),
                 )
-                # write_predictions_for_dataset(
-                write_errors_for_dataset(
-                    # output_eval_predictions_file,
-                    "TEST",
-                    trainer,
-                    dataset,
-                    "test",
-                    dataset_ind,
-                    output_mode,
-                    tokenizer,
-                    output_prob=training_args.output_prob,
+
+                dataset_test_segment = get_dataset_segment("test", dataset_ind, dataset)
+                test_predictions = trainer.predict(
+                    test_dataset=dataset_test_segment
+                ).predictions
+
+                (
+                    task_to_label_packet,
+                    task_to_label_boundaries,
+                ) = restructure_prediction(
+                    task_names,
+                    test_predictions,
+                    data_args.max_seq_length,
+                    tagger,
+                    relations,
                 )
 
+                process_prediction(
+                    task_names,
+                    output_eval_predictions_file,
+                    False,
+                    task_to_label_packet,
+                    task_to_label_boundaries,
+                    dataset_test_segment,
+                    task_to_label_space,
+                    output_mode,
+                )
     return eval_results
 
 
