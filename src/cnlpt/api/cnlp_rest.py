@@ -33,7 +33,7 @@ class EntityDocument(BaseModel):
     doc_text: str
     entities: List[List[int]]
 
-def get_dataset(inst_list, tokenizer, label_lists, tasks, max_length: int = 128, hier: bool = False, chunk_len: int = 200, num_chunks: int = 40, insert_empty_chunk_at_beginning: bool = False,):
+def get_dataset(inst_list, tokenizer, label_lists, max_length: int = 128, hier: bool = False, chunk_len: int = 200, num_chunks: int = 40, insert_empty_chunk_at_beginning: bool = False,):
     dataset = Dataset.from_dict({'text':inst_list})
     task_dataset = dataset.map(
                     cnlp_preprocess_data,
@@ -52,7 +52,6 @@ def get_dataset(inst_list, tokenizer, label_lists, tasks, max_length: int = 128,
                         'num_chunks':num_chunks,
                         'insert_empty_chunk_at_beginning':insert_empty_chunk_at_beginning,
                         'truncate_examples': True,
-                        'tasks': tasks,
                 }
     )
     return task_dataset
@@ -98,20 +97,7 @@ def initialize_hier_model(app, model_name, cuda=True, batch_size=1):
     AutoModel.register(CnlpConfig, HierarchicalModel)
 
     config: CnlpConfig = AutoConfig.from_pretrained(model_name)
-
-    encoder_dim = config.hidden_size
-
-    ## TODO (#122) - replace this with the transformer config when we fix that issue. just use defaults for now.
-    config.hier_head_config = dict(
-        n_layers=2,
-        d_model=encoder_dim,
-        d_inner=2048,
-        n_head=8,
-        d_k=8,
-        d_v=96,
-        dropout=0.1,
-    )
-
+    app.state.config = config
     app.state.tokenizer = AutoTokenizer.from_pretrained(model_name,
                                                   config=config)
     
