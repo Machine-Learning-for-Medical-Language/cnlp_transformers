@@ -7,7 +7,7 @@ from datasets import Dataset
 from transformers.trainer_utils import EvalPrediction
 from .cnlp_processors import tagging, relex, classification
 from .cnlp_data import ClinicalNlpDataset
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Tuple, Union, Iterable
 from itertools import chain
 from operator import itemgetter
 from collections import defaultdict
@@ -79,9 +79,6 @@ def process_prediction(
     task_to_label_boundaries: Dict[str, Tuple[int, int]],
     eval_dataset,
     task2labels: Dict[str, List[str]],
-    # split_name: str,
-    # dataset_ind: int,
-    # dataset: ClinicalNlpDataset,
     output_mode: Dict[str, str],
 ):
     task_to_error_inds: Dict[str, np.ndarray] = defaultdict(lambda: np.array([]))
@@ -92,20 +89,12 @@ def process_prediction(
                 preds, labels, output_mode[task]
             )
 
-    # start_ind = end_ind = 0
-    # for ind in range(dataset_ind):
-    #     start_ind += len(dataset.datasets[ind][split_name])
-    # end_ind = start_ind + len(dataset.datasets[dataset_ind][split_name])
-
-    # eval_dataset = Dataset.from_dict(
-    #     dataset.processed_dataset[split_name][start_ind:end_ind]
-    # )
-
-    if error_analysis:
-        relevant_indices = set(chain.from_iterable(task_to_error_inds.values()))
+        relevant_indices: Iterable[int] = set(
+            map(int, chain.from_iterable(task_to_error_inds.values()))
+        )
 
     else:
-        relevant_indices = set(range(len(eval_dataset["text"])))
+        relevant_indices = range(len(eval_dataset["text"]))
 
     out_table = pd.DataFrame(
         columns=["text", *sorted(task_names)],
@@ -124,31 +113,18 @@ def process_prediction(
     for task_name, packet in task_to_label_packet.items():
         preds, labels = packet
         task_labels = task2labels[task_name]
-        if error_analysis:
-            error_inds = task_to_error_inds[task_name]
-            out_table[task_name][error_inds] = get_output_list(
-                error_analysis,
-                task_name,
-                task_labels,
-                task_to_label_boundaries,
-                preds,
-                labels,
-                output_mode,
-                error_inds,
-                torch_labels,
-            )
-        else:
-            out_table[task_name] = get_output_list(
-                error_analysis,
-                task_name,
-                task_labels,
-                task_to_label_boundaries,
-                preds,
-                labels,
-                output_mode,
-                None,
-                torch_labels,
-            )
+        error_inds = task_to_error_inds[task_name]
+        out_table[task_name][error_inds] = get_output_list(
+            error_analysis,
+            task_name,
+            task_labels,
+            task_to_label_boundaries,
+            preds,
+            labels,
+            output_mode,
+            error_inds,
+            torch_labels,
+        )
     out_table.to_csv(
         output_fn,
         sep="\t",
@@ -216,9 +192,14 @@ def get_classification_prints(
     task_predictions: np.ndarray,
 ) -> List[str]:
     resolved_predictions = task_predictions  # np.argmax(task_predictions, axis=1)
-    predicted_labels = [classification_labels[index] for index in resolved_predictions.astype("int")]
+    predicted_labels = [
+        classification_labels[index] for index in resolved_predictions.astype("int")
+    ]
 
-    ground_strings = [classification_labels[index] for index in ground_truths.astype("int")]
+    ground_strings = [
+        classification_labels[index] for index in ground_truths.astype("int")
+    ]
+
     def clean_string(gp: Tuple[str, str]) -> str:
         ground, predicted = gp
         return f"Ground: {ground} , Predicted {predicted}"
@@ -280,7 +261,7 @@ def get_relex_prints(
 
     def matrix_to_label(matrix: np.ndarray) -> str:
         if all(map(lambda s: s == none_index, matrix.flatten())):
-            return "none"
+            return "None"
 
         return " , ".join(
             map(
@@ -289,19 +270,18 @@ def get_relex_prints(
             )
         )
 
-    def human_readable_labels(index: int) -> str:
+    def human_readable_labels(cell_token_arrays: Tuple[np.ndarray, np.ndarray]) -> str:
         # resolved_predictions[index]  shape is sent length x sent length
         # not the same shape insanity that we had for tagging
+        raw_cells, token_ids = cell_token_arrays
 
         reduced_prediction = np.array(
             [
                 *filter(
                     len,
                     [
-                        pred_row[np.where(ground_row != -100)]
-                        for pred_row, ground_row in zip(
-                            resolved_predictions[index], torch_labels[index]
-                        )
+                        pred_row[np.where(token_row != -100)]
+                        for pred_row, token_row in zip(raw_cells, token_ids)
                     ],
                 )
             ]
@@ -311,16 +291,15 @@ def get_relex_prints(
     # do naive approach for now
     def clean_string(gp: Tuple[str, str]) -> str:
         ground, predicted = gp
-        pred_str = " ".join(predicted)
 
-        return f"ground: {ground} , predicted {pred_str}"
+        return f"ground: {ground} , predicted {predicted}"
 
     return [
         *map(
             clean_string,
             zip(
-                ground_truths,
-                map(human_readable_labels, range(resolved_predictions.shape[0])),
+                map(human_readable_labels, zip(ground_truths, torch_labels)),
+                map(human_readable_labels, zip(resolved_predictions, torch_labels)),
             ),
         )
     ]
