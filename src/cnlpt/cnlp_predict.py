@@ -216,22 +216,23 @@ def get_classification_prints(
     task_predictions: np.ndarray,
 ) -> List[str]:
     resolved_predictions = task_predictions  # np.argmax(task_predictions, axis=1)
-    predicted_labels = [*map(itemgetter(classification_labels), resolved_predictions)]
+    predicted_labels = [classification_labels[index] for index in resolved_predictions.astype("int")]
 
+    ground_strings = [classification_labels[index] for index in ground_truths.astype("int")]
     def clean_string(gp: Tuple[str, str]) -> str:
         ground, predicted = gp
         return f"Ground: {ground} , Predicted {predicted}"
 
-    return [*map(clean_string, zip(ground_truths, predicted_labels))]
+    return [*map(clean_string, zip(ground_strings, predicted_labels))]
 
 
 def get_tagging_prints(
     tagging_labels: List[str],
-    ground_truths: np.ndarray,  # List[str],
+    ground_truths: np.ndarray,
     task_predictions: np.ndarray,
     torch_labels: np.ndarray,
 ) -> List[str]:
-    resolved_predictions = task_predictions  # np.argmax(task_predictions, axis=2)
+    resolved_predictions = task_predictions
 
     def human_readable_labels(tag_token_arrays: Tuple[np.ndarray, np.ndarray]) -> str:
         raw_tags, token_ids = tag_token_arrays
