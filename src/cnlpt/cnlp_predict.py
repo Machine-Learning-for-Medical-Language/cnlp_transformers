@@ -210,6 +210,7 @@ def get_classification_prints(
     task_predictions: np.ndarray,
 ) -> List[str]:
     predicted_labels = [classification_labels[index] for index in task_predictions]
+
     def clean_string(gp: Tuple[str, str]) -> str:
         ground, predicted = gp
         if ground == predicted:
