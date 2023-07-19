@@ -224,6 +224,7 @@ def get_classification_prints(
 ) -> List[str]:
     predicted_labels = [classification_labels[index] for index in task_predictions]
 
+    ground_strings = [classification_labels[index] for index in ground_truths.astype("int")]
     def clean_string(gp: Tuple[str, str]) -> str:
         ground, predicted = gp
         if ground == predicted:
