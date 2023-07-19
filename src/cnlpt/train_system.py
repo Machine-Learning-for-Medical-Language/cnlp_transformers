@@ -835,7 +835,7 @@ def main(
                 )
                 if training_args.error_analysis:
                     process_prediction(
-                        task_names,
+                        dataset.tasks,
                         output_eval_predictions_file,
                         True,
                         task_to_label_packet,
@@ -863,23 +863,23 @@ def main(
                 )
 
                 dataset_test_segment = get_dataset_segment("test", dataset_ind, dataset)
-                test_predictions = trainer.predict(
+                raw_test_predictions = trainer.predict(
                     test_dataset=dataset_test_segment
-                ).predictions
+                )
 
                 (
                     task_to_label_packet,
                     task_to_label_boundaries,
                 ) = restructure_prediction(
-                    task_names,
-                    test_predictions,
+                    dataset.tasks,
+                    raw_test_predictions,
                     data_args.max_seq_length,
                     tagger,
                     relations,
                 )
 
                 process_prediction(
-                    task_names,
+                    dataset.tasks,
                     output_eval_predictions_file,
                     False,
                     task_to_label_packet,
