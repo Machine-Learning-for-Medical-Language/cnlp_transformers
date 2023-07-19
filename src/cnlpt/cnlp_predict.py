@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import re
 import csv
+import tqdm
 
 from datasets import Dataset
 from transformers.trainer_utils import EvalPrediction
@@ -116,15 +117,14 @@ def process_prediction(
     out_table["text"] = out_table["text"].str.replace("//", "")
     out_table["text"] = out_table["text"].str.replace("\\", "")
     torch_labels = np.array(eval_dataset["label"])
-    # task2labels = dataset.get_labels()
-    # for task_label, error_inds in task_to_error_inds.items():
     for task_name, packet in tqdm.tqdm(
         task_to_label_packet.items(), desc="getting human readable labels"
     ):
         preds, labels = packet
         task_labels = task2labels[task_name]
         error_inds = task_to_error_inds[task_name]
-        out_table[task_name][error_inds] = get_output_list(
+        target_inds = error_inds if len(error_inds) > 0 else relevant_indices
+        out_table[task_name][target_inds] = get_output_list(
             error_analysis,
             task_name,
             task_labels,
@@ -376,7 +376,6 @@ def get_relex_prints(
     resolved_predictions = task_predictions
     none_index = relex_labels.index("None") if "None" in relex_labels else -1
 
-    # thought we'd filtered them out but apparently not
     def tuples_to_str(label_tuples: Iterable[Cell]):
         return [
             (row, col, relex_labels[label]) for row, col, label in sorted(label_tuples)
@@ -406,7 +405,6 @@ def get_relex_prints(
                 )
             ]
         )
-
         # adding the diagonal back in...
         final_reduced_matrix = (
             np.array(
