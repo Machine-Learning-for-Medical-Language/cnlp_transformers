@@ -1,10 +1,11 @@
 import pandas as pd
+import re
+import csv
 
 from datasets import Dataset
 from transformers.trainer_utils import EvalPrediction
 from .cnlp_processors import tagging, relex, classification
 from .cnlp_data import ClinicalNlpDataset
-from .train_system import structure_labels
 from typing import Dict, List, Tuple, Union
 from itertools import chain
 from operator import itemgetter
@@ -17,6 +18,14 @@ from transformers import PreTrainedTokenizer, Trainer
 
 from .cnlp_data import ClinicalNlpDataset
 from .cnlp_processors import classification, relex, tagging
+
+
+def remove_newline(review):
+    review = review.replace("&#039;", "'")
+    review = review.replace("\n", " <cr> ")
+    review = review.replace("\r", " <cr> ")
+    review = review.replace("\t", " ")
+    return review
 
 
 def compute_disagreements(
@@ -82,7 +91,7 @@ def process_prediction(
     # dataset: ClinicalNlpDataset,
     output_mode: Dict[str, str],
 ):
-    task_to_error_inds: Dict[str, Union[None, np.ndarray]] = defaultdict(lambda: None)
+    task_to_error_inds: Dict[str, np.ndarray] = defaultdict(lambda: np.array([]))
     if error_analysis:
         for task, label_packet in task_to_label_packet.items():
             preds, labels = label_packet
@@ -100,9 +109,7 @@ def process_prediction(
     # )
 
     if error_analysis:
-        relevant_indices = set(
-            chain.from_iterable(filter(None, task_to_error_inds.values()))
-        )
+        relevant_indices = set(chain.from_iterable(task_to_error_inds.values()))
 
     else:
         relevant_indices = set(range(len(eval_dataset["text"])))
@@ -113,12 +120,16 @@ def process_prediction(
     )
 
     out_table["text"] = [eval_dataset["text"][index] for index in relevant_indices]
+    out_table["text"] = out_table["text"].apply(remove_newline)
 
+    out_table["text"] = out_table["text"].str.replace('"', "")
+    out_table["text"] = out_table["text"].str.replace("//", "")
+    out_table["text"] = out_table["text"].str.replace("\\", "")
+    torch_labels = np.array(eval_dataset["label"])
     # task2labels = dataset.get_labels()
     # for task_label, error_inds in task_to_error_inds.items():
     for task_name, packet in task_to_label_packet.items():
         preds, labels = packet
-        torch_labels = np.array(eval_dataset["labels"])
         task_labels = task2labels[task_name]
         if error_analysis:
             error_inds = task_to_error_inds[task_name]
@@ -145,6 +156,14 @@ def process_prediction(
                 None,
                 torch_labels,
             )
+    out_table.to_csv(
+        output_fn,
+        sep="\t",
+        index=True,
+        header=True,
+        quoting=csv.QUOTE_NONE,
+        escapechar="\\",
+    )
 
 
 # might be more efficient to return a pd.Series or something for the
@@ -157,10 +176,10 @@ def get_output_list(
     prediction: np.ndarray,
     labels: np.ndarray,
     output_mode: Dict[str, str],
-    error_inds: Union[np.ndarray, None],
+    error_inds: np.ndarray,
     torch_labels: np.ndarray,
 ) -> List[str]:
-    if error_inds is not None and error_analysis:
+    if len(error_inds) > 0 and error_analysis:
         ground_truth = labels[
             error_inds
         ]  # np.array(eval_dataset[pred_task])[error_inds]
@@ -195,8 +214,7 @@ def get_output_list(
             task_labels, ground_truth, task_prediction, task_torch_labels
         )
     else:
-        # since error_inds is now possibly None
-        return len(all_torch_labels) * ["UNSUPPORTED TASK TYPE"]
+        return len(error_inds) * ["UNSUPPORTED TASK TYPE"]
 
 
 def get_classification_prints(
@@ -222,31 +240,31 @@ def get_tagging_prints(
 ) -> List[str]:
     resolved_predictions = task_predictions  # np.argmax(task_predictions, axis=2)
 
-    def human_readable_labels(index: int) -> str:
+    def human_readable_labels(tag_token_arrays: Tuple[np.ndarray, np.ndarray]) -> str:
+        raw_tags, token_ids = tag_token_arrays
         # since resolved predictions is num errors x seq length
         # and torch labels is num errors x seq length x 1
         return " ".join(
             [
                 tagging_labels[label_idx]
-                for label_idx in resolved_predictions[index][
-                    np.where(torch_labels[index].reshape(-1) != -100)
-                ]
+                for label_idx in raw_tags[
+                    np.where(token_ids.reshape(-1) != -100)
+                ].astype("int")
             ]
         )
 
     # do naive approach for now
-    def clean_string(gp: Tuple[str, str]) -> str:
-        ground, predicted = gp
-        pred_str = " ".join(predicted)
+    def clean_string(gp_strings: Tuple[str, str]) -> str:
+        ground, predicted = gp_strings
 
-        return f"Ground: {ground} , Predicted {pred_str}"
+        return f"Ground: {ground} , Predicted {predicted}"
 
     return [
         *map(
             clean_string,
             zip(
-                ground_truths,
-                map(human_readable_labels, range(resolved_predictions.shape[0])),
+                map(human_readable_labels, zip(ground_truths, torch_labels)),
+                map(human_readable_labels, zip(resolved_predictions, torch_labels)),
             ),
         )
     ]

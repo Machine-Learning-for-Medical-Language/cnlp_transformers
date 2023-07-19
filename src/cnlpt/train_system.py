@@ -815,9 +815,9 @@ def main(
                 )
 
                 dataset_dev_segment = get_dataset_segment(
-                    "Validation", dataset_ind, dataset
+                    "validation", dataset_ind, dataset
                 )
-                if data_args.error_analysis:
+                if training_args.error_analysis:
                     process_prediction(
                         task_names,
                         output_eval_predictions_file,
