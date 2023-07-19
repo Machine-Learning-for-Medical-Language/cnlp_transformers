@@ -29,7 +29,7 @@ from enum import Enum
 import numpy as np
 
 import torch
-from torch.utils.data.dataset import Dataset
+from datasets import Dataset
 from transformers import AutoConfig, AutoTokenizer, AutoModel, EvalPrediction
 from transformers.training_args import IntervalStrategy
 from transformers.data.processors.utils import InputFeatures
@@ -736,9 +736,9 @@ def main(
                 )
 
                 dataset_dev_segment = get_dataset_segment(
-                    "Validation", dataset_ind, dataset
+                    "validation", dataset_ind, dataset
                 )
-                if data_args.error_analysis:
+                if training_args.error_analysis:
                     process_prediction(
                         task_names,
                         output_eval_predictions_file,
