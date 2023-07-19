@@ -266,7 +266,7 @@ def get_relex_prints(
         return " , ".join(
             map(
                 cell2cnlptstr,
-                filter(lambda s: s[1] == none_index, np.ndenumerate(matrix)),
+                filter(lambda s: s[1] != none_index, np.ndenumerate(matrix)),
             )
         )
 
@@ -280,7 +280,7 @@ def get_relex_prints(
                 *filter(
                     len,
                     [
-                        pred_row[np.where(token_row != -100)]
+                        pred_row[np.where(token_row != -100)].astype("int")
                         for pred_row, token_row in zip(raw_cells, token_ids)
                     ],
                 )
