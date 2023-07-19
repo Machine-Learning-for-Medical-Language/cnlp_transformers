@@ -8,7 +8,7 @@ from datasets import Dataset
 from transformers.trainer_utils import EvalPrediction
 from .cnlp_processors import tagging, relex, classification
 from .cnlp_data import ClinicalNlpDataset
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Tuple, Union, Iterable
 from itertools import chain
 from operator import itemgetter
 from collections import defaultdict
@@ -123,31 +123,18 @@ def process_prediction(
     ):
         preds, labels = packet
         task_labels = task2labels[task_name]
-        if error_analysis:
-            error_inds = task_to_error_inds[task_name]
-            out_table[task_name][error_inds] = get_output_list(
-                error_analysis,
-                task_name,
-                task_labels,
-                task_to_label_boundaries,
-                preds,
-                labels,
-                output_mode,
-                error_inds,
-                torch_labels,
-            )
-        else:
-            out_table[task_name] = get_output_list(
-                error_analysis,
-                task_name,
-                task_labels,
-                task_to_label_boundaries,
-                preds,
-                labels,
-                output_mode,
-                None,
-                torch_labels,
-            )
+        error_inds = task_to_error_inds[task_name]
+        out_table[task_name][error_inds] = get_output_list(
+            error_analysis,
+            task_name,
+            task_labels,
+            task_to_label_boundaries,
+            preds,
+            labels,
+            output_mode,
+            error_inds,
+            torch_labels,
+        )
     out_table.to_csv(
         output_fn,
         sep="\t",
@@ -223,8 +210,6 @@ def get_classification_prints(
     task_predictions: np.ndarray,
 ) -> List[str]:
     predicted_labels = [classification_labels[index] for index in task_predictions]
-
-    ground_strings = [classification_labels[index] for index in ground_truths.astype("int")]
     def clean_string(gp: Tuple[str, str]) -> str:
         ground, predicted = gp
         if ground == predicted:
@@ -401,6 +386,7 @@ def get_relex_prints(
     ) -> Tuple[np.ndarray, np.ndarray]:
         # resolved_predictions[index]  shape is sent length x sent length
         # not the same shape insanity that we had for tagging
+        raw_cells, token_ids = cell_token_arrays
 
         (invalid_inds,) = np.where(np.diag(raw_cells) != -100)
         # just in case
