@@ -174,12 +174,21 @@ def structure_labels(
 
     pad = 0
 
+    print(len(p.predictions))
+    print([i.shape for i in p.predictions])
+
     if tagger[task_name]:
+        print("tagger")
+        print(p.predictions[task_ind].shape)
         preds = np.argmax(p.predictions[task_ind], axis=2)
         # labels will be -100 where we don't need to tag
     elif relations[task_name]:
+        print("relations")
+        print(p.predictions[task_ind].shape)
         preds = np.argmax(p.predictions[task_ind], axis=3)
     else:
+        print("classification")
+        print(p.predictions[task_ind].shape)
         preds = np.argmax(p.predictions[task_ind], axis=1)
 
     # for inference
@@ -629,8 +638,15 @@ def main(
             # This will save model per epoch
             # training_args.save_strategy = IntervalStrategy.EPOCH
         elif training_args.do_eval:
-            logger.info("Evaluation strategy not specified so evaluating every epoch")
-            training_args.evaluation_strategy = IntervalStrategy.EPOCH
+            actual_total_steps = int(
+                training_args.num_train_epochs
+                * batches_per_epoch
+                // training_args.gradient_accumulation_steps
+            )
+            training_args.eval_steps = actual_total_steps
+            training_args.evaluation_strategy = IntervalStrategy.STEPS
+            # logger.info("Evaluation strategy not specified so evaluating every epoch")
+            # training_args.evaluation_strategy = IntervalStrategy.EPOCH
 
     current_prediction_packet = deque()
 
