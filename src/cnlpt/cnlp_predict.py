@@ -3,19 +3,25 @@ import numpy as np
 import pandas as pd
 import re
 import csv
-import tqdm
-import inspect
 
 from datasets import Dataset
 from transformers.trainer_utils import EvalPrediction
 from .cnlp_processors import tagging, relex, classification
 from .cnlp_data import ClinicalNlpDataset
-from typing import Dict, List, Tuple, Union, Iterable
-from itertools import chain, groupby
+from typing import Dict, List, Tuple, Union
+from itertools import chain
 from operator import itemgetter
 from collections import defaultdict
 
 logger = logging.getLogger(__name__)
+
+
+def remove_newline(review):
+    review = review.replace("&#039;", "'")
+    review = review.replace("\n", " <cr> ")
+    review = review.replace("\r", " <cr> ")
+    review = review.replace("\t", " ")
+    return review
 
 
 def remove_newline(review):
@@ -117,20 +123,31 @@ def process_prediction(
     ):
         preds, labels = packet
         task_labels = task2labels[task_name]
-        error_inds = task_to_error_inds[task_name]
-        target_inds = error_inds if len(error_inds) > 0 else relevant_indices
-        out_table[task_name][target_inds] = get_output_list(
-            error_analysis,
-            task_name,
-            task_labels,
-            task_to_label_boundaries,
-            preds,
-            labels,
-            output_mode,
-            error_inds,
-            torch_labels,
-            out_table["text"],
-        )
+        if error_analysis:
+            error_inds = task_to_error_inds[task_name]
+            out_table[task_name][error_inds] = get_output_list(
+                error_analysis,
+                task_name,
+                task_labels,
+                task_to_label_boundaries,
+                preds,
+                labels,
+                output_mode,
+                error_inds,
+                torch_labels,
+            )
+        else:
+            out_table[task_name] = get_output_list(
+                error_analysis,
+                task_name,
+                task_labels,
+                task_to_label_boundaries,
+                preds,
+                labels,
+                output_mode,
+                None,
+                torch_labels,
+            )
     out_table.to_csv(
         output_fn,
         sep="\t",

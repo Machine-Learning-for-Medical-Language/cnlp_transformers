@@ -24,18 +24,11 @@ from os.path import basename, dirname, exists, join
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
-import torch
-from filelock import FileLock
-from huggingface_hub import hf_hub_url
-from torch.optim import AdamW
-from torch.utils.data.dataset import Dataset
-from transformers import (
-    ALL_PRETRAINED_CONFIG_ARCHIVE_MAP,
-    AutoConfig,
-    AutoModel,
-    AutoTokenizer,
-    EvalPrediction,
-)
+from datasets import Dataset
+from transformers import AutoConfig, AutoTokenizer, AutoModel, EvalPrediction
+from transformers.training_args import IntervalStrategy
+from transformers.data.processors.utils import InputFeatures
+from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.data.processors.utils import (
     DataProcessor,
     InputExample,
