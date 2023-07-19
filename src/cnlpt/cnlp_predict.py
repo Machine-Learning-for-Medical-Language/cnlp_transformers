@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import re
 import csv
+import tqdm
 
 from datasets import Dataset
 from transformers.trainer_utils import EvalPrediction
@@ -83,7 +84,7 @@ def process_prediction(
 ):
     task_to_error_inds: Dict[str, np.ndarray] = defaultdict(lambda: np.array([]))
     if error_analysis:
-        for task, label_packet in task_to_label_packet.items():
+        for task, label_packet in tqdm.tqdm(task_to_label_packet.items(), desc=f"computing disagreements"):
             preds, labels = label_packet
             task_to_error_inds[task] = compute_disagreements(
                 preds, labels, output_mode[task]
@@ -110,11 +111,12 @@ def process_prediction(
     torch_labels = np.array(eval_dataset["label"])
     # task2labels = dataset.get_labels()
     # for task_label, error_inds in task_to_error_inds.items():
-    for task_name, packet in task_to_label_packet.items():
+    for task_name, packet in tqdm.tqdm(task_to_label_packet.items(), desc="getting human readable labels"):
         preds, labels = packet
         task_labels = task2labels[task_name]
         error_inds = task_to_error_inds[task_name]
-        out_table[task_name][error_inds] = get_output_list(
+        target_inds = error_inds if len(error_inds) > 0 else relevant_indices
+        out_table[task_name][target_inds] = get_output_list(
             error_analysis,
             task_name,
             task_labels,
@@ -193,11 +195,11 @@ def get_classification_prints(
 ) -> List[str]:
     resolved_predictions = task_predictions  # np.argmax(task_predictions, axis=1)
     predicted_labels = [
-        classification_labels[index] for index in resolved_predictions.astype("int")
+        classification_labels[index] for index in resolved_predictions.astype(int)
     ]
 
     ground_strings = [
-        classification_labels[index] for index in ground_truths.astype("int")
+        classification_labels[index] for index in ground_truths.astype(int)
     ]
 
     def clean_string(gp: Tuple[str, str]) -> str:
@@ -254,6 +256,12 @@ def get_relex_prints(
     resolved_predictions = task_predictions  # np.argmax(task_predictions, axis=3)
     none_index = relex_labels.index("None") if "None" in relex_labels else -1
 
+    print(ground_truths.shape)
+
+    print(task_predictions.shape)
+
+    
+    print(torch_labels.shape)
     def cell2cnlptstr(index_val_pair: Tuple[Tuple[int, ...], int]) -> str:
         index, value = index_val_pair
         first_token, second_token = index
@@ -280,12 +288,12 @@ def get_relex_prints(
                 *filter(
                     len,
                     [
-                        pred_row[np.where(token_row != -100)].astype("int")
+                        pred_row[np.where(token_row != -100)]
                         for pred_row, token_row in zip(raw_cells, token_ids)
                     ],
                 )
             ]
-        )
+        ).astype(int)
         return matrix_to_label(reduced_prediction)
 
     # do naive approach for now
