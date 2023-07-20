@@ -146,21 +146,12 @@ def structure_labels(
 
     pad = 0
 
-    print(len(p.predictions))
-    print([i.shape for i in p.predictions])
-
     if tagger[task_name]:
-        print("tagger")
-        print(p.predictions[task_ind].shape)
         preds = np.argmax(p.predictions[task_ind], axis=2)
         # labels will be -100 where we don't need to tag
     elif relations[task_name]:
-        print("relations")
-        print(p.predictions[task_ind].shape)
         preds = np.argmax(p.predictions[task_ind], axis=3)
     else:
-        print("classification")
-        print(p.predictions[task_ind].shape)
         preds = np.argmax(p.predictions[task_ind], axis=1)
 
     if relations[task_name]:
