@@ -85,20 +85,22 @@ def encoder_inferred(model_name_or_path: str) -> bool:
     return is_hub_model(model_name_or_path) or not is_cnlpt_model(model_name_or_path)
 
 
-def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = None):
+def main(
+    json_file: Optional[str] = None,
+    json_obj: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Dict[str, Any]]:
     """
     See all possible arguments in :class:`transformers.TrainingArguments`
     or by passing the --help flag to this script.
 
     We now keep distinct sets of args, for a cleaner separation of concerns.
 
-    :param typing.Optional[str] json_file: if passed, a path to a JSON file
+    :param json_file: if passed, a path to a JSON file
         to use as the model, data, and training arguments instead of
         retrieving them from the CLI (mutually exclusive with ``json_obj``)
-    :param typing.Optional[dict] json_obj: if passed, a JSON dictionary
+    :param json_obj: if passed, a JSON dictionary
         to use as the model, data, and training arguments instead of
         retrieving them from the CLI (mutually exclusive with ``json_file``)
-    :rtype: typing.Dict[str, typing.Dict[str, typing.Any]]
     :return: the evaluation results (will be empty if ``--do_eval`` not passed)
     """
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, CnlpTrainingArguments))
@@ -249,7 +251,12 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
             config = AutoConfig.from_pretrained(
                     encoder_name,
                     cache_dir=model_args.cache_dir,
+                    layer=model_args.layer
                 )
+            config.finetuning_task = data_args.task_name
+            config.relations = relations
+            config.tagger = tagger
+            config.label_dictionary = {} # this gets filled in later
 
             ## TODO: check if user overwrote parameters in command line that could change behavior of the model and warn
             #if data_args.chunk_len is not None:
@@ -259,8 +266,7 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
 
             model.remove_task_classifiers()
             for task in data_args.task_name:
-                if task not in config.finetuning_task:
-                    model.add_task_classifier(task, dataset.get_labels()[task])
+                model.add_task_classifier(task, dataset.get_labels()[task])
             model.set_class_weights(dataset.class_weights)
 
     else:

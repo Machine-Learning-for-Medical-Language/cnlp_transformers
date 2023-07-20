@@ -66,7 +66,7 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
         logger.debug('Instance string is %s' % (inst_str))
         instances.append(inst_str)
 
-    dataset = get_dataset(instances, app.state.tokenizer, label_lists=[timex_label_list], tasks=['timex'], max_length=max_length)
+    dataset = get_dataset(instances, app.state.tokenizer, label_lists=[timex_label_list], max_length=max_length)
     logger.warn('Dataset is as follows: %s' % (str(dataset.features)))
 
     preproc_end = time()

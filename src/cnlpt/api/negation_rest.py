@@ -60,7 +60,7 @@ async def process(doc: EntityDocument):
         logger.debug('Instance string is %s' % (inst_str))
         instances.append(inst_str)
 
-    dataset = get_dataset(instances, app.state.tokenizer, [labels,], [task,], max_length)
+    dataset = get_dataset(instances, app.state.tokenizer, [labels,], max_length)
     preproc_end = time()
 
 
