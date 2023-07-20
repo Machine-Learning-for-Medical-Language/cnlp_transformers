@@ -1,8 +1,10 @@
+import logging
 import numpy as np
 import pandas as pd
 import re
 import csv
 import tqdm
+import inspect
 
 from datasets import Dataset
 from transformers.trainer_utils import EvalPrediction
@@ -12,6 +14,8 @@ from typing import Dict, List, Tuple, Union, Iterable
 from itertools import chain
 from operator import itemgetter
 from collections import defaultdict
+
+logger = logging.getLogger(__name__)
 
 
 def remove_newline(review):
@@ -84,7 +88,9 @@ def process_prediction(
 ):
     task_to_error_inds: Dict[str, np.ndarray] = defaultdict(lambda: np.array([]))
     if error_analysis:
-        for task, label_packet in tqdm.tqdm(task_to_label_packet.items(), desc=f"computing disagreements"):
+        for task, label_packet in tqdm.tqdm(
+            task_to_label_packet.items(), desc=f"computing disagreements"
+        ):
             preds, labels = label_packet
             task_to_error_inds[task] = compute_disagreements(
                 preds, labels, output_mode[task]
@@ -111,7 +117,9 @@ def process_prediction(
     torch_labels = np.array(eval_dataset["label"])
     # task2labels = dataset.get_labels()
     # for task_label, error_inds in task_to_error_inds.items():
-    for task_name, packet in tqdm.tqdm(task_to_label_packet.items(), desc="getting human readable labels"):
+    for task_name, packet in tqdm.tqdm(
+        task_to_label_packet.items(), desc="getting human readable labels"
+    ):
         preds, labels = packet
         task_labels = task2labels[task_name]
         error_inds = task_to_error_inds[task_name]
@@ -256,16 +264,10 @@ def get_relex_prints(
     resolved_predictions = task_predictions  # np.argmax(task_predictions, axis=3)
     none_index = relex_labels.index("None") if "None" in relex_labels else -1
 
-    print(ground_truths.shape)
-
-    print(task_predictions.shape)
-
-    
-    print(torch_labels.shape)
     def cell2cnlptstr(index_val_pair: Tuple[Tuple[int, ...], int]) -> str:
         index, value = index_val_pair
         first_token, second_token = index
-        return f"({first_token}, {second_token}, {relex_labels[value]})"
+        return f"({first_token}, {second_token}, {relex_labels[int(value)]})"
 
     def matrix_to_label(matrix: np.ndarray) -> str:
         if all(map(lambda s: s == none_index, matrix.flatten())):
@@ -283,6 +285,14 @@ def get_relex_prints(
         # not the same shape insanity that we had for tagging
         raw_cells, token_ids = cell_token_arrays
 
+        if any(np.diag(token_ids) != -100):
+            # TODO reflect this in the error analysis
+            # file so we can find the index and backtrack the error
+            logger.warning(
+                "Correcting invalid relex label where some token is self related"
+            )
+            token_ids[[range(len(token_ids)), range(len(token_ids))]] = -100
+
         reduced_prediction = np.array(
             [
                 *filter(
@@ -293,7 +303,7 @@ def get_relex_prints(
                     ],
                 )
             ]
-        ).astype(int)
+        )
         return matrix_to_label(reduced_prediction)
 
     # do naive approach for now
