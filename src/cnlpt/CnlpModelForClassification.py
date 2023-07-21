@@ -169,6 +169,7 @@ class CnlpConfig(PretrainedConfig):
 
     def __init__(
         self,
+        *,
         encoder_name: Union[str, PathLike] = 'roberta-base',
         finetuning_task: Optional[List[str]] = None,
         layer: int = -1,

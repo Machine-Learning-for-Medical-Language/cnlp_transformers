@@ -68,6 +68,23 @@ def is_hub_model(model_name):
 
     return False
 
+
+def is_cnlpt_model(model_path: str) -> bool:
+    """
+    Infer whether a model path refers to a cnlpt
+    model checkpoint (if not, we assume it is an
+    encoder)
+    :param model_path: the path to the model
+    :return: whether the model is a cnlpt classifier model
+    """
+    encoder_config = AutoConfig.from_pretrained(model_path)
+    return encoder_config.model_type == "cnlpt"
+
+
+def encoder_inferred(model_name_or_path: str) -> bool:
+    return is_hub_model(model_name_or_path) or not is_cnlpt_model(model_name_or_path)
+
+
 def main(
     json_file: Optional[str] = None,
     json_obj: Optional[Dict[str, Any]] = None,
@@ -198,10 +215,10 @@ def main(
             model.load_state_dict(torch.load(model_path))
     elif model_name == 'hier':
         encoder_name = model_args.config_name if model_args.config_name else model_args.encoder_name
-        if is_hub_model(encoder_name):
+        if encoder_inferred(encoder_name):
             config = CnlpConfig(
-                encoder_name,
-                data_args.task_name if data_args.task_name is not None else dataset.tasks,
+                encoder_name=encoder_name,
+                finetuning_task=data_args.task_name if data_args.task_name is not None else dataset.tasks,
                 layer=model_args.layer,
                 tokens=model_args.token,
                 num_rel_attention_heads=model_args.num_rel_feats,
@@ -256,15 +273,15 @@ def main(
         # by default cnlpt model, but need to check which encoder they want
         encoder_name = model_args.encoder_name
 
-        # TODO check when download any pretrained language model to local disk, if 
+        # TODO check when download any pretrained language model to local disk, if
         # the following condition "is_hub_model(encoder_name)" works or not.
-        if not is_hub_model(encoder_name):
+        if not encoder_inferred(encoder_name):
             # we are loading one of our own trained models as a starting point.
             #
             # 1) if training_args.do_train is true:
-            # sometimes we may want to use an encoder that has been had continued pre-training, either on
+            # sometimes we may want to use an encoder that has had continued pre-training, either on
             # in-domain MLM or another task we think might be useful. In that case our encoder will just
-            # be a link to a directory. If the encoder-name is not recognized as a pre-trianed model, special
+            # be a link to a directory. If the encoder-name is not recognized as a pre-trained model, special
             # logic for ad hoc encoders follows:
             # we will load it as-is initially, then delete its classifier head, save the encoder
             # as a temp file, and make that temp file
@@ -280,7 +297,7 @@ def main(
             AutoModel.register(CnlpConfig, CnlpModelForClassification)
 
             
-            # Load the cnlp configuration using AutoConfig, this will not override 
+            # Load the cnlp configuration using AutoConfig, this will not override
             # the arguments from trained cnlp models. While using CnlpConfig will override
             # the model_type and model_name of the encoder.
             config = AutoConfig.from_pretrained(
@@ -322,16 +339,18 @@ def main(
             # model card from https://huggingface.co/models
             # By default, we use model card as the starting point to fine-tune
             encoder_name = model_args.config_name if model_args.config_name else model_args.encoder_name
-            config = CnlpConfig(encoder_name,
-                                finetuning_task=data_args.task_name,
-                                layer=model_args.layer,
-                                tokens=model_args.token,
-                                num_rel_attention_heads=model_args.num_rel_feats,
-                                rel_attention_head_dims=model_args.head_features,
-                                tagger=tagger,
-                                relations=relations,
-                                label_dictionary=dataset.get_labels())
-                                #num_tokens=len(tokenizer))
+            config = CnlpConfig(
+                encoder_name=encoder_name,
+                finetuning_task=data_args.task_name,
+                layer=model_args.layer,
+                tokens=model_args.token,
+                num_rel_attention_heads=model_args.num_rel_feats,
+                rel_attention_head_dims=model_args.head_features,
+                tagger=tagger,
+                relations=relations,
+                label_dictionary=dataset.get_labels(),
+                #num_tokens=len(tokenizer),
+            )
             config.vocab_size = len(tokenizer)
             model = CnlpModelForClassification(
                 config=config,
