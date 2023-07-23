@@ -61,10 +61,13 @@ logger = logging.getLogger(__name__)
 
 def is_hub_model(model_name):
     # check if it's a model on the huggingface model hub:
-    url = hf_hub_url(model_name, CONFIG_NAME)
-    r = requests.head(url)
-    if r.status_code == 200:
-        return True
+    try:
+        url = hf_hub_url(model_name, CONFIG_NAME)
+        r = requests.head(url)
+        if r.status_code == 200:
+            return True
+    except:
+        pass
 
     return False
 
@@ -442,6 +445,8 @@ def main(
         return compute_metrics_fn
 
     # Initialize our Trainer
+    training_args.load_best_model_at_end = True
+    training_args.metric_for_best_model='one_score'
     trainer = Trainer(
         model=model,
         args=training_args,
@@ -470,10 +475,14 @@ def main(
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
         eval_dataset=dataset.processed_dataset['validation']
-        try:
-            eval_result = model.best_eval_results
-        except:
+        # no evaluation was done prior to now, so we need to evaluate
+        if not hasattr(model, 'best_eval_results'):
             eval_result = trainer.evaluate(eval_dataset=eval_dataset)
+        else:
+            eval_result = model.best_eval_results
+        
+        # if there is a stored model, restore it so writing outputs uses a good model
+
         
         trainer.compute_metrics = None
         if trainer.is_world_process_zero():
