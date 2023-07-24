@@ -103,8 +103,17 @@ def process_prediction(
     else:
         relevant_indices = range(len(eval_dataset["text"]))
 
+    classification_tasks = filter(
+        lambda t: output_mode[t] == classification, task_names
+    )
+
+    tagging_tasks = filter(lambda t: output_mode[t] == tagging, task_names)
+
+    relex_tasks = filter(lambda t: output_mode[t] == relex, task_names)
+
+    # ordering in terms of ease of reading
     out_table = pd.DataFrame(
-        columns=["text", *sorted(task_names)],
+        columns=["text", *classification_tasks, *tagging_tasks, *relex_tasks],
         index=relevant_indices,
     )
 
@@ -134,6 +143,7 @@ def process_prediction(
             output_mode,
             error_inds,
             torch_labels,
+            out_table["text"],
         )
     out_table.to_csv(
         output_fn,
@@ -157,19 +167,18 @@ def get_output_list(
     output_mode: Dict[str, str],
     error_inds: np.ndarray,
     torch_labels: np.ndarray,
+    text_column: pd.Series,
 ) -> List[str]:
     if len(error_inds) > 0 and error_analysis:
-        ground_truth = labels[
-            error_inds
-        ]  # np.array(eval_dataset[pred_task])[error_inds]
-        task_prediction = prediction[error_inds]  # [task2ind[pred_task]][error_inds]
-        all_torch_labels = torch_labels[
-            error_inds
-        ]  # np.array(eval_dataset["label"])[error_inds]
+        ground_truth = labels[error_inds].astype(int)
+        task_prediction = prediction[error_inds].astype(int)
+        all_torch_labels = torch_labels[error_inds].astype(int)
+        text_samples = pd.Series(text_column[error_inds])
     else:
-        ground_truth = labels  # np.array(eval_dataset[pred_task])
-        task_prediction = prediction  # [task2ind[pred_task]]
-        all_torch_labels = torch_labels  # np.array(eval_dataset["label"])
+        ground_truth = labels.astype(int)
+        task_prediction = prediction.astype(int)
+        all_torch_labels = torch_labels.astype(int)
+        text_samples = text_column
     task_type = output_mode[pred_task]
     # task_labels = task2labels[pred_task]
     # get the feeling this doesn't work for multiple tasks but we'll
@@ -182,7 +191,12 @@ def get_output_list(
             labels_start, labels_end = task2boundaries[pred_task]
             task_torch_labels = all_torch_labels[:, :, labels_start:labels_end]
         return get_tagging_prints(
-            task_labels, ground_truth, task_prediction, task_torch_labels
+            task_labels,
+            ground_truth,
+            task_prediction,
+            task_torch_labels,
+            text_samples,
+            pred_task,
         )
     elif task_type == relex:
         task_torch_labels = all_torch_labels
@@ -202,16 +216,14 @@ def get_classification_prints(
     task_predictions: np.ndarray,
 ) -> List[str]:
     resolved_predictions = task_predictions  # np.argmax(task_predictions, axis=1)
-    predicted_labels = [
-        classification_labels[index] for index in resolved_predictions.astype(int)
-    ]
+    predicted_labels = [classification_labels[index] for index in resolved_predictions]
 
-    ground_strings = [
-        classification_labels[index] for index in ground_truths.astype(int)
-    ]
+    ground_strings = [classification_labels[index] for index in ground_truths]
 
     def clean_string(gp: Tuple[str, str]) -> str:
         ground, predicted = gp
+        if ground == predicted:
+            return "No error"
         return f"Ground: {ground} , Predicted {predicted}"
 
     return [*map(clean_string, zip(ground_strings, predicted_labels))]
@@ -222,36 +234,92 @@ def get_tagging_prints(
     ground_truths: np.ndarray,
     task_predictions: np.ndarray,
     torch_labels: np.ndarray,
+    text_samples: pd.Series,
+    task_name: str,
 ) -> List[str]:
     resolved_predictions = task_predictions
 
-    def human_readable_labels(tag_token_arrays: Tuple[np.ndarray, np.ndarray]) -> str:
-        raw_tags, token_ids = tag_token_arrays
-        # since resolved predictions is num errors x seq length
-        # and torch labels is num errors x seq length x 1
-        return " ".join(
-            [
-                tagging_labels[label_idx]
-                for label_idx in raw_tags[
-                    np.where(token_ids.reshape(-1) != -100)
-                ].astype("int")
-            ]
+    # since sometimes it's just
+    # BIO with no suffixes and
+    # we'll need to use the column name
+    def get_ner_type(tag: str) -> str:
+        elems = tag.split("-")
+        if len(elems) > 1:
+            return elems[-1].lower()
+        return task_name.lower()
+
+    def types2spans(
+        raw_tag_inds: np.ndarray, token_ids: np.ndarray
+    ) -> Dict[str, Tuple[int, int]]:
+
+        type2inds = defaultdict(list)
+
+        raw_labels = [
+            tagging_labels[label_idx]
+            for label_idx in raw_tag_inds[np.where(token_ids.reshape(-1) != -100)]
+        ]
+
+        for index, raw_label in enumerate(raw_labels):
+            if raw_label != "O":
+                type2inds[get_ner_type(raw_label)].append(index)
+
+        return {
+            ner_type: (inds[0], inds[-1] + 1) for ner_type, inds in type2inds.items()
+        }
+
+    def dictmerge(
+        ground_dict: Dict[str, Tuple[int, int]], pred_dict: Dict[str, Tuple[int, int]]
+    ) -> Dict[str, Dict[str, Tuple[int, int]]]:
+        disagreements = {}
+        for key in {*ground_dict.keys(), *pred_dict.keys()}:
+            if ground_dict[key] != pred_dict[key]:
+                disagreements["ground"][key] = ground_dict[key]
+
+                disagreements["predicted"][key] = pred_dict[key]
+
+        return disagreements
+
+    def get_out_string(
+        disagreements: Dict[str, Dict[str, Tuple[int, int]]], instance: str
+    ) -> str:
+        instance_tokens = [*filter(None, instance.split())]
+
+        ground_string = " , ".join(
+            f'{key}: "{instance_tokens[span[0]:span[1]]}"'
+            for key, span in disagreements["ground"].items()
         )
 
-    # do naive approach for now
-    def clean_string(gp_strings: Tuple[str, str]) -> str:
-        ground, predicted = gp_strings
+        predicted_string = " , ".join(
+            f'{key}: "{instance_tokens[span[0]:span[1]]}"'
+            for key, span in disagreements["predicted"].items()
+        )
 
-        return f"Ground: {ground} , Predicted {predicted}"
+        if len(ground_string) == 0 == len(predicted_string):
+            return "No errors"
 
+        return f"Ground : {ground_string} Predicted : {predicted_string}"
+
+    ground_span_dictionaries = (
+        types2spans(ground_truth, torch_label)
+        for ground_truth, torch_label in zip(ground_truths, torch_labels)
+    )
+
+    pred_span_dictionaries = (
+        types2spans(pred, torch_label)
+        for pred, torch_label in zip(resolved_predictions, torch_labels)
+    )
+
+    disagreement_dicts = (
+        dictmerge(ground_dictionary, pred_dictionary)
+        for ground_dictionary, pred_dictionary in zip(
+            ground_span_dictionaries, pred_span_dictionaries
+        )
+    )
+
+    # returning list instead of generator since pandas needs that
     return [
-        *map(
-            clean_string,
-            zip(
-                map(human_readable_labels, zip(ground_truths, torch_labels)),
-                map(human_readable_labels, zip(resolved_predictions, torch_labels)),
-            ),
-        )
+        get_out_string(disagreements, instance)
+        for disagreements, instance in zip(disagreement_dicts, text_samples)
     ]
 
 
@@ -261,38 +329,30 @@ def get_relex_prints(
     task_predictions: np.ndarray,
     torch_labels: np.ndarray,
 ) -> List[str]:
+    Cell = Tuple[int, int, int]
+
     resolved_predictions = task_predictions  # np.argmax(task_predictions, axis=3)
     none_index = relex_labels.index("None") if "None" in relex_labels else -1
 
-    def cell2cnlptstr(index_val_pair: Tuple[Tuple[int, ...], int]) -> str:
-        index, value = index_val_pair
-        first_token, second_token = index
-        return f"({first_token}, {second_token}, {relex_labels[int(value)]})"
+    def tuples_to_str(label_tuples: Iterable[Cell]):
+        return [
+            (row, col, relex_labels[label]) for row, col, label in sorted(label_tuples)
+        ]
 
-    def matrix_to_label(matrix: np.ndarray) -> str:
-        if all(map(lambda s: s == none_index, matrix.flatten())):
-            return "None"
+    def normalize_cells(
+        raw_cells: np.ndarray, token_ids: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
 
-        return " , ".join(
-            map(
-                cell2cnlptstr,
-                filter(lambda s: s[1] != none_index, np.ndenumerate(matrix)),
-            )
-        )
-
-    def human_readable_labels(cell_token_arrays: Tuple[np.ndarray, np.ndarray]) -> str:
         # resolved_predictions[index]  shape is sent length x sent length
         # not the same shape insanity that we had for tagging
-        raw_cells, token_ids = cell_token_arrays
 
-        if any(np.diag(token_ids) != -100):
-            # TODO reflect this in the error analysis
-            # file so we can find the index and backtrack the error
-            logger.warning(
-                "Correcting invalid relex label where some token is self related"
-            )
+        (invalid_inds,) = np.where(np.diag(token_ids) != -100)
+        if len(invalid_inds) > 0:
+            # reset if this is an issue, but only want to report it
+            # if there's an issue in the label, if it's an invalid
+            # prediction that's just life
             token_ids[[range(len(token_ids)), range(len(token_ids))]] = -100
-
+        # TODO find a more facile way to do this in numpy if possible
         reduced_prediction = np.array(
             [
                 *filter(
@@ -304,20 +364,74 @@ def get_relex_prints(
                 )
             ]
         )
-        return matrix_to_label(reduced_prediction)
+        return invalid_inds, reduced_prediction
 
-    # do naive approach for now
-    def clean_string(gp: Tuple[str, str]) -> str:
-        ground, predicted = gp
+    def find_disagreements(
+        ground_pair: Tuple[np.ndarray, np.ndarray],
+        pred_pair: Tuple[np.ndarray, np.ndarray],
+    ) -> Tuple[Iterable[Cell], Iterable[Cell], Iterable[Cell]]:
+        invalid_ground_inds, ground_matrix = ground_pair
 
-        return f"ground: {ground} , predicted {predicted}"
+        _, pred_matrix = pred_pair
+
+        # should be commutative
+        disagreements = np.where(ground_matrix != pred_matrix)
+
+        bad_cells = zip(*invalid_ground_inds, ground_matrix[invalid_ground_inds])
+
+        # nones will just clutter things up
+        # and we will be able to infer disagreements on nones
+        # from each other
+        ground_cells = filter(
+            lambda t: t[-1] == none_index,
+            zip(*disagreements, ground_matrix[disagreements]),
+        )
+
+        pred_cells = filter(
+            lambda t: t[-1] == none_index,
+            zip(*disagreements, pred_matrix[disagreements]),
+        )
+
+        return bad_cells, ground_cells, pred_cells
+
+    def to_string(
+        bad_cells: Iterable[Cell],
+        ground_cells: Iterable[Cell],
+        pred_cells: Iterable[Cell],
+    ) -> str:
+        bad_cells_str = tuples_to_str(bad_cells)
+
+        ground_cells_str = tuples_to_str(ground_cells)
+
+        pred_cells_str = tuples_to_str(pred_cells)
+
+        if len(ground_cells_str) == 0 == len(pred_cells_str):
+            if len(bad_cells_str) > 0:
+                return "INVALID RELATION LABELS : {bad_cells_str}"
+            return "No errors"
+        bad_out = (
+            f"INVALID RELATION LABELS : {bad_cells_str} , "
+            if len(bad_cells_str) > 0
+            else ""
+        )
+        return f"{bad_out}Ground: {ground_cells_str} , Predicted : {pred_cells_str}"
+
+    normalized_grounds = (
+        normalize_cells(ground_truth, torch_label)
+        for ground_truth, torch_label in zip(ground_truths, torch_labels)
+    )
+
+    normalized_preds = (
+        normalize_cells(pred, torch_label)
+        for pred, torch_label in zip(resolved_predictions, torch_labels)
+    )
+
+    disagreements = (
+        find_disagreements(ground_pair, pred_pair)
+        for ground_pair, pred_pair in zip(normalized_grounds, normalized_preds)
+    )
 
     return [
-        *map(
-            clean_string,
-            zip(
-                map(human_readable_labels, zip(ground_truths, torch_labels)),
-                map(human_readable_labels, zip(resolved_predictions, torch_labels)),
-            ),
-        )
+        to_string(bad_cells, ground_cells, pred_cells)
+        for bad_cells, ground_cells, pred_cells in disagreements
     ]

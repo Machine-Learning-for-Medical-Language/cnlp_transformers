@@ -1,3 +1,4 @@
+
 # coding=utf-8
 # Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
 # Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
@@ -871,7 +872,7 @@ def main(
 
                 process_prediction(
                     dataset.tasks,
-                    output_eval_predictions_file,
+                    output_test_predictions_file,
                     False,
                     task_to_label_packet,
                     task_to_label_boundaries,
