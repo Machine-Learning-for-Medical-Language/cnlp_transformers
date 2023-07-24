@@ -111,6 +111,7 @@ def process_prediction(
     tagging_tasks = filter(lambda t: output_mode[t] == tagging, task_names)
 
     relex_tasks = filter(lambda t: output_mode[t] == relex, task_names)
+
     # ordering in terms of ease of reading
     out_table = pd.DataFrame(
         columns=["text", *classification_tasks, *tagging_tasks, *relex_tasks],
@@ -383,6 +384,26 @@ def get_tagging_prints(
             for disagreements, instance in zip(disagreement_dicts, text_samples)
         ]
 
+        return f"Ground : {ground_string} Predicted : {predicted_string}"
+
+    ground_span_dictionaries = (
+        types2spans(ground_truth, torch_label)
+        for ground_truth, torch_label in zip(ground_truths, torch_labels)
+    )
+
+    pred_span_dictionaries = (
+        types2spans(pred, torch_label)
+        for pred, torch_label in zip(resolved_predictions, torch_labels)
+    )
+
+    disagreement_dicts = (
+        dictmerge(ground_dictionary, pred_dictionary)
+        for ground_dictionary, pred_dictionary in zip(
+            ground_span_dictionaries, pred_span_dictionaries
+        )
+    )
+
+    # returning list instead of generator since pandas needs that
     return [
         get_pred_out_string(type_2_pred_spans, instance)
         for type_2_pred_spans, instance in zip(pred_span_dictionaries, text_samples)
@@ -401,7 +422,6 @@ def get_relex_prints(
     resolved_predictions = task_predictions
     none_index = relex_labels.index("None") if "None" in relex_labels else -1
 
-    # thought we'd filtered them out but apparently not
     def tuples_to_str(label_tuples: Iterable[Cell]):
         return [
             (row, col, relex_labels[label]) for row, col, label in sorted(label_tuples)
