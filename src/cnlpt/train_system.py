@@ -1,4 +1,3 @@
-
 # coding=utf-8
 # Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
 # Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
@@ -66,12 +65,57 @@ from transformers import (
     HfArgumentParser,
     Trainer,
     set_seed,
+    TrainerCallback,
 )
 import json
+
+from collections import defaultdict
 
 AutoConfig.register("cnlpt", CnlpConfig)
 
 logger = logging.getLogger(__name__)
+
+
+eval_state = defaultdict(lambda: -1)
+
+
+# For debugging early stopping logging
+class EvalCallback(TrainerCallback):
+    """ """
+
+    def on_evaluate(self, args, state, control, **kwargs):
+        """
+
+        Args:
+          args:
+          state:
+          control:
+          **kwargs:
+
+        Returns:
+
+        """
+        if state.is_world_process_zero:
+            model_dict = {}
+            if "model" in kwargs:
+                model = kwargs["model"]
+                if (
+                    hasattr(model, "best_score")
+                    and model.best_score > eval_state["best_score"]
+                ):
+                    model_dict = {
+                        "best_score": model.best_score,
+                        "best_step": state.global_step,
+                        "best_epoch": state.epoch,
+                    }
+            state_dict = {
+                "curr_epoch": state.epoch,
+                "max_epochs": state.num_train_epochs,
+                "curr_step": state.global_step,
+                "max_steps": state.max_steps,
+            }
+            state_dict.update(model_dict)
+            eval_state.update(state_dict)
 
 
 def is_hub_model(model_name: str) -> bool:
@@ -601,15 +645,8 @@ def main(
             # This will save model per epoch
             # training_args.save_strategy = IntervalStrategy.EPOCH
         elif training_args.do_eval:
-            actual_total_steps = int(
-                training_args.num_train_epochs
-                * batches_per_epoch
-                // training_args.gradient_accumulation_steps
-            )
-            training_args.eval_steps = actual_total_steps
-            training_args.evaluation_strategy = IntervalStrategy.STEPS
-            # logger.info("Evaluation strategy not specified so evaluating every epoch")
-            # training_args.evaluation_strategy = IntervalStrategy.EPOCH
+            logger.info("Evaluation strategy not specified so evaluating every epoch")
+            training_args.evaluation_strategy = IntervalStrategy.EPOCH
 
     current_prediction_packet = deque()
 
@@ -702,6 +739,9 @@ def main(
                 if not hasattr(model, "best_score") or one_score > model.best_score:
                     # For convenience, we also re-save the tokenizer to the same directory,
                     # so that you can share your model easily on huggingface.co/models =)
+
+                    model.best_score = one_score
+                    model.best_eval_results = metrics
                     if trainer.is_world_process_zero():
                         if training_args.do_train:
                             trainer.save_model()
@@ -720,8 +760,6 @@ def main(
                                 for key, value in metrics[task_name].items():
                                     # logger.info("  %s = %s", key, value)
                                     writer.write("%s = %s\n" % (key, value))
-                    model.best_score = one_score
-                    model.best_eval_results = metrics
 
                     if training_args.error_analysis:
                         if len(current_prediction_packet) > 0:
@@ -748,6 +786,7 @@ def main(
         train_dataset=dataset.processed_dataset.get("train", None),
         eval_dataset=dataset.processed_dataset.get("validation", None),
         compute_metrics=build_compute_metrics_fn(task_names, model, dataset),
+        callbacks=[EvalCallback],
     )
 
     # Training
@@ -786,14 +825,22 @@ def main(
 
         # if there is a stored model, restore it so writing outputs uses a good model
 
+        curr_step = 0
         trainer.compute_metrics = None
         if trainer.is_world_process_zero():
-            with open(output_eval_file, "w") as writer:
+            # with open(output_eval_file, "w") as writer:
+            with open(output_eval_file, "a") as writer:
                 logger.info("***** Eval results on combined dataset *****")
                 for key, value in eval_result.items():
                     logger.info("  %s = %s", key, value)
                     writer.write("%s = %s\n" % (key, value))
-
+                if any(eval_state):
+                    curr_step = eval_state["curr_step"]
+                    writer.write(
+                        f"\n\n Current state (In Compute Metrics Function) \n\n"
+                    )
+                    for key, value in eval_state.items():
+                        writer.write(f"{key} : {value} \n")
             # here we probably want separate predictions for each dataset:
             if training_args.load_best_model_at_end:
                 model.load_state_dict(
@@ -819,7 +866,7 @@ def main(
                 subdir = os.path.split(dataset_path.rstrip("/"))[1]
                 output_eval_predictions_file = os.path.join(
                     training_args.output_dir,
-                    f"eval_predictions_%s_%d.txt" % (subdir, dataset_ind),
+                    f"eval_predictions_%s_%d_%d.txt" % (subdir, dataset_ind, curr_step),
                 )
 
                 dataset_dev_segment = get_dataset_segment(
