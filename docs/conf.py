@@ -33,6 +33,7 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.napoleon',
     'sphinx.ext.intersphinx',
+    'sphinx_autodoc_typehints',
     # 'sphinx_rtd_theme',  # Unset this comment for building locally
 ]
 

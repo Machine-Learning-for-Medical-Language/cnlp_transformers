@@ -156,3 +156,4 @@ cache/
 outputs/
 temp/
 wandb/
+logs/

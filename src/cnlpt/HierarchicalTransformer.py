@@ -228,7 +228,19 @@ class HierarchicalModel(PreTrainedModel):
                 self.config.layer,
                 self.config.hier_head_config["n_layers"]
             ))
-        self.layer = self.config.layer
+        
+        if self.config.layer < 0:
+            self.layer = self.config.hier_head_config["n_layers"] + self.config.layer
+            if self.layer < 0:
+                raise ValueError("The layer specified (%d) is a negative value which is larger than the actual number of layers %d" % (
+                    self.config.layer, 
+                    self.config.hier_head_config["n_layers"]
+                ))
+        else:
+            self.layer = self.config.layer
+
+        if self.layer == 0:
+            raise ValueError("The classifier layer derived is 0 which is ambiguous -- there is no usable 0th layer in a hierarchical model. Enter a value for the layer argument that at least 1 (use one layer) or -1 (use the final layer)")
 
         # This would seem to be redundant with the label list, which maps from tasks to labels,
         # but this version is ordered. This will allow the user to specify an order for any methods
@@ -397,7 +409,7 @@ class HierarchicalModel(PreTrainedModel):
         # extract first Documents as rep. (B, hidden_size)
         doc_rep = chunks_reps[:, 0, :]
 
-        total_loss = 0
+        total_loss = None
         for task_ind, task_name in enumerate(self.tasks):
             if not self.class_weights[task_name] is None:
                 class_weights = torch.FloatTensor(self.class_weights[task_name]).to(self.device)
@@ -412,7 +424,10 @@ class HierarchicalModel(PreTrainedModel):
             if labels is not None:
                 task_labels = labels[:, task_ind]
                 task_loss = loss_fct(task_logits, task_labels.type(torch.LongTensor).to(labels.device))
-                total_loss += task_loss
+                if total_loss is None:
+                    total_loss = task_loss
+                else:
+                    total_loss += task_loss
 
 
         if self.training:

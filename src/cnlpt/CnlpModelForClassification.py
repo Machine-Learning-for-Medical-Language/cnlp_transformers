@@ -4,7 +4,8 @@ Module containing the CNLP transformer model.
 # from transformers.models.auto import  AutoModel, AutoConfig
 import copy
 import inspect
-from typing import Optional, List, Any, Dict
+from os import PathLike
+from typing import Optional, List, Any, Dict, Union
 
 from transformers import AutoModel, AutoConfig
 from transformers.modeling_utils import PreTrainedModel
@@ -72,7 +73,16 @@ class RepresentationProjectionLayer(nn.Module):
     :param num_attention_heads - For relations, how many "features" to use
     :param head_size - For relations, how big each head should be
     """
-    def __init__(self, config, layer=10, tokens=False, tagger=False, relations=False, num_attention_heads=-1, head_size=64):
+    def __init__(
+        self,
+        config: 'CnlpConfig',
+        layer: int = 10,
+        tokens: bool = False,
+        tagger: bool = False,
+        relations: bool = False,
+        num_attention_heads: int = -1,
+        head_size: int = 64,
+    ):
         super().__init__()
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         if relations:
@@ -143,33 +153,34 @@ class CnlpConfig(PretrainedConfig):
     The config class for :class:`CnlpModelForClassification`.
 
     :param encoder_name: the encoder name to use with :meth:`transformers.AutoConfig.from_pretrained`
-    :param typing.Optional[str] finetuning_task: the tasks for which this model is fine-tuned
-    :param int layer: the index of the encoder layer to extract features from
-    :param bool tokens: if true, sentence-level classification is done based on averaged token embeddings for token(s) surrounded by <e> </e> special tokens
-    :param int num_rel_attention_heads: the number of features/attention heads to use in the NxN relation classifier
-    :param int rel_attention_head_dims: the number of parameters in each attention head in the NxN relation classifier
-    :param typing.Dict[str,bool] tagger: for each task, whether the task is a sequence tagging task
-    :param typing.Dict[str,bool] relations: for each task, whether the task is a relation extraction task
-    :param bool use_prior_tasks: whether to use the outputs from the previous tasks as additional inputs for subsequent tasks
-    :param typing.Dict[] hier_head_config: If this is a hierarchical model, this is where the config parameters go
-    :param typing.Dict[str, typing.List[str]] label_dictionary: A mapping from task names to label sets
+    :param finetuning_task: the tasks for which this model is fine-tuned
+    :param layer: the index of the encoder layer to extract features from
+    :param tokens: if true, sentence-level classification is done based on averaged token embeddings for token(s) surrounded by <e> </e> special tokens
+    :param num_rel_attention_heads: the number of features/attention heads to use in the NxN relation classifier
+    :param rel_attention_head_dims: the number of parameters in each attention head in the NxN relation classifier
+    :param tagger: for each task, whether the task is a sequence tagging task
+    :param relations: for each task, whether the task is a relation extraction task
+    :param use_prior_tasks: whether to use the outputs from the previous tasks as additional inputs for subsequent tasks
+    :param hier_head_config: If this is a hierarchical model, this is where the config parameters go
+    :param label_dictionary: A mapping from task names to label sets
     :param \**kwargs: arguments for :class:`transformers.PretrainedConfig`
     """
     model_type='cnlpt'
 
     def __init__(
         self,
-        encoder_name='roberta-base',
-        finetuning_task=None,
-        layer=-1,
-        tokens=False,
-        num_rel_attention_heads=12,
-        rel_attention_head_dims=64,
-        tagger = {},
-        relations = {},
-        use_prior_tasks=False,
-        hier_head_config=None,
-        label_dictionary = None,
+        *,
+        encoder_name: Union[str, PathLike] = 'roberta-base',
+        finetuning_task: Optional[List[str]] = None,
+        layer: int = -1,
+        tokens: bool = False,
+        num_rel_attention_heads: int = 12,
+        rel_attention_head_dims: int = 64,
+        tagger: Dict[str, bool] = {},
+        relations: Dict[str, bool] = {},
+        use_prior_tasks: bool = False,
+        hier_head_config: Dict[str, Any] = None,
+        label_dictionary: Dict[str, List[str]] = None,
         **kwargs
      ):
         super().__init__(**kwargs)
@@ -206,12 +217,12 @@ class CnlpModelForClassification(PreTrainedModel):
     """
     The CNLP transformer model.
 
-    :param typing.Optional[typing.List[float]] class_weights: if provided,
+    :param class_weights: if provided,
         the weights to use for each task when computing the loss
-    :param float final_task_weight: the weight to use for the final task
+    :param final_task_weight: the weight to use for the final task
         when computing the loss; default 1.0.
-    :param bool freeze: whether to freeze the weights of the encoder
-    :param bool bias_fit: whether to fine-tune only the bias of the encoder
+    :param freeze: what proportion of encoder weights to freeze (-1 for none)
+    :param bias_fit: whether to fine-tune only the bias of the encoder
     """
     base_model_prefix = 'cnlpt'
     config_class = CnlpConfig
@@ -222,7 +233,7 @@ class CnlpModelForClassification(PreTrainedModel):
                  class_weights: Optional[Dict[str, float]] = None,
                  final_task_weight: float = 1.0,
                  freeze: float = -1.0,
-                 bias_fit=False,
+                 bias_fit: bool = False,
                  ):
 
         super().__init__(config)
