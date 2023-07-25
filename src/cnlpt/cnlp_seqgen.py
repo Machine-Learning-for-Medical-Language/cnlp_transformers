@@ -14,7 +14,7 @@ def main(args):
     print("Loading tokenizer and model for model name %s" % (model_name))
 
     start = time()
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_name, use_auth_token=True)
 
     model = AutoModelForCausalLM.from_pretrained(model_name,
                                             load_in_4bit=True,
