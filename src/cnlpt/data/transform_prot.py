@@ -13,12 +13,16 @@ from heapq import merge
 TEST_DIR = "chemprot_development"
 TRAIN_DIR = "chemprot_training"
 
+# allow script to run only if scispacy is installed
+#  (gated behind certain Python versions and platforms)
 nlp = None
 try:
     import scispacy
     nlp = spacy.load("en_core_sci_sm")
 except ImportError:
-    print(f"scispacy not installed; cannot run transform_prot.")
+    print(f"scispacy not installed; cannot run transform_prot.\n"
+          f"Note: transform_prot is only available for Python 3.8+ and "
+          f"x86_64 platforms.")
     sys.exit(1)
 
 
