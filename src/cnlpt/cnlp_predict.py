@@ -11,7 +11,7 @@ from transformers.trainer_utils import EvalPrediction
 from .cnlp_processors import tagging, relex, classification
 from .cnlp_data import ClinicalNlpDataset
 from typing import Dict, List, Tuple, Union, Iterable
-from itertools import chain
+from itertools import chain, groupby
 from operator import itemgetter
 from collections import defaultdict
 
@@ -223,7 +223,7 @@ def get_classification_prints(
     def clean_string(gp: Tuple[str, str]) -> str:
         ground, predicted = gp
         if ground == predicted:
-            return "No error"
+            return "_no_classification_error_"
         return f"Ground: {ground} , Predicted {predicted}"
 
     return [*map(clean_string, zip(ground_strings, predicted_labels))]
@@ -250,9 +250,18 @@ def get_tagging_prints(
 
     def types2spans(
         raw_tag_inds: np.ndarray, token_ids: np.ndarray
-    ) -> Dict[str, Tuple[int, int]]:
+    ) -> Dict[str, List[Tuple[int, int]]]:
 
         type2inds = defaultdict(list)
+
+        # courtesy of https://stackoverflow.com/a/2154437
+        def group_and_span(inds: List[int]) -> List[Tuple[int, int]]:
+            ranges = []
+            for k, g in groupby(enumerate(inds), lambda x: x[0] - x[1]):
+                group = [*map(itemgetter(1), g)]
+                # adjusted for python list slicing
+                ranges.append((group[0], group[-1] + 1))
+            return ranges
 
         raw_labels = [
             tagging_labels[label_idx]
@@ -263,39 +272,70 @@ def get_tagging_prints(
             if raw_label != "O":
                 type2inds[get_ner_type(raw_label)].append(index)
 
-        return {
-            ner_type: (inds[0], inds[-1] + 1) for ner_type, inds in type2inds.items()
-        }
+        return {ner_type: group_and_span(inds) for ner_type, inds in type2inds.items()}
 
     def dictmerge(
-        ground_dict: Dict[str, Tuple[int, int]], pred_dict: Dict[str, Tuple[int, int]]
-    ) -> Dict[str, Dict[str, Tuple[int, int]]]:
-        disagreements = {}
-        for key in {*ground_dict.keys(), *pred_dict.keys()}:
-            if ground_dict[key] != pred_dict[key]:
-                disagreements["ground"][key] = ground_dict[key]
+        ground_dict: Dict[str, List[Tuple[int, int]]],
+        pred_dict: Dict[str, List[Tuple[int, int]]],
+    ) -> Dict[str, Dict[str, List[Tuple[int, int]]]]:
+        disagreements: Dict[str, Dict[str, List[Tuple[int, int]]]] = defaultdict(
+            lambda: defaultdict(list)
+        )
 
-                disagreements["predicted"][key] = pred_dict[key]
+        for key in {*ground_dict.keys(), *pred_dict.keys()}:
+            ground_spans = ground_dict[key] if key in ground_dict.keys() else []
+
+            pred_spans = pred_dict[key] if key in pred_dict.keys() else []
+
+            ground_not_in_pred = [
+                *filter(lambda span: span not in pred_spans, ground_spans)
+            ]
+
+            pred_not_in_ground = [
+                *filter(lambda span: span not in ground_spans, pred_spans)
+            ]
+            disagreements["ground"][key].extend(ground_not_in_pred)
+
+            disagreements["predicted"][key].extend(pred_not_in_ground)
 
         return disagreements
 
     def get_out_string(
-        disagreements: Dict[str, Dict[str, Tuple[int, int]]], instance: str
+        disagreements: Dict[str, Dict[str, List[Tuple[int, int]]]], instance: str
     ) -> str:
         instance_tokens = [*filter(None, instance.split())]
 
-        ground_string = " , ".join(
-            f'{key}: "{instance_tokens[span[0]:span[1]]}"'
-            for key, span in disagreements["ground"].items()
+        def flatten(d):
+            def tups(k, ls):
+                return ((k, elem) for elem in ls)
+
+            return chain.from_iterable(
+                (
+                    ((k, span) for k, span in tups(key, spans))
+                    for key, spans in d.items()
+                )
+            )
+
+        ground_string = (
+            " , ".join(
+                f'{key}: "{instance_tokens[span[0]:span[1]]}"'
+                for key, span in flatten(disagreements["ground"])
+            )
+            if "ground" in disagreements.keys()
+            else ""
         )
 
-        predicted_string = " , ".join(
-            f'{key}: "{instance_tokens[span[0]:span[1]]}"'
-            for key, span in disagreements["predicted"].items()
+        predicted_string = (
+            " , ".join(
+                f'{key}: "{instance_tokens[span[0]:span[1]]}"'
+                for key, span in flatten(disagreements["predicted"])
+            )
+            if "predicted" in disagreements.keys()
+            else ""
         )
 
         if len(ground_string) == 0 == len(predicted_string):
-            return "No errors"
+            return f"_no_{task_name.lower()}_errors_"
 
         return f"Ground : {ground_string} Predicted : {predicted_string}"
 
@@ -334,9 +374,12 @@ def get_relex_prints(
     resolved_predictions = task_predictions  # np.argmax(task_predictions, axis=3)
     none_index = relex_labels.index("None") if "None" in relex_labels else -1
 
+    # thought we'd filtered them out but apparently not
     def tuples_to_str(label_tuples: Iterable[Cell]):
         return [
-            (row, col, relex_labels[label]) for row, col, label in sorted(label_tuples)
+            (row, col, relex_labels[label])
+            for row, col, label in sorted(label_tuples)
+            if label != none_index
         ]
 
     def normalize_cells(
@@ -346,25 +389,32 @@ def get_relex_prints(
         # resolved_predictions[index]  shape is sent length x sent length
         # not the same shape insanity that we had for tagging
 
-        (invalid_inds,) = np.where(np.diag(token_ids) != -100)
-        if len(invalid_inds) > 0:
-            # reset if this is an issue, but only want to report it
-            # if there's an issue in the label, if it's an invalid
-            # prediction that's just life
-            token_ids[[range(len(token_ids)), range(len(token_ids))]] = -100
+        (invalid_inds,) = np.where(np.diag(raw_cells) != -100)
+        # just in case
+        np.fill_diagonal(raw_cells, -100)
+
+        np.fill_diagonal(token_ids, -100)
         # TODO find a more facile way to do this in numpy if possible
-        reduced_prediction = np.array(
+        reduced_matrix = np.array(
             [
                 *filter(
                     len,
                     [
-                        pred_row[np.where(token_row != -100)]
-                        for pred_row, token_row in zip(raw_cells, token_ids)
+                        mat_row[np.where(token_row != -100)]
+                        for mat_row, token_row in zip(raw_cells, token_ids)
                     ],
                 )
             ]
         )
-        return invalid_inds, reduced_prediction
+
+        # adding the diagonal back in...
+        final_reduced_matrix = np.array(
+            [
+                np.insert(row, row_idx, none_index, axis=0)
+                for row_idx, row in enumerate(reduced_matrix)
+            ]
+        )
+        return invalid_inds, final_reduced_matrix
 
     def find_disagreements(
         ground_pair: Tuple[np.ndarray, np.ndarray],
@@ -377,8 +427,20 @@ def get_relex_prints(
         # should be commutative
         disagreements = np.where(ground_matrix != pred_matrix)
 
-        bad_cells = zip(*invalid_ground_inds, ground_matrix[invalid_ground_inds])
+        if len(ground_matrix) == 0 == len(pred_matrix) == len(invalid_ground_inds):
+            return [], [], []
 
+        bad_cells = (
+            (
+                (*i, j)
+                for i, j in zip(
+                    zip(invalid_ground_inds, invalid_ground_inds),
+                    ground_matrix[invalid_ground_inds, invalid_ground_inds],
+                )
+            )
+            if len(invalid_ground_inds) > 0
+            else []
+        )
         # nones will just clutter things up
         # and we will be able to infer disagreements on nones
         # from each other
@@ -408,7 +470,7 @@ def get_relex_prints(
         if len(ground_cells_str) == 0 == len(pred_cells_str):
             if len(bad_cells_str) > 0:
                 return "INVALID RELATION LABELS : {bad_cells_str}"
-            return "No errors"
+            return "_no_relex_errors_"
         bad_out = (
             f"INVALID RELATION LABELS : {bad_cells_str} , "
             if len(bad_cells_str) > 0
