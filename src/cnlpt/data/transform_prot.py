@@ -20,9 +20,11 @@ try:
     import scispacy
     nlp = spacy.load("en_core_sci_sm")
 except ImportError:
+    import platform
     print(f"scispacy not installed; cannot run transform_prot.\n"
           f"Note: transform_prot is only available for "
           f"x86_64 platforms.")
+    print(f"Current platform: {platform.machine()}")
     sys.exit(1)
 
 
