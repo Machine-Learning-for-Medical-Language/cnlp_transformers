@@ -285,6 +285,7 @@ def get_tagging_prints(
     def types2spans(
         raw_tag_inds: np.ndarray, token_ids: np.ndarray
     ) -> Dict[str, List[Tuple[int, int]]]:
+
         type2inds = defaultdict(list)
 
         # courtesy of https://stackoverflow.com/a/2154437
@@ -422,9 +423,12 @@ def get_relex_prints(
     resolved_predictions = task_predictions
     none_index = relex_labels.index("None") if "None" in relex_labels else -1
 
+    # thought we'd filtered them out but apparently not
     def tuples_to_str(label_tuples: Iterable[Cell]):
         return [
-            (row, col, relex_labels[label]) for row, col, label in sorted(label_tuples)
+            (row, col, relex_labels[label])
+            for row, col, label in sorted(label_tuples)
+            if label != none_index
         ]
 
     def normalize_cells(
@@ -438,7 +442,6 @@ def get_relex_prints(
         np.fill_diagonal(raw_cells, -100)
 
         np.fill_diagonal(token_ids, -100)
-        # TODO find a more facile way to do the following two steps in numpy if possible
         reduced_matrix = np.array(
             [
                 *filter(

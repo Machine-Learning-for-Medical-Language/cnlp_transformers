@@ -1,4 +1,3 @@
-
 # coding=utf-8
 # Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
 # Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
@@ -64,6 +63,8 @@ from transformers import (
     TrainerCallback,
 )
 import json
+
+from collections import defaultdict
 
 from collections import defaultdict
 
@@ -630,15 +631,8 @@ def main(
             # This will save model per epoch
             # training_args.save_strategy = IntervalStrategy.EPOCH
         elif training_args.do_eval:
-            actual_total_steps = int(
-                training_args.num_train_epochs
-                * batches_per_epoch
-                // training_args.gradient_accumulation_steps
-            )
-            training_args.eval_steps = actual_total_steps
-            training_args.evaluation_strategy = IntervalStrategy.STEPS
-            # logger.info("Evaluation strategy not specified so evaluating every epoch")
-            # training_args.evaluation_strategy = IntervalStrategy.EPOCH
+            logger.info("Evaluation strategy not specified so evaluating every epoch")
+            training_args.evaluation_strategy = IntervalStrategy.EPOCH
 
     current_prediction_packet = deque()
 
@@ -754,19 +748,6 @@ def main(
                                 for key, value in metrics[task_name].items():
                                     # logger.info("  %s = %s", key, value)
                                     writer.write("%s = %s\n" % (key, value))
-
-                    if training_args.error_analysis:
-                        if len(current_prediction_packet) > 0:
-                            current_prediction_packet.pop()
-                        # in theory if we can consolidate this into
-                        # cnlp_compute_metrics but that's maybe more of a
-                        # commitment than is a good idea right now
-                        current_prediction_packet.append(
-                            (
-                                task_label_to_label_packet,
-                                task_label_to_boundaries,
-                            )
-                        )
 
                     if training_args.error_analysis:
                         if len(current_prediction_packet) > 0:
