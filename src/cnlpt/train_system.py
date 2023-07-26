@@ -57,6 +57,8 @@ from transformers import (
     set_seed,
 )
 
+AutoConfig.register("cnlpt", CnlpConfig)
+
 logger = logging.getLogger(__name__)
 
 def is_hub_model(model_name):
@@ -248,7 +250,6 @@ def main(
             )
         else:
             # use a checkpoint from an existing model
-            AutoConfig.register("cnlpt", CnlpConfig)
             AutoModel.register(CnlpConfig, HierarchicalModel)
 
             config = AutoConfig.from_pretrained(
@@ -296,7 +297,6 @@ def main(
             # we evaluate or make predictions of our trained models. 
             # Both two setting require the registeration of CnlpConfig, and use 
             # AutoConfig.from_pretrained() to load the configuration file
-            AutoConfig.register("cnlpt", CnlpConfig)
             AutoModel.register(CnlpConfig, CnlpModelForClassification)
 
             
