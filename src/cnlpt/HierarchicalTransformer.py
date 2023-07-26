@@ -230,7 +230,7 @@ class HierarchicalModel(PreTrainedModel):
             ))
         
         if self.config.layer < 0:
-            self.layer = self.config.hier_head_config["n_layers"] + self.config.layer
+            self.layer = self.config.hier_head_config["n_layers"] + self.config.layer + 1
             if self.layer < 0:
                 raise ValueError("The layer specified (%d) is a negative value which is larger than the actual number of layers %d" % (
                     self.config.layer, 
@@ -391,10 +391,13 @@ class HierarchicalModel(PreTrainedModel):
             position_ids
         )
         chunks_reps = chunks_reps + position_embeddings
+        chunks_attns = []
 
         # document encoding (B, n_chunk, hidden_size)
         for layer_ind, layer_module in enumerate(self.transformer):
-            chunks_reps, _ = layer_module(chunks_reps)
+            chunks_reps, chunks_attn = layer_module(chunks_reps)
+            if output_attentions:
+                chunks_attns.append(chunks_attn)
 
             ## this case is mainly for when we are doing subsequent fine-tuning using a pre-trained
             ## hierarchical model and we want to check whether an earlier layer might provide better
@@ -435,7 +438,7 @@ class HierarchicalModel(PreTrainedModel):
                 loss=total_loss,
                 logits=logits,
                 hidden_states=outputs.hidden_states,
-                attentions=outputs.attentions,
+                attentions=(outputs.attentions, chunks_attns),
             )
         else:
-            return SequenceClassifierOutput(loss=total_loss, logits=logits, hidden_states=hidden_states)
+            return SequenceClassifierOutput(loss=total_loss, logits=logits, hidden_states=hidden_states, attentions=(outputs.attentions, chunks_attns))
