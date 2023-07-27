@@ -4,14 +4,14 @@ Module containing the Hierarchical Transformer module, adapted from Xin Su.
 import logging
 import copy
 import random
-from typing import Optional, List, cast, Dict
+from typing import Optional, List, cast, Dict, Tuple
 
 import numpy as np
 from torch import nn
 import torch.nn.functional as F
 import torch
 from torch.nn import CrossEntropyLoss
-
+from dataclasses import dataclass
 from transformers.modeling_outputs import SequenceClassifierOutput
 from transformers.modeling_utils import PreTrainedModel
 from transformers import AutoModel, AutoConfig
@@ -35,6 +35,9 @@ def set_seed(seed, n_gpu):
     if n_gpu > 0:
         torch.cuda.manual_seed_all(seed)
 
+@dataclass
+class HierarchicalSequenceClassifierOutput(SequenceClassifierOutput):
+    chunk_attentions: Optional[Tuple[torch.FloatTensor]] = None
 
 class MultiHeadAttention(nn.Module):
     """
@@ -391,12 +394,14 @@ class HierarchicalModel(PreTrainedModel):
             position_ids
         )
         chunks_reps = chunks_reps + position_embeddings
-        chunks_attns = []
+        chunks_attns = None
 
         # document encoding (B, n_chunk, hidden_size)
         for layer_ind, layer_module in enumerate(self.transformer):
             chunks_reps, chunks_attn = layer_module(chunks_reps)
             if output_attentions:
+                if chunks_attns is None:
+                    chunks_attns = []
                 chunks_attns.append(chunks_attn)
 
             ## this case is mainly for when we are doing subsequent fine-tuning using a pre-trained
@@ -434,11 +439,12 @@ class HierarchicalModel(PreTrainedModel):
 
 
         if self.training:
-            return SequenceClassifierOutput(
+            return HierarchicalSequenceClassifierOutput(
                 loss=total_loss,
                 logits=logits,
                 hidden_states=outputs.hidden_states,
-                attentions=(outputs.attentions, chunks_attns),
+                attentions=outputs.attentions,
+                chunk_attentions=chunks_attns,
             )
         else:
-            return SequenceClassifierOutput(loss=total_loss, logits=logits, hidden_states=hidden_states, attentions=(outputs.attentions, chunks_attns))
+            return HierarchicalSequenceClassifierOutput(loss=total_loss, logits=logits, hidden_states=hidden_states, attentions=outputs.attentions, chunk_attentions=chunks_attns)
