@@ -1,0 +1,38 @@
+FROM python:3.9 as base
+
+RUN --mount=type=cache,target=/root/.cache \
+  pip install cython
+
+RUN git clone https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers.git /cnlp-transformers
+WORKDIR /cnlp-transformers
+RUN --mount=type=cache,target=/root/.cache \
+  pip install .
+
+# temporary workaround for transformers/huggingface version issue 
+RUN pip uninstall -y huggingface-hub
+RUN pip install huggingface-hub==0.10.1
+
+WORKDIR /home
+# this copy is to support the preload of train models in the downstream images
+COPY .. /home
+ENTRYPOINT ["/bin/bash"]
+
+FROM base as dtr
+run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.dtr()"
+ENTRYPOINT ["cnlpt_dtr_rest", "-p", "8000"]
+
+FROM base as event
+run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.event()"
+ENTRYPOINT ["cnlpt_event_rest", "-p", "8000"]
+
+FROM base as negation
+run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.negation()"
+ENTRYPOINT ["cnlpt_negation_rest", "-p", "8000"]
+
+FROM base as temporal
+run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.temporal()"
+ENTRYPOINT ["cnlpt_temporal_rest", "-p", "8000"]
+
+FROM base as timex
+run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.timex()"
+ENTRYPOINT ["cnlpt_timex_rest", "-p", "8000"]
