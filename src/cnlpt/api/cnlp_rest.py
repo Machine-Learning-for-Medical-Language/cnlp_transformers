@@ -33,7 +33,7 @@ class EntityDocument(BaseModel):
     doc_text: str
     entities: List[List[int]]
 
-def get_dataset(inst_list, tokenizer, label_lists, max_length: int = 128, hier: bool = False, chunk_len: int = 200, num_chunks: int = 40, insert_empty_chunk_at_beginning: bool = False,):
+def get_dataset(inst_list, tokenizer, max_length: int = 128, hier: bool = False, chunk_len: int = 200, num_chunks: int = 40, insert_empty_chunk_at_beginning: bool = False,):
     dataset = Dataset.from_dict({'text':inst_list})
     task_dataset = dataset.map(
                     cnlp_preprocess_data,
@@ -44,7 +44,6 @@ def get_dataset(inst_list, tokenizer, label_lists, max_length: int = 128, hier: 
                     fn_kwargs = {
                         'tokenizer':tokenizer,
                         'max_length':max_length,
-                        'label_lists':label_lists,
                         'inference': True,
                         'hierarchical':hier,
                         # TODO: need to get this from the model if necessary
@@ -86,6 +85,7 @@ def initialize_cnlpt_model(app, model_name, cuda=True, batch_size=8):
     else:
         model = model.to('cpu')
 
+    app.state.model = model
     app.state.trainer = Trainer(
         model=model,
         args=app.state.training_args,

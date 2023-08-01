@@ -65,7 +65,7 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
         logger.debug('Instance string is %s' % (inst_str))
         instances.append(inst_str)
 
-    dataset = get_dataset(instances, app.state.tokenizer, label_lists=[event_label_list], max_length=max_length)
+    dataset = get_dataset(instances, app.state.tokenizer, max_length=max_length)
     preproc_end = time()
 
     output = app.state.trainer.predict(test_dataset=dataset)

@@ -62,7 +62,7 @@ async def startup_event():
 async def process(doc: UnannotatedDocument):
     results = []
     instances = [doc.doc_text]
-    dataset = get_dataset(instances, app.state.tokenizer, label_lists=[], max_length=app.state.conf_dict['max_seq_length'])
+    dataset = get_dataset(instances, app.state.tokenizer, max_length=app.state.conf_dict['max_seq_length'])
     _, logits = app.state.model.forward(input_ids=torch.LongTensor(dataset['input_ids']).to('cuda'),
                                         attention_mask = torch.LongTensor(dataset['attention_mask']).to('cuda'),
                                      )
