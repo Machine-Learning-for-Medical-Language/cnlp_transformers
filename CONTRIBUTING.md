@@ -51,8 +51,21 @@ repository, please follow these steps.
    # ...or the SSH method
    $ git remote add fork git@github.com:{username}/cnlp_transformers.git
    ```
+3. Switch to the correct base branch:
+   * If you are not making changes to source files or project configuration
+     files (`setup.cfg`, `pyproject.toml`, `MANIFEST.in`), stay on `main`
+   * Otherwise, **switch to the branch for the next release**. 
+     * This will be a branch named `dev-vX.Y.Z` for version X.Y.Z.
+     * If there is no such branch, create it by branching off of `main`
+       and push it upstream to this repository:
+       ```sh
+       $ git switch -c dev-vX.Y.Z
+       $ git push --set-upstream origin dev-vX.Y.Z
+       ```
+       * You can also ask a maintainer to create this branch for you.
 
-3. Make a new branch and set your fork as the upstream remote:
+4. Make a new branch from the base branch selected above and set your 
+   fork as the upstream remote:
    > **Note:** see the section on testing below for information 
    > on how you may want to name your branch.
    ```sh
@@ -60,18 +73,19 @@ repository, please follow these steps.
    $ git push --set-upstream fork your-branch-name
    ```
 
-4. Open an issue that motivates the change you are making if there is
+5. Open an issue that motivates the change you are making if there is
    not one already.
 
-5. Make your changes in `your-branch-name` on your fork.
+6. Make your changes in `your-branch-name` on your fork.
 
-6. Open a PR to close the issue.
+7. Open a PR to close the issue.
    * If you are not making changes to source files or project configuration
      files (`setup.cfg`, `pyproject.toml`, `MANIFEST.in`), you can target `main`
    * Otherwise, **have your PR target the branch for the next release**. 
      * This will be a branch named `dev-vX.Y.Z` for version X.Y.Z.
      * If there is no such branch, create it by branching off of `main`, then
        target your new branch.
+       * You can also ask a maintainer to create this branch for you.
 
 ### Testing your code
 

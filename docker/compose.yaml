@@ -19,3 +19,29 @@ services:
           devices:
             - capabilities: [gpu]
     entrypoint: cnlpt_negation_rest -p 8000
+
+# the following definitions are identical to the above, except they
+# download from the main branch of the cnlp-transformers repo instead
+# of pulling from pypi
+
+  cnlp-transformers-dev:
+    build: 
+      context: .
+      dockerfile: Dockerfile.dev.cpu
+    ports:
+      - 8000:8000
+    entrypoint: cnlpt_negation_rest -p 8000
+
+  cnlp-transformers-gpu-dev:
+    build: 
+      context: .
+      dockerfile: Dockerfile.dev.cpu
+    platform: linux/amd64
+    ports:
+      - 8000:8000
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+    entrypoint: cnlpt_negation_rest -p 8000
