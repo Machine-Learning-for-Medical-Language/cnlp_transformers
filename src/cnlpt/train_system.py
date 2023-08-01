@@ -200,6 +200,9 @@ def structure_labels(
     else:
         preds = np.argmax(p.predictions[task_ind], axis=1)
 
+    # for inference
+    if not hasattr(p, "label_ids") or p.label_ids is None:
+        return preds, np.array([]), pad
     if relations[task_name]:
         # relation labels
         labels = p.label_ids[
@@ -354,6 +357,7 @@ def main(
         cache_dir=model_args.cache_dir,
         hierarchical=hierarchical,
     )
+
 
     try:
         task_names = (
@@ -903,7 +907,8 @@ def main(
                 raw_test_predictions = trainer.predict(
                     test_dataset=dataset_test_segment
                 )
-
+                print(tagger)
+                print(relations)
                 (
                     task_to_label_packet,
                     task_to_label_boundaries,
