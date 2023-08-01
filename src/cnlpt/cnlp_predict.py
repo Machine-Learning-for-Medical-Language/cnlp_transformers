@@ -285,7 +285,6 @@ def get_tagging_prints(
     def types2spans(
         raw_tag_inds: np.ndarray, token_ids: np.ndarray
     ) -> Dict[str, List[Tuple[int, int]]]:
-
         type2inds = defaultdict(list)
 
         # courtesy of https://stackoverflow.com/a/2154437
@@ -392,19 +391,30 @@ def get_tagging_prints(
         for ground_truth, torch_label in zip(ground_truths, torch_labels)
     )
 
+        return dict_to_str(type2spans, instance_tokens)
+        
     pred_span_dictionaries = (
         types2spans(pred, torch_label)
         for pred, torch_label in zip(resolved_predictions, torch_labels)
     )
-
-    disagreement_dicts = (
-        dictmerge(ground_dictionary, pred_dictionary)
-        for ground_dictionary, pred_dictionary in zip(
-            ground_span_dictionaries, pred_span_dictionaries
+    if ground_truths is not None:
+        ground_span_dictionaries = (
+            types2spans(ground_truth, torch_label)
+            for ground_truth, torch_label in zip(ground_truths, torch_labels)
         )
-    )
+        disagreement_dicts = (
+            dictmerge(ground_dictionary, pred_dictionary)
+            for ground_dictionary, pred_dictionary in zip(
+                ground_span_dictionaries, pred_span_dictionaries
+            )
+        )
 
-    # returning list instead of generator since pandas needs that
+        # returning list instead of generator since pandas needs that
+        return [
+            get_error_out_string(disagreements, instance)
+            for disagreements, instance in zip(disagreement_dicts, text_samples)
+        ]
+
     return [
         get_pred_out_string(type_2_pred_spans, instance)
         for type_2_pred_spans, instance in zip(pred_span_dictionaries, text_samples)
@@ -426,9 +436,7 @@ def get_relex_prints(
     # thought we'd filtered them out but apparently not
     def tuples_to_str(label_tuples: Iterable[Cell]):
         return [
-            (row, col, relex_labels[label])
-            for row, col, label in sorted(label_tuples)
-            if label != none_index
+            (row, col, relex_labels[label]) for row, col, label in sorted(label_tuples)
         ]
 
     def normalize_cells(

@@ -344,6 +344,7 @@ def main(
         hierarchical=hierarchical,
     )
 
+
     try:
         task_names = (
             data_args.task_name if data_args.task_name is not None else dataset.tasks
@@ -893,7 +894,8 @@ def main(
                 raw_test_predictions = trainer.predict(
                     test_dataset=dataset_test_segment
                 )
-
+                print(tagger)
+                print(relations)
                 (
                     task_to_label_packet,
                     task_to_label_boundaries,
