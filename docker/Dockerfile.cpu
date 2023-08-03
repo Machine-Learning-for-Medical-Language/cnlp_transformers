@@ -2,11 +2,8 @@ FROM python:3.9 as base
 
 RUN --mount=type=cache,target=/root/.cache \
   pip install cython
-
-RUN git clone https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers.git /cnlp-transformers
-WORKDIR /cnlp-transformers
 RUN --mount=type=cache,target=/root/.cache \
-  pip install .
+  pip install cnlp-transformers
 
 # temporary workaround for transformers/huggingface version issue 
 RUN pip uninstall -y huggingface-hub
@@ -28,6 +25,10 @@ ENTRYPOINT ["cnlpt_event_rest", "-p", "8000"]
 FROM base as negation
 run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.negation()"
 ENTRYPOINT ["cnlpt_negation_rest", "-p", "8000"]
+
+FROM base as termexists
+run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.termexists()"
+ENTRYPOINT ["cnlpt_termexists", "-p", "8000"]
 
 FROM base as temporal
 run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.temporal()"
