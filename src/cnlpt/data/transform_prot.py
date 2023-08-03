@@ -22,9 +22,9 @@ try:
 except ImportError:
     import platform
     print(f"scispacy not installed; cannot run transform_prot.\n"
-          f"Note: transform_prot is not runnable on ARM platforms, "
-          f"and is only tested on x86_64 platforms.")
-    print(f"Current platform: {platform.machine()}")
+          f"Note: transform_prot is not runnable on ARM and non-Linux platforms, "
+          f"and is only tested on Linux x86_64 platforms.")
+    print(f"Current platform: {sys.platform} {platform.machine()}")
     sys.exit(1)
 
 
