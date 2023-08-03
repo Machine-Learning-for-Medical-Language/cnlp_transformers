@@ -16,42 +16,34 @@
 # under the License.
 from fastapi import FastAPI
 from pydantic import BaseModel
-import logging
+
 from typing import List
-from time import time
 
-from ..CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
-from .cnlp_rest import EntityDocument, initialize_cnlpt_model, create_instance_string, get_dataset
-from .temporal_rest import dtr_label_list, old_dtr_label_list
-
-from transformers import (
-    AutoConfig,
-    AutoModel,
-    AutoTokenizer,
-    HfArgumentParser,
-    Trainer,
-    TrainingArguments,
-)
-from transformers.data.processors.utils import InputFeatures, InputExample
-from torch.utils.data.dataset import Dataset
+from .cnlp_rest import EntityDocument, create_instance_string, initialize_cnlpt_model, get_dataset
 import numpy as np
 
+import logging
+from time import time
+
 app = FastAPI()
-model_name = "tmills/tiny-dtr"
-logger = logging.getLogger('DocTimeRel Processor with xtremedistil encoder')
-logger.setLevel(logging.INFO)
+model_name = "mlml-chip/sharpseed-termexists"
+logger = logging.getLogger('TermExists_REST_Processor')
+logger.setLevel(logging.DEBUG)
+
+task = 'TermExists'
+labels = [-1, 1]
 
 max_length = 128
 
-class DocTimeRelResults(BaseModel):
-    ''' statuses: dictionary from entity id to classification decision about DocTimeRel'''
-    statuses: List[str]
+class TermExistsResults(BaseModel):
+    ''' statuses: list of classifier outputs for every input'''
+    statuses: List[int]
 
 @app.on_event("startup")
 async def startup_event():
-    initialize_cnlpt_model(app, model_name, cuda=False, batch_size=64)
+    initialize_cnlpt_model(app, model_name)
 
-@app.post("/dtr/process")
+@app.post("/termexists/process")
 async def process(doc: EntityDocument):
     doc_text = doc.doc_text
     logger.warn('Received document of len %d to process with %d entities' % (len(doc_text), len(doc.entities)))
@@ -59,16 +51,14 @@ async def process(doc: EntityDocument):
     start_time = time()
 
     if len(doc.entities) == 0:
-        return DocTimeRelResults(statuses=[])
+        return TermExistsResults(statuses=[])
 
     for ent_ind, offsets in enumerate(doc.entities):
-        # logger.debug('Entity ind: %d has offsets (%d, %d)' % (ent_ind, offsets[0], offsets[1]))
         inst_str = create_instance_string(doc_text, offsets)
         logger.debug('Instance string is %s' % (inst_str))
         instances.append(inst_str)
 
-    dataset = get_dataset(instances, app.state.tokenizer, max_length=max_length)
-
+    dataset = get_dataset(instances, app.state.tokenizer, max_length)
     preproc_end = time()
 
     output = app.state.trainer.predict(test_dataset=dataset)
@@ -79,9 +69,9 @@ async def process(doc: EntityDocument):
 
     results = []
     for ent_ind in range(len(dataset)):
-        results.append(old_dtr_label_list[predictions[ent_ind]])
+        results.append(labels[predictions[ent_ind]])
 
-    output = DocTimeRelResults(statuses=results)
+    output = TermExistsResults(statuses=results)
 
     postproc_end = time()
 
@@ -96,14 +86,13 @@ async def process(doc: EntityDocument):
 def rest():
     import argparse
 
-    parser = argparse.ArgumentParser(description='Run the http server for negation')
+    parser = argparse.ArgumentParser(description='Run the http server for term exists')
     parser.add_argument('-p', '--port', type=int, help='The port number to run the server on', default=8000)
 
     args = parser.parse_args()
 
     import uvicorn
-    uvicorn.run("cnlpt.api.dtr_rest:app", host='0.0.0.0', port=args.port, reload=True)
-
+    uvicorn.run("cnlpt.api.termexists_rest:app", host='0.0.0.0', port=args.port, reload=True)
 
 if __name__ == '__main__':
     rest()

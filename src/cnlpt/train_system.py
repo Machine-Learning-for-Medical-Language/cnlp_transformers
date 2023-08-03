@@ -14,24 +14,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """ Finetuning the library models for sequence classification on clinical NLP tasks"""
-
-
-import dataclasses
 import logging
 import os
 from os.path import basename, dirname, join, exists
 import sys
-from dataclasses import dataclass, field
+
 from typing import Callable, Dict, Optional, List, Union, Any
 from filelock import FileLock
-import time
 import tempfile
 import math
 
 from enum import Enum
 
 import numpy as np
-from seqeval.metrics.sequence_labeling import get_entities
 
 import torch
 from torch.utils.data.dataset import Dataset
@@ -39,19 +34,19 @@ from transformers import AutoConfig, AutoTokenizer, AutoModel, EvalPrediction
 from transformers.training_args import IntervalStrategy
 from transformers.data.processors.utils import InputFeatures
 from transformers.tokenization_utils import PreTrainedTokenizer
-from transformers.data.metrics import acc_and_f1
 from transformers.data.processors.utils import DataProcessor, InputExample, InputFeatures
 from transformers import ALL_PRETRAINED_CONFIG_ARCHIVE_MAP
-from transformers.optimization import get_scheduler
 from torch.optim import AdamW
-from transformers.trainer_pt_utils import get_parameter_names
 from transformers.file_utils import CONFIG_NAME
 from huggingface_hub import hf_hub_url
 
+import sys
+sys.path.append(os.path.join(os.getcwd()))
 from .cnlp_processors import tagging, relex, classification
 from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
 from .cnlp_metrics import cnlp_compute_metrics
-
+from .cnlp_args import CnlpTrainingArguments, ModelArguments
+from .cnlp_predict import write_predictions_for_dataset
 from .CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
 from .BaselineModels import CnnSentenceClassifier, LstmSentenceClassifier
 from .HierarchicalTransformer import HierarchicalModel
@@ -61,198 +56,59 @@ import requests
 from transformers import (
     HfArgumentParser,
     Trainer,
-    TrainingArguments,
     set_seed,
 )
+import json
 
-cnlpt_models = ['cnn', 'lstm', 'hier', 'cnlpt']
+AutoConfig.register("cnlpt", CnlpConfig)
 
 logger = logging.getLogger(__name__)
 
-@dataclass
-class CnlpTrainingArguments(TrainingArguments):
-    """
-    Additional arguments specific to this class.
-    See all possible arguments in :class:`transformers.TrainingArguments`
-    or by passing the ``--help`` flag to this script.
-    """
-    evals_per_epoch: Optional[int] = field(
-        default = -1, metadata={"help": "Number of times to evaluate and possibly save model per training epoch (allows for a lazy kind of early stopping)"}
-    )
-    final_task_weight: Optional[float] = field(
-        default=1.0, metadata={"help": "Amount to up/down-weight final task in task list (other tasks weighted 1.0)"}
-    )
-    freeze: float = field(
-        default=-1.0, metadata={"help": "Freeze the encoder layers and only train the layer between the encoder and classification architecture. Probably works best with --token flag since [CLS] may not be well-trained for anything in particular. If not specified, no weight freezing will be done. If specified as a flag (no arguments), 100%% of weights will be frozen. If a float (0..1.0) is specified, each weight will be frozen with that probability.", 'nargs':'?', "const":1.0 }
-    )
-    arg_reg: Optional[float] = field(
-        default=-1, metadata={"help": "Weight to use on argument regularization term (penalizes end-to-end system if a discovered relation has low probability of being any entity type). Value < 0 (default) turns off this penalty."}
-    )
-    bias_fit: bool = field(
-        default=False, metadata={"help": "Only optimize the bias parameters of the encoder (and the weights of the classifier heads), as proposed in the BitFit paper by Ben Zaken et al. 2021 (https://arxiv.org/abs/2106.10199)"}
-    )
-
-@dataclass
-class ModelArguments:
-    """
-    Arguments pertaining to which model/config/tokenizer we are going to fine-tune from.
-    See all possible arguments by passing the ``--help`` flag to this script.
-    """
-    model: Optional[str] = field( default='cnlpt', 
-        metadata={'help': "Model type", 'choices':cnlpt_models}
-    )
-    encoder_name: Optional[str] = field(default='roberta-base',
-        metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
-    )
-    config_name: Optional[str] = field(
-        default=None, metadata={"help": "Pretrained config name or path if not the same as model_name"}
-    )
-    tokenizer_name: Optional[str] = field(
-        default=None, metadata={"help": "Pretrained tokenizer name or path if not the same as model_name"}
-    )
-    cache_dir: Optional[str] = field(
-        default=None, metadata={"help": "Where do you want to store the pretrained models downloaded from s3"}
-    )
-    layer: Optional[int] = field(
-        default=-1, metadata={"help": "Which layer's CLS ('<s>') token to use"}
-    )
-    token: bool = field(
-        default=False, metadata={"help": "Classify over an actual token rather than the [CLS] ('<s>') token -- requires that the tokens to be classified are surrounded by <e>/</e> tokens"}
-    )
-
-    # NxN relation classifier-specific arguments
-    num_rel_feats: Optional[int] = field(
-        default=12, metadata={"help": "Number of features/attention heads to use in the NxN relation classifier"}
-    )
-    head_features: Optional[int] = field(
-        default=64, metadata={"help": "Number of parameters in each attention head in the NxN relation classifier"}
-    )
-
-    # CNN-specific arguments
-    cnn_embed_dim: Optional[int] = field(
-        default=100,
-        metadata={
-            'help': "For the CNN baseline model, the size of the word embedding space."
-        }
-    )
-    cnn_num_filters: Optional[int] = field(
-        default=25,
-        metadata={
-            'help': (
-                'For the CNN baseline model, the number of '
-                'convolution filters to use for each filter size.'
-            )
-        }
-    )
-
-    cnn_filter_sizes: Optional[List[int]] = field(
-        default_factory=lambda: [1, 2, 3],
-        metadata={
-            "help": (
-                "For the CNN baseline model, a space-separated list "
-                "of size(s) of the filters (kernels)"
-            )
-        }
-    )
-
-    # LSTM-specific arguments
-    lstm_embed_dim: Optional[int] = field(
-        default=100,
-        metadata={
-            'help': "For the LSTM baseline model, the size of the word embedding space."
-        }
-    )
-    lstm_hidden_size: Optional[int] = field(
-        default=100,
-        metadata={
-            "help": "For the LSTM baseline model, the hidden size of the LSTM layer"
-        }
-    )
-
-    # Multi-task classifier-specific arguments
-    use_prior_tasks: bool = field(
-        default=False, metadata={"help": "In the multi-task setting, incorporate the logits from the previous tasks into subsequent representation layers. This will be done in the task order specified in the command line."}
-    )
-
-    # Hierarchical Transformer-specific arguments
-    hier_num_layers: Optional[int] = field(
-        default=2,
-        metadata={
-            "help": (
-                "For the hierarchical model, the number of document-level transformer "
-                "layers"
-            )
-        },
-    )
-    hier_hidden_dim: Optional[int] = field(
-        default=2048,
-        metadata={
-            "help": (
-                "For the hierarchical model, the inner hidden size of the positionwise "
-                "FFN in the document-level transformer layers"
-            )
-        },
-    )
-    hier_n_head: Optional[int] = field(
-        default=8,
-        metadata={
-            "help": (
-                "For the hierarchical model, the number of attention heads in the "
-                "document-level transformer layers"
-            )
-        },
-    )
-    hier_d_k: Optional[int] = field(
-        default=8,
-        metadata={
-            "help": (
-                "For the hierarchical model, the size of the query and key vectors in "
-                "the document-level transformer layers"
-            )
-        },
-    )
-    hier_d_v: Optional[int] = field(
-        default=96,
-        metadata={
-            "help": (
-                "For the hierarchical model, the size of the value vectors in the "
-                "document-level transformer layers"
-            )
-        },
-    )
-    hier_dropout: Optional[float] = field(
-        default=0.1,
-        metadata={
-            "help": "For the hierarchical model, the dropout probability for the "
-                    "document-level transformer layers"
-        }
-    )
-
-
 def is_hub_model(model_name):
     # check if it's a model on the huggingface model hub:
-    url = hf_hub_url(model_name, CONFIG_NAME)
-    r = requests.head(url)
-    if r.status_code == 200:
-        return True
+    try:
+        url = hf_hub_url(model_name, CONFIG_NAME)
+        r = requests.head(url)
+        if r.status_code == 200:
+            return True
+    except:
+        pass
 
     return False
 
 
-def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = None):
+def is_cnlpt_model(model_path: str) -> bool:
+    """
+    Infer whether a model path refers to a cnlpt
+    model checkpoint (if not, we assume it is an
+    encoder)
+    :param model_path: the path to the model
+    :return: whether the model is a cnlpt classifier model
+    """
+    encoder_config = AutoConfig.from_pretrained(model_path)
+    return encoder_config.model_type == "cnlpt"
+
+
+def encoder_inferred(model_name_or_path: str) -> bool:
+    return is_hub_model(model_name_or_path) or not is_cnlpt_model(model_name_or_path)
+
+
+def main(
+    json_file: Optional[str] = None,
+    json_obj: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Dict[str, Any]]:
     """
     See all possible arguments in :class:`transformers.TrainingArguments`
     or by passing the --help flag to this script.
 
     We now keep distinct sets of args, for a cleaner separation of concerns.
 
-    :param typing.Optional[str] json_file: if passed, a path to a JSON file
+    :param json_file: if passed, a path to a JSON file
         to use as the model, data, and training arguments instead of
         retrieving them from the CLI (mutually exclusive with ``json_obj``)
-    :param typing.Optional[dict] json_obj: if passed, a JSON dictionary
+    :param json_obj: if passed, a JSON dictionary
         to use as the model, data, and training arguments instead of
         retrieving them from the CLI (mutually exclusive with ``json_file``)
-    :rtype: typing.Dict[str, typing.Dict[str, typing.Any]]
     :return: the evaluation results (will be empty if ``--do_eval`` not passed)
     """
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, CnlpTrainingArguments))
@@ -322,28 +178,17 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
     )
 
     try:
-        task_names = []
-        num_labels = []
-        output_mode = []
-        tagger = []
-        relations = []
-        tasks_to_processors = {}
-        for dataset_ind in range(len(data_args.data_dir)):
-            processor = dataset.processors[dataset_ind]
-            # if processor.get_num_tasks() > 1:
-            for subtask_num in range(processor.get_num_tasks()):
-                task_names.append(processor.get_classifiers()[subtask_num])
-                num_labels.append(len(processor.get_labels()[task_names[-1]]))
-                task_output_mode = processor.get_output_mode(task_names[-1])
-                output_mode.append(task_output_mode)
-                tagger.append(task_output_mode == tagging)
-                relations.append(task_output_mode == relex)
-                tasks_to_processors[task_names[-1]] = processor
-
-                # tagger.append(False)
-                # relations.append(False)
-
-                tasks_to_processors[task_names[-1]] = processor
+        task_names = data_args.task_name
+        num_labels = {}
+        output_mode = {}
+        tagger = {}
+        relations = {}
+        for task in dataset.tasks_to_labels.keys():
+            num_labels[task] = len(dataset.tasks_to_labels[task])
+            task_output_mode = dataset.output_modes[task]
+            output_mode[task] = task_output_mode
+            tagger[task] = (task_output_mode == tagging)
+            relations[task] = (task_output_mode == relex)
 
     except KeyError:
         raise ValueError("Task not found: %s" % (data_args.task_name))
@@ -354,8 +199,9 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
     # The .from_pretrained methods guarantee that only one local process can concurrently
     # download model & vocab.
     if model_name == 'cnn':
-        model = CnnSentenceClassifier(len(tokenizer), 
-                                      num_labels_list=num_labels,
+        model = CnnSentenceClassifier(len(tokenizer),
+                                      task_names=task_names,
+                                      num_labels_dict=num_labels,
                                       embed_dims=model_args.cnn_embed_dim,
                                       num_filters=model_args.cnn_num_filters,
                                       filters=model_args.cnn_filter_sizes,
@@ -366,7 +212,8 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
             model.load_state_dict(torch.load(model_path))
     elif model_name == 'lstm':
         model = LstmSentenceClassifier(len(tokenizer),
-                                       num_labels_list=num_labels,
+                                       task_names=task_names,
+                                       num_labels_dict=num_labels,
                                        embed_dims=model_args.lstm_embed_dim,
                                        hidden_size=model_args.lstm_hidden_size,
                                        )
@@ -376,17 +223,17 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
             model.load_state_dict(torch.load(model_path))
     elif model_name == 'hier':
         encoder_name = model_args.config_name if model_args.config_name else model_args.encoder_name
-        if is_hub_model(encoder_name):
+        if encoder_inferred(encoder_name):
             config = CnlpConfig(
-                encoder_name,
-                data_args.task_name,
-                num_labels,
+                encoder_name=encoder_name,
+                finetuning_task=data_args.task_name if data_args.task_name is not None else dataset.tasks,
                 layer=model_args.layer,
                 tokens=model_args.token,
                 num_rel_attention_heads=model_args.num_rel_feats,
                 rel_attention_head_dims=model_args.head_features,
                 tagger=tagger,
                 relations=relations,
+                label_dictionary=dataset.get_labels(),
                 hier_head_config=dict(
                     n_layers=model_args.hier_num_layers,
                     d_inner=model_args.hier_hidden_dim,
@@ -406,32 +253,42 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
             )
         else:
             # use a checkpoint from an existing model
-            AutoConfig.register("cnlpt", CnlpConfig)
             AutoModel.register(CnlpConfig, HierarchicalModel)
 
             config = AutoConfig.from_pretrained(
                     encoder_name,
                     cache_dir=model_args.cache_dir,
+                    layer=model_args.layer
                 )
+            config.finetuning_task = data_args.task_name
+            config.relations = relations
+            config.tagger = tagger
+            config.label_dictionary = {} # this gets filled in later
 
             ## TODO: check if user overwrote parameters in command line that could change behavior of the model and warn
             #if data_args.chunk_len is not None:
 
             logger.info("Loading pre-trained hierarchical model...")
             model = AutoModel.from_pretrained(encoder_name, config=config)
+
+            model.remove_task_classifiers()
+            for task in data_args.task_name:
+                model.add_task_classifier(task, dataset.get_labels()[task])
+            model.set_class_weights(dataset.class_weights)
+
     else:
         # by default cnlpt model, but need to check which encoder they want
         encoder_name = model_args.encoder_name
 
-        # TODO check when download any pretrained language model to local disk, if 
+        # TODO check when download any pretrained language model to local disk, if
         # the following condition "is_hub_model(encoder_name)" works or not.
-        if not is_hub_model(encoder_name):
+        if not encoder_inferred(encoder_name):
             # we are loading one of our own trained models as a starting point.
             #
             # 1) if training_args.do_train is true:
-            # sometimes we may want to use an encoder that has been had continued pre-training, either on
+            # sometimes we may want to use an encoder that has had continued pre-training, either on
             # in-domain MLM or another task we think might be useful. In that case our encoder will just
-            # be a link to a directory. If the encoder-name is not recognized as a pre-trianed model, special
+            # be a link to a directory. If the encoder-name is not recognized as a pre-trained model, special
             # logic for ad hoc encoders follows:
             # we will load it as-is initially, then delete its classifier head, save the encoder
             # as a temp file, and make that temp file
@@ -443,11 +300,10 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
             # we evaluate or make predictions of our trained models. 
             # Both two setting require the registeration of CnlpConfig, and use 
             # AutoConfig.from_pretrained() to load the configuration file
-            AutoConfig.register("cnlpt", CnlpConfig)
             AutoModel.register(CnlpConfig, CnlpModelForClassification)
 
             
-            # Load the cnlp configuration using AutoConfig, this will not override 
+            # Load the cnlp configuration using AutoConfig, this will not override
             # the arguments from trained cnlp models. While using CnlpConfig will override
             # the model_type and model_name of the encoder.
             config = AutoConfig.from_pretrained(
@@ -482,39 +338,36 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
                     class_weights=dataset.class_weights,
                     final_task_weight=training_args.final_task_weight,
                     freeze=training_args.freeze,
-                    bias_fit=training_args.bias_fit,
-                    argument_regularization=training_args.arg_reg)
+                    bias_fit=training_args.bias_fit)
 
         else:
             # This only works when model_args.encoder_name is one of the 
             # model card from https://huggingface.co/models
             # By default, we use model card as the starting point to fine-tune
             encoder_name = model_args.config_name if model_args.config_name else model_args.encoder_name
-            config = CnlpConfig(encoder_name,
-                                data_args.task_name,
-                                num_labels,
-                                layer=model_args.layer,
-                                tokens=model_args.token,
-                                num_rel_attention_heads=model_args.num_rel_feats,
-                                rel_attention_head_dims=model_args.head_features,
-                                tagger=tagger,
-                                relations=relations,)
-                                #num_tokens=len(tokenizer))
+            config = CnlpConfig(
+                encoder_name=encoder_name,
+                finetuning_task=data_args.task_name,
+                layer=model_args.layer,
+                tokens=model_args.token,
+                num_rel_attention_heads=model_args.num_rel_feats,
+                rel_attention_head_dims=model_args.head_features,
+                tagger=tagger,
+                relations=relations,
+                label_dictionary=dataset.get_labels(),
+                #num_tokens=len(tokenizer),
+            )
             config.vocab_size = len(tokenizer)
             model = CnlpModelForClassification(
                 config=config,
                 class_weights=dataset.class_weights,
                 final_task_weight=training_args.final_task_weight,
                 freeze=training_args.freeze,
-                bias_fit=training_args.bias_fit,
-                argument_regularization=training_args.arg_reg)
+                bias_fit=training_args.bias_fit,)
 
     best_eval_results = None
     output_eval_file = os.path.join(
         training_args.output_dir, f"eval_results.txt"
-    )
-    output_eval_predictions = os.path.join(
-        training_args.output_dir, f'eval_predictions.txt'
     )
 
     if training_args.do_train:
@@ -535,34 +388,38 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
             logger.info('Evaluation strategy not specified so evaluating every epoch')
             training_args.evaluation_strategy = IntervalStrategy.EPOCH
 
-    def build_compute_metrics_fn(task_names: List[str], model, processors: Dict[str,DataProcessor]) -> Callable[[EvalPrediction], Dict]:
+    def build_compute_metrics_fn(task_names: List[str], model, dataset: ClinicalNlpDataset) -> Callable[[EvalPrediction], Dict]:
         def compute_metrics_fn(p: EvalPrediction):
 
             metrics = {}
             task_scores = []
             task_label_ind = 0
-
+            
             for task_ind,task_name in enumerate(task_names):
-                if tagger[task_ind]:
+                if tagger[task_name]:
                     preds = np.argmax(p.predictions[task_ind], axis=2)
                     # labels will be -100 where we don't need to tag
-                elif relations[task_ind]:
+                elif relations[task_name]:
                     preds = np.argmax(p.predictions[task_ind], axis=3)
                 else:
                     preds = np.argmax(p.predictions[task_ind], axis=1)
 
-                if relations[task_ind]:
+                if relations[task_name]:
                     # relation labels
                     labels = p.label_ids[:,:,task_label_ind:task_label_ind+data_args.max_seq_length].squeeze()
                     task_label_ind += data_args.max_seq_length
                 elif p.label_ids.ndim == 3:
-                    labels = p.label_ids[:,:, task_label_ind:task_label_ind+1].squeeze()
+                    if tagger[task_name]:
+                        labels = p.label_ids[:,:, task_label_ind:task_label_ind+1].squeeze()
+                    else:
+                        labels = p.label_ids[:, 0, task_label_ind].squeeze()
                     task_label_ind += 1
                 elif p.label_ids.ndim == 2:
                     labels = p.label_ids[:,task_ind].squeeze()
 
-                processor = processors[task_name]
-                metrics[task_name] = cnlp_compute_metrics(task_name, task_ind, preds, labels, processor, processor.get_output_mode(task_name))
+                metrics[task_name] = cnlp_compute_metrics(task_name, preds, labels, 
+                                                          dataset.output_modes[task_name], 
+                                                          dataset.tasks_to_labels[task_name])
                 # FIXME - Defaulting to accuracy for model selection score, when it should be task-specific
                 task_scores.append( metrics[task_name].get('one_score', np.mean(metrics[task_name].get('f1'))))
                 #task_scores.append(processor.get_one_score(metrics.get(task_name, metrics.get(task_name.split('-')[0], None))))
@@ -577,6 +434,9 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
                         if training_args.do_train:
                             trainer.save_model()
                             tokenizer.save_pretrained(training_args.output_dir)
+                            if model_name == 'cnn' or model_name == 'lstm':
+                                with open(os.path.join(training_args.output_dir, 'config.json'), 'w') as f:
+                                    json.dump(model_args.to_dict(), f)
                         for task_ind,task_name in enumerate(metrics):
                             with open(output_eval_file, "w") as writer:
                                 # logger.info("***** Eval results for task %s *****" % (task_name))
@@ -591,12 +451,14 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
         return compute_metrics_fn
 
     # Initialize our Trainer
+    training_args.load_best_model_at_end = True
+    training_args.metric_for_best_model='one_score'
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=dataset.datasets[0].get('train', None),
-        eval_dataset=dataset.datasets[0].get('validation', None),
-        compute_metrics=build_compute_metrics_fn(task_names, model, tasks_to_processors),
+        train_dataset=dataset.processed_dataset.get('train', None),
+        eval_dataset=dataset.processed_dataset.get('validation', None),
+        compute_metrics=build_compute_metrics_fn(task_names, model, dataset),
     )
 
     # Training
@@ -605,107 +467,82 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
             # resume_from_checkpoint=model_args.model_name_or_path if os.path.isdir(model_args.model_name_or_path) else None
         )
 
+        # if we didn't do any evaluations during training then no model
+        # would have ever been saved. we'll save the model here
         if not hasattr(model, 'best_score'):
             # For convenience, we also re-save the tokenizer to the same directory,
             # so that you can share your model easily on huggingface.co/models =)
             if trainer.is_world_process_zero():
                 trainer.save_model()
                 tokenizer.save_pretrained(training_args.output_dir)
+                if model_name == 'cnn' or model_name == 'lstm':
+                    with open(os.path.join(training_args.output_dir, 'config.json'), 'w') as f:
+                        json.dump(model_args, f)
 
     # Evaluation
     eval_results = {}
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
-        eval_dataset=dataset.datasets[0]['validation']
-        try:
-            eval_result = model.best_eval_results
-        except:
+        eval_dataset=dataset.processed_dataset['validation']
+        # no evaluation was done prior to now, so we need to evaluate
+        if not hasattr(model, 'best_eval_results'):
             eval_result = trainer.evaluate(eval_dataset=eval_dataset)
+        else:
+            eval_result = model.best_eval_results
         
+        # if there is a stored model, restore it so writing outputs uses a good model
+
+        
+        trainer.compute_metrics = None
         if trainer.is_world_process_zero():
             with open(output_eval_file, "w") as writer:
-                logger.info("***** Eval results *****")
+                logger.info("***** Eval results on combined dataset *****")
                 for key, value in eval_result.items():
                     logger.info("  %s = %s", key, value)
                     writer.write("%s = %s\n" % (key, value))
 
-            with open(output_eval_predictions, 'w') as writer:
-                #Chen wrote the below but it doesn't work for all settings
-                predictions = trainer.predict(test_dataset=eval_dataset).predictions
-                dataset_labels = dataset.get_labels()
-                for dataset_ind in range(len(data_args.data_dir)):
-                    processor = dataset.processors[dataset_ind]
-                    for task_ind in range(processor.get_num_tasks()):
-                        task_name = processor.get_classifiers()[task_ind]
-                # for task_ind, task_name in enumerate(task_names):
-                        if output_mode[task_ind] == classification:
-                            task_predictions = np.argmax(predictions[task_ind], axis=1)
-                            for index, item in enumerate(task_predictions):
-                                if len(task_names) > len(dataset_labels):
-                                    subtask_ind = 0
-                                else:
-                                    subtask_ind = task_ind
-                                item = dataset_labels[dataset_ind][task_name][item]
-                                writer.write("Task %d (%s) - Index %d - %s\n" % (task_ind, task_name, index, item))
-                        elif output_mode[task_ind] == tagging:
-                            task_predictions = np.argmax(predictions[task_ind], axis=2)
-                            task_labels = dataset_labels[dataset_ind][task_name]
-                            for index, pred_seq in enumerate(task_predictions):
-                                wpind_to_ind = {}
-                                chunk_labels = []
-
-                                token_inds = eval_dataset['input_ids'][index]
-                                tokens = tokenizer.convert_ids_to_tokens(token_inds)
-                                for token_ind in range(1,len(tokens)):
-                                    if token_inds[token_ind] <= 2:
-                                        break
-                                    if tokens[token_ind].startswith('Ġ'):
-                                        wpind_to_ind[token_ind] = len(wpind_to_ind)
-                                        chunk_labels.append(task_labels[task_predictions[index][token_ind]])
-
-                                entities = get_entities(chunk_labels)
-                                writer.write('Task %d (%s) - Index %d: %s\n' % (task_ind, task_name, index, str(entities)))
-                        elif output_mode[task_ind] == relex:
-                            task_predictions = np.argmax(predictions[task_ind], axis=3)
-                            task_labels = dataset_labels[dataset_ind][task_name]
-                            # assert task_labels[0] == 'None', 'The first labeled relation category should always be "None" but for task %s it is %s' % (task_names[task_ind], task_labels[0])
-                            
-                            for inst_ind in range(task_predictions.shape[0]):
-                                inst_preds = task_predictions[inst_ind]
-                                a1s, a2s = np.where(inst_preds > 0)
-                                for arg_ind in range(len(a1s)):
-                                    a1_ind = a1s[arg_ind]
-                                    a2_ind = a2s[arg_ind]
-                                    cat = task_labels[ inst_preds[a1_ind][a2_ind] ]
-                                    writer.write("Task %d (%s) - Index %d - %s(%d, %d)\n" % (task_ind, task_name, inst_ind, cat, a1_ind, a2_ind))
-                        else:
-                            raise NotImplementedError('Writing predictions is not implemented for this output_mode!')
+            # here we probably want separate predictions for each dataset:
+            if training_args.load_best_model_at_end:
+                model.load_state_dict(torch.load(join(training_args.output_dir, 'pytorch_model.bin')))  # load best model
+                trainer = Trainer(  # maake trainer from best model
+                    model=model,
+                    args=training_args,
+                    train_dataset=dataset.processed_dataset.get('train', None),
+                    eval_dataset=dataset.processed_dataset.get('validation', None),
+                    compute_metrics=build_compute_metrics_fn(task_names, model, dataset),
+                ) 
+                # use trainer to predict 
+            for dataset_ind,dataset_path in enumerate(data_args.data_dir):
+                subdir = os.path.split(dataset_path.rstrip('/'))[1]
+                output_eval_predictions_file = os.path.join(training_args.output_dir, f'eval_predictions_%s_%d.txt' % (subdir, dataset_ind))
+                write_predictions_for_dataset(output_eval_predictions_file, 
+                                              trainer,
+                                              dataset,
+                                              'validation',
+                                              dataset_ind,
+                                              output_mode,
+                                              tokenizer)
 
         eval_results.update(eval_result)
 
     if training_args.do_predict:
         logging.info("*** Test ***")
-        test_dataset=dataset.datasets[0]['test']
+        trainer.compute_metrics = None
         # FIXME: this part hasn't been updated for the MTL setup so it doesn't work anymore since
         # predictions is generalized to be a list of predictions and the output needs to be different for each kin.
         # maybe it's ok to only handle classification since it has a very straightforward output format and evaluation,
         # while for relations we can punt to the user to just write their own eval code.
-        predictions = trainer.predict(test_dataset=test_dataset).predictions
-        for task_ind, task_name in enumerate(task_names):
-            if output_mode[task_ind] == "classification":
-                task_predictions = np.argmax(predictions[task_ind], axis=1)
-            else:
-                raise NotImplementedError('Writing predictions is not implemented for this output_mode!')
-        
-            output_test_file = os.path.join(
-                training_args.output_dir, f"test_results.txt"
-            )
-            if trainer.is_world_process_zero():
-                with open(output_test_file, "w") as writer:
-                    logger.info("***** Test results *****")
-                    for index, item in enumerate(task_predictions):
-                        item = test_dataset.get_labels()[task_name][item]
-                        writer.write("%s\n" % (item))
+        if trainer.is_world_process_zero():
+            for dataset_ind, dataset_path in enumerate(data_args.data_dir):
+                subdir = os.path.split(dataset_path.rstrip('/'))[1]
+                output_test_predictions_file = os.path.join(training_args.output_dir, f'test_predictions_%s_%d.txt' % (subdir, dataset_ind))
+                write_predictions_for_dataset(output_test_predictions_file, 
+                                                trainer,
+                                                dataset,
+                                                'test',
+                                                dataset_ind,
+                                                output_mode,
+                                                tokenizer)
 
     return eval_results
 

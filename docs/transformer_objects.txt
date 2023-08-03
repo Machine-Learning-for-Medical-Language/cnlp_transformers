@@ -12,3 +12,5 @@ transformers.data.processors.utils.InputExample py:class 1 main_classes/processo
 transformers.tokenization_utils.PreTrainedTokenizer py:class 1 main_classes/tokenizer#transformers.PreTrainedTokenizer -
 transformers.PretrainedConfig py:class 1 main_classes/configuration#$ -
 transformers.AutoConfig py:class 1 model_doc/auto#$ -
+transformers.BatchEncoding py:class 1 main_classes/tokenizer#$ -
+transformers.tokenization_utils_base.BatchEncoding py:class 1 main_classes/tokenizer#transformers.BatchEncoding -

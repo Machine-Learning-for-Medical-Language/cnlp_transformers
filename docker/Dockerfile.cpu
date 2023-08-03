@@ -26,6 +26,10 @@ FROM base as negation
 run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.negation()"
 ENTRYPOINT ["cnlpt_negation_rest", "-p", "8000"]
 
+FROM base as termexists
+run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.termexists()"
+ENTRYPOINT ["cnlpt_termexists", "-p", "8000"]
+
 FROM base as temporal
 run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.temporal()"
 ENTRYPOINT ["cnlpt_temporal_rest", "-p", "8000"]

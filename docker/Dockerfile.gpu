@@ -6,7 +6,7 @@ RUN pip3.9 install cnlp-transformers
 
 # temporary workaround for transformers/huggingface version issue 
 RUN pip3.9 uninstall -y huggingface-hub
-RUN pip3.9 install huggingface-hub==0.10.1
+RUN pip3.9 install huggingface-hub==0.11.0
 
 
 
@@ -14,6 +14,10 @@ WORKDIR /opt/cnlp/
 # this copy is to support the preload of train models in the downstream images
 COPY .. /opt/cnlp/
 ENTRYPOINT ["/bin/bash"]
+
+FROM base as current
+run /usr/bin/python3.9 -c "import sys;sys.path.append('/home/docker');import model_download; model_download.current()"
+ENTRYPOINT ["cnlpt_current_rest", "-p", "8000"]
 
 FROM base as dtr
 run /usr/bin/python3.9 -c "import sys;sys.path.append('/home/docker');import model_download; model_download.dtr()"
@@ -27,6 +31,10 @@ FROM base as negation
 run /usr/bin/python3.9 -c "import sys;sys.path.append('/home/docker');import model_download; model_download.negation()"
 ENTRYPOINT ["cnlpt_negation_rest", "-p", "8000"]
 
+FROM base as termexists
+run /usr/bin/python3.9 -c "import sys;sys.path.append('/home/docker');import model_download; model_download.termexists()"
+ENTRYPOINT ["cnlpt_termexists_rest", "-p", "8000"]
+
 FROM base as temporal
 run /usr/bin/python3.9 -c "import sys;sys.path.append('/home/docker');import model_download; model_download.temporal()"
 ENTRYPOINT ["cnlpt_temporal_rest", "-p", "8000"]
@@ -34,3 +42,15 @@ ENTRYPOINT ["cnlpt_temporal_rest", "-p", "8000"]
 FROM base as timex
 run /usr/bin/python3.9 -c "import sys;sys.path.append('/home/docker');import model_download; model_download.timex()"
 ENTRYPOINT ["cnlpt_timex_rest", "-p", "8000"]
+
+FROM base as hier_local
+ENV MODEL_PATH /opt/cnlp/model
+ENTRYPOINT ["bash"]
+
+FROM base as hier
+run /usr/bin/python3.9 -c "import sys;sys.path.append('/home/docker'); import model_download; print('$model_loc'); model_download.hier('$model_loc')"
+ENTRYPOINT ["python3.9 -m cnlpt.api.hier_rest", "-p", "8000"]
+
+FROM base as cnn
+ENV MODEL_PATH /opt/cnlp/model
+ENTRYPOINT ["python3.9", "-m", "cnlpt.api.cnn_rest", "-p", "8000"]

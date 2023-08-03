@@ -27,7 +27,7 @@ import logging
 from time import time
 
 app = FastAPI()
-model_name = "tmills/cnlpt-negation-roberta-sharpseed"
+model_name = "mlml-chip/negation_pubmedbert_sharpseed"
 logger = logging.getLogger('Negation_REST_Processor')
 logger.setLevel(logging.DEBUG)
 
@@ -60,7 +60,7 @@ async def process(doc: EntityDocument):
         logger.debug('Instance string is %s' % (inst_str))
         instances.append(inst_str)
 
-    dataset = get_dataset(instances, app.state.tokenizer, [labels,], [task,], max_length)
+    dataset = get_dataset(instances, app.state.tokenizer, max_length)
     preproc_end = time()
 
 

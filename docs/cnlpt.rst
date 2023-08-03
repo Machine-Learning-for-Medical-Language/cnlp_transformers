@@ -19,7 +19,10 @@ Submodules
    cnlpt.BaselineModels
    cnlpt.CnlpModelForClassification
    cnlpt.HierarchicalTransformer
+   cnlpt.cnlp_args
    cnlpt.cnlp_data
+   cnlpt.cnlp_metrics
+   cnlpt.cnlp_predict
    cnlpt.cnlp_processors
    cnlpt.thyme_eval
    cnlpt.train_system

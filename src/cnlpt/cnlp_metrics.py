@@ -1,9 +1,11 @@
 import logging
+from typing import Set, Any, Dict
+
 import numpy as np
 from sklearn.metrics import matthews_corrcoef, f1_score, recall_score, precision_score, classification_report, accuracy_score
 from seqeval.metrics import f1_score as seq_f1, classification_report as seq_cls
 from .cnlp_processors import classification, mtl, tagging, relex
-
+from .cnlp_data import ClinicalNlpDataset
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +22,12 @@ def fix_np_types(input_variable):
     
     return input_variable
 
-def tagging_metrics(processor, preds, labels, task_name):
+def tagging_metrics(
+    label_set: Set[str],
+    preds: np.ndarray,
+    labels: np.ndarray,
+    task_name: str,
+) -> Dict[str, Any]:
     """
     One of the metrics functions for use in :func:`cnlp_compute_metrics`.
 
@@ -37,14 +44,12 @@ def tagging_metrics(processor, preds, labels, task_name):
             'report': seqeval classification report
         }
 
-    :param DataProcessor processor: the data processor that was used to read in the data files
-    :param numpy.ndarray preds: the predicted labels from the model
-    :param numpy.ndarray labels: the true labels
-    :rtype: typing.Dict[str, typing.Any]
+    :param label_set: The set of labels for this task
+    :param preds: the predicted labels from the model
+    :param labels: the true labels
+    :param task_name: the name of the relevant task (unused)
     :return: a dictionary containing evaluation metrics
     """
-    label_set = processor.get_labels()[task_name]
-
     preds = preds.flatten()
     labels = labels.flatten().astype('int')
 
@@ -62,7 +67,12 @@ def tagging_metrics(processor, preds, labels, task_name):
 
     return {'acc': acc, 'token_f1': fix_np_types(f1), 'f1': fix_np_types(seq_f1([label_seq], [pred_seq])), 'report':'\n'+seq_cls([label_seq], [pred_seq])}
 
-def relation_metrics(processor, preds, labels, task_name):
+def relation_metrics(
+    label_set: Set[str],
+    preds: np.ndarray,
+    labels: np.ndarray,
+    task_name: str,
+) -> Dict[str, Any]:
     """
     One of the metrics functions for use in :func:`cnlp_compute_metrics`.
 
@@ -79,14 +89,12 @@ def relation_metrics(processor, preds, labels, task_name):
             'precision': precision
         }
 
-    :param DataProcessor processor: the data processor that was used to read in the data files
-    :param numpy.ndarray preds: the predicted labels from the model
-    :param numpy.ndarray labels: the true labels
-    :rtype: typing.Dict[str, typing.Any]
+    :param label_set: the set of labels for this task
+    :param preds: the predicted labels from the model
+    :param labels: the true labels
     :return: a dictionary containing evaluation metrics
     """
 
-    label_set = processor.get_labels()[task_name]
 
     # If we are using the attention-based relation extractor, many impossible pairs
     # are set to -100 so pytorch loss functions ignore them. We need to make sure the
@@ -106,7 +114,7 @@ def relation_metrics(processor, preds, labels, task_name):
 
     return {'f1': f1_scores, 'acc': acc, 'recall':fix_np_types(recall), 'precision':fix_np_types(precision), 'report_dict':report_dict, 'report_str':report_str }
 
-def acc_and_f1(preds, labels):
+def acc_and_f1(preds: np.ndarray, labels: np.ndarray) -> Dict[str, Any]:
     """
     One of the metrics functions for use in :func:`cnlp_compute_metrics`.
 
@@ -122,9 +130,8 @@ def acc_and_f1(preds, labels):
             'precision': precision
         }
 
-    :param numpy.ndarray preds: the predicted labels from the model
-    :param numpy.ndarray labels: the true labels
-    :rtype: typing.Dict[str, typing.Any]
+    :param preds: the predicted labels from the model
+    :param labels: the true labels
     :return: a dictionary containing evaluation metrics
     """
     acc = accuracy_score(y_pred=preds, y_true=labels)
@@ -140,7 +147,14 @@ def acc_and_f1(preds, labels):
         "precision": fix_np_types(precision)
     }
 
-def cnlp_compute_metrics(task_name, task_ind, preds, labels, processor, output_mode):
+
+def cnlp_compute_metrics(
+    task_name: str,
+    preds: np.ndarray,
+    labels: np.ndarray,
+    output_mode: str,
+    label_set: Set[str],
+) -> Dict[str, Any]:
     """
     Function that defines and computes the metrics used for each task.
 
@@ -149,20 +163,22 @@ def cnlp_compute_metrics(task_name, task_ind, preds, labels, processor, output_m
     If the new task is a simple classification task, a sensible default
     is defined; falling back on this will trigger a warning.
 
-    :param str task_name: the task name used to index into cnlp_processors
-    :param numpy.ndarray preds: the predicted labels from the model
-    :param numpy.ndarray labels: the true labels
-    :rtype: typing.Dict[str, typing.Any]
+    :param task_name: the task name used to index into cnlp_processors
+    :param preds: the predicted labels from the model
+    :param labels: the true labels
+    :param output_mode: the output mode of the classifier
+    :param label_set: the set of output label names for the classifier
     :return: a dictionary containing evaluation metrics
     """
+
     assert len(preds) == len(
         labels
     ), f"Predictions and labels have mismatched lengths {len(preds)} and {len(labels)}"
     if output_mode == classification:
         return acc_and_f1(preds=preds, labels=labels)
     elif output_mode == tagging:
-        return tagging_metrics(processor, preds=preds, labels=labels, task_name=task_name)
+        return tagging_metrics(label_set, preds=preds, labels=labels, task_name=task_name)
     elif output_mode == relex:
-        return relation_metrics(processor, preds=preds, labels=labels, task_name=task_name)
+        return relation_metrics(label_set, preds=preds, labels=labels, task_name=task_name)
     else:
         raise Exception('There is no metric defined for this task in function cnlp_compute_metrics()')

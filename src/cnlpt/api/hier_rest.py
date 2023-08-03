@@ -41,7 +41,7 @@ async def startup_event():
 @app.post("/hier/get_rep")
 async def get_representation(doc: UnannotatedDocument):
     instances = [doc.doc_text]
-    dataset = get_dataset(instances, app.state.tokenizer, label_lists=[], tasks=['fyler-pretraining'], max_length=8000, hier=True, chunk_len=200, num_chunks=40, insert_empty_chunk_at_beginning=False)
+    dataset = get_dataset(instances, app.state.tokenizer, max_length=16000, hier=True, chunk_len=200, num_chunks=80, insert_empty_chunk_at_beginning=False)
     result = app.state.model.forward(input_ids=torch.LongTensor(dataset['input_ids']).to('cuda'),
                                      token_type_ids=torch.LongTensor(dataset['token_type_ids']).to('cuda'),
                                      attention_mask = torch.LongTensor(dataset['attention_mask']).to('cuda'),
@@ -50,6 +50,19 @@ async def get_representation(doc: UnannotatedDocument):
     # Convert to a list so python can send it out
     hidden_states = result['hidden_states'].to('cpu').detach().numpy()[:,0,:].tolist()
     return {'reps': hidden_states[0]}
+
+@app.post("/hier/classify")
+async def classify(doc: UnannotatedDocument):
+    instances = [doc.doc_text]
+    dataset = get_dataset(instances, app.state.tokenizer, max_length=16000, hier=True, chunk_len=200, num_chunks=80, insert_empty_chunk_at_beginning=False)
+    result = app.state.model.forward(input_ids=torch.LongTensor(dataset['input_ids']).to('cuda'),
+                                     token_type_ids=torch.LongTensor(dataset['token_type_ids']).to('cuda'),
+                                     attention_mask = torch.LongTensor(dataset['attention_mask']).to('cuda'),
+                                     output_hidden_states=False)
+    
+    predictions = [int(torch.argmax(logits.to('cpu').detach()).numpy()) for logits in result['logits']]
+    labels = [list(app.state.model.label_dictionary.values())[0][x] for x in predictions]
+    return {'result': labels}
 
 def rest():
     import argparse

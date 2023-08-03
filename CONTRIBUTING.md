@@ -110,7 +110,7 @@ AND the changes are in any of the following:
 You can see the structure of these test runs in the 
 [**Actions**](https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers/actions) 
 tab of this repository. In short, they will build and test the project
-on Python 3.7, 3.8, 3.9, and 3.10; these will always run at least on 
+on Python 3.8, 3.9, and 3.10; these will always run at least on 
 Linux, and in the case of commits or pull requests targeting `main`,
 they will run on Linux, macOS, and Windows.
 
@@ -173,7 +173,7 @@ version, and the API is not considered stable.
 1. Checkout the merge commit for the new version; this will usually
    be the latest commit in `main`.
 
-2. Increment the version number in `src/cnlpt/VERSION` from the 
+2. Increment the version number in `src/cnlpt/__init__.py:__version__` from the 
    previous version on PyPI.
 
 3. Delete the contents of the `./dist/` directory if it exists.

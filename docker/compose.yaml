@@ -19,3 +19,4 @@ services:
           devices:
             - capabilities: [gpu]
     entrypoint: cnlpt_negation_rest -p 8000
+
