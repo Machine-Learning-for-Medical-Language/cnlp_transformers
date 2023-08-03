@@ -3,16 +3,13 @@ from transformers import (
     AutoConfig,
     AutoModel,
     AutoTokenizer,
-    HfArgumentParser,
-    TrainingArguments,
 )
 from cnlpt.CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
+from cnlpt.HierarchicalTransformer import HierarchicalModel
+from cnlpt.train_system import is_hub_model
 
 def pre_initialize_cnlpt_model(model_name, cuda=True, batch_size=8):
     args = ['--output_dir', 'save_run/', '--per_device_eval_batch_size', str(batch_size), '--do_predict', '--report_to', 'none']
-    #parser = HfArgumentParser((TrainingArguments,))
-    #training_args, = parser.parse_args_into_dataclasses(args=args)
-
 
     AutoConfig.register("cnlpt", CnlpConfig)
     AutoModel.register(CnlpConfig, CnlpModelForClassification)
@@ -25,17 +22,39 @@ def pre_initialize_cnlpt_model(model_name, cuda=True, batch_size=8):
     print('fetching pretrained models')
     model = CnlpModelForClassification.from_pretrained(model_name, cache_dir=os.getenv('HF_CACHE'), config=config)
 
+def pre_initialize_hier_model(model_name, cuda=True, batch_size=8):
+    AutoConfig.register("cnlpt", CnlpConfig)
+    AutoModel.register(CnlpConfig, HierarchicalModel)
+
+    print('initializing ' +model_name)
+    print('fetching pretrained configs')
+    config = AutoConfig.from_pretrained(model_name)
+    print('fetching pretrained tokens')
+    tokenizer = AutoTokenizer.from_pretrained(model_name, config=config)
+    print('fetching pretrained models')
+    model = HierarchicalModel.from_pretrained(model_name, cache_dir=os.getenv('HF_CACHE'), config=config)
+
+def current():
+  pre_initialize_cnlpt_model("mlml-chip/current-thyme")
+
 def dtr():
   pre_initialize_cnlpt_model("tmills/tiny-dtr")
 
 def event():
-  pre_initialize_cnlpt_model("tmills/event-thyme-colon-pubmedbert")
+  pre_initialize_cnlpt_model("tmills/event-thyme-colon")
 
 def negation():
-  pre_initialize_cnlpt_model("tmills/cnlpt-negation-roberta-sharpseed")
+  pre_initialize_cnlpt_model("mlml-chip/negation_pubmedbert_sharpseed")
+
+def termexists():
+  pre_initialize_cnlpt_model("mlml-chip/termexists_pubmedbert_ssm")
 
 def temporal():
-  pre_initialize_cnlpt_model("tmills/thyme1-e2e")
+  pre_initialize_cnlpt_model("mlml-chip/thyme2_colon_e2e")
 
 def timex():
-  pre_initialize_cnlpt_model("tmills/timex-thyme-colon-pubmedbert")
+  pre_initialize_cnlpt_model("tmills/timex-thyme-colon")
+
+def hier(model_dir):
+  if is_hub_model(model_dir):
+    pre_initialize_hier_model(model_dir)
