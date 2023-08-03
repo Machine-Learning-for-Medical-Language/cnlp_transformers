@@ -434,8 +434,9 @@ def main(
                         if training_args.do_train:
                             trainer.save_model()
                             tokenizer.save_pretrained(training_args.output_dir)
-                            with open(os.path.join(training_args.output_dir, 'config.json'), 'w') as f:
-                                json.dump(model_args.to_dict(), f)
+                            if model_name == 'cnn' or model_name == 'lstm':
+                                with open(os.path.join(training_args.output_dir, 'config.json'), 'w') as f:
+                                    json.dump(model_args.to_dict(), f)
                         for task_ind,task_name in enumerate(metrics):
                             with open(output_eval_file, "w") as writer:
                                 # logger.info("***** Eval results for task %s *****" % (task_name))
@@ -474,8 +475,9 @@ def main(
             if trainer.is_world_process_zero():
                 trainer.save_model()
                 tokenizer.save_pretrained(training_args.output_dir)
-                with open(os.path.join(training_args.output_dir, 'config.json'), 'w') as f:
-                    json.dump(model_args, f)
+                if model_name == 'cnn' or model_name == 'lstm':
+                    with open(os.path.join(training_args.output_dir, 'config.json'), 'w') as f:
+                        json.dump(model_args, f)
 
     # Evaluation
     eval_results = {}
