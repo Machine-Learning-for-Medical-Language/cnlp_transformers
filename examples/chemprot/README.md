@@ -5,7 +5,7 @@
 
 2. Unzip the folder and each of the contents in the folder. Make sure that each folder starts with `chemprot_`. For example, train data folder should have a name of `chemprot_training`.
 
-3. Run ```pip install scispacy https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.1/en_core_sci_sm-0.5.1.tar.gz``` to get dependencies for the preprocessing tokenization and sentence splitting.
+3. Run ```pip install -r chemprot_requirements.txt``` to get dependencies for the preprocessing tokenization and sentence splitting.
 
 4. Preprocess the data with ```python -m cnlpt.data.transform_prot data/ChemProt_Corpus/ data/scispacy_chemprot/ chemprot```.  Note, this only gives us {train,dev}.tsv in `data/scispacy_chemprot` since there are no gold labels for the test data.
 
