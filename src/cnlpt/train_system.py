@@ -40,6 +40,8 @@ from torch.optim import AdamW
 from transformers.file_utils import CONFIG_NAME
 from huggingface_hub import hf_hub_url
 
+import sys
+sys.path.append(os.path.join(os.getcwd()))
 from .cnlp_processors import tagging, relex, classification
 from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
 from .cnlp_metrics import cnlp_compute_metrics
@@ -56,6 +58,7 @@ from transformers import (
     Trainer,
     set_seed,
 )
+import json
 
 AutoConfig.register("cnlpt", CnlpConfig)
 
@@ -431,6 +434,8 @@ def main(
                         if training_args.do_train:
                             trainer.save_model()
                             tokenizer.save_pretrained(training_args.output_dir)
+                            with open(os.path.join(training_args.output_dir, 'config.json'), 'w') as f:
+                                json.dump(model_args.to_dict(), f)
                         for task_ind,task_name in enumerate(metrics):
                             with open(output_eval_file, "w") as writer:
                                 # logger.info("***** Eval results for task %s *****" % (task_name))
@@ -469,6 +474,8 @@ def main(
             if trainer.is_world_process_zero():
                 trainer.save_model()
                 tokenizer.save_pretrained(training_args.output_dir)
+                with open(os.path.join(training_args.output_dir, 'config.json'), 'w') as f:
+                    json.dump(model_args, f)
 
     # Evaluation
     eval_results = {}
@@ -493,7 +500,16 @@ def main(
                     writer.write("%s = %s\n" % (key, value))
 
             # here we probably want separate predictions for each dataset:
-            
+            if training_args.load_best_model_at_end:
+                model.load_state_dict(torch.load(join(training_args.output_dir, 'pytorch_model.bin')))  # load best model
+                trainer = Trainer(  # maake trainer from best model
+                    model=model,
+                    args=training_args,
+                    train_dataset=dataset.processed_dataset.get('train', None),
+                    eval_dataset=dataset.processed_dataset.get('validation', None),
+                    compute_metrics=build_compute_metrics_fn(task_names, model, dataset),
+                ) 
+                # use trainer to predict 
             for dataset_ind,dataset_path in enumerate(data_args.data_dir):
                 subdir = os.path.split(dataset_path.rstrip('/'))[1]
                 output_eval_predictions_file = os.path.join(training_args.output_dir, f'eval_predictions_%s_%d.txt' % (subdir, dataset_ind))

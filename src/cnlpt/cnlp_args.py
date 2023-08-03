@@ -3,7 +3,8 @@ Module containing the CNLP command line argument definitions
 """
 
 from typing import Callable, Dict, Optional, List, Union, Any
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
+from enum import Enum
 from transformers import TrainingArguments
 
 @dataclass
@@ -163,3 +164,16 @@ class ModelArguments:
                     "document-level transformer layers"
         }
     )
+    def to_dict(self):
+        # adapted from transformers.TrainingArguments.to_dict()
+        # filter out fields that are defined as field(init=False)
+        d = {field.name: getattr(self, field.name) for field in fields(self) if field.init}
+
+        for k, v in d.items():
+            if isinstance(v, Enum):
+                d[k] = v.value
+            if isinstance(v, list) and len(v) > 0 and isinstance(v[0], Enum):
+                d[k] = [x.value for x in v]
+            if k.endswith("_token"):
+                d[k] = f"<{k.upper()}>"
+        return d
