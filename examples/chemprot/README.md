@@ -1,4 +1,6 @@
 ### Fine-tuning for tagging: End-to-end example
+> Note: this example is not runnable on ARM platforms, and is only tested on x86_64 platforms.
+
 1. Download the data from the [ChemProt website](https://biocreative.bioinformatics.udel.edu/news/corpora/chemprot-corpus-biocreative-vi/) to ``data`` folder.  Note, the evaluation on the data will approximate since it is done in terms of the preprocessed data, *not* ChemProt's specified evaluation method.
 
 2. Unzip the folder and each of the contents in the folder. Make sure that each folder starts with `chemprot_`. For example, train data folder should have a name of `chemprot_training`.
