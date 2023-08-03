@@ -198,7 +198,7 @@ version, and the API is not considered stable.
    4. Type the new version number in the format “vX.Y.Z” in the “Find or
       create a new tag” field, and click “+ Create new tag: vX.Y.Z on publish”
    5. Click “Generate release notes” and edit as necessary
-   6. Make sure “Set as latest release is checked”
+   6. Make sure “Set as latest release” is checked
    7. Click "Publish"
 
 ### Building the documentation
