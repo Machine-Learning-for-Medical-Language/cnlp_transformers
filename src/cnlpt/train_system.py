@@ -140,6 +140,18 @@ def main(
             f"Output directory ({training_args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overcome."
         )
 
+    model_name = model_args.model
+    hierarchical = model_name == 'hier'
+
+    if (
+        hierarchical
+        and (model_args.keep_existing_classifiers == model_args.ignore_existing_classifers) # XNOR
+    ):
+        raise ValueError(
+            "For hierarchical model, one of --keep_existing_classifiers or "
+            "--keep_existing_classifiers flags should be selected."
+        )
+
     # Setup logging
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
@@ -168,9 +180,6 @@ def main(
         add_prefix_space=True,
         additional_special_tokens=['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>', '<neg>']
     )
-
-    model_name = model_args.model
-    hierarchical = model_name == 'hier'
 
     # Get datasets
     dataset = (
@@ -263,7 +272,8 @@ def main(
             config.finetuning_task = data_args.task_name
             config.relations = relations
             config.tagger = tagger
-            config.label_dictionary = {} # this gets filled in later
+            if model_args.ignore_existing_classifers:
+                config.label_dictionary = {} # this gets filled in later
 
             ## TODO: check if user overwrote parameters in command line that could change behavior of the model and warn
             #if data_args.chunk_len is not None:
@@ -271,9 +281,11 @@ def main(
             logger.info("Loading pre-trained hierarchical model...")
             model = AutoModel.from_pretrained(encoder_name, config=config)
 
-            model.remove_task_classifiers()
-            for task in data_args.task_name:
-                model.add_task_classifier(task, dataset.get_labels()[task])
+            import pdb;pdb.set_trace()
+            if model_args.ignore_existing_classifers:
+                model.remove_task_classifiers()
+                for task in data_args.task_name:
+                    model.add_task_classifier(task, dataset.get_labels()[task])
             model.set_class_weights(dataset.class_weights)
 
     else:
