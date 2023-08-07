@@ -172,7 +172,6 @@ def main(
     # Set seed
     set_seed(training_args.seed)
 
-
     # Load tokenizer: Need this first for loading the datasets
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.encoder_name,
@@ -281,7 +280,6 @@ def main(
             logger.info("Loading pre-trained hierarchical model...")
             model = AutoModel.from_pretrained(encoder_name, config=config)
 
-            import pdb;pdb.set_trace()
             if model_args.ignore_existing_classifers:
                 model.remove_task_classifiers()
                 for task in data_args.task_name:
