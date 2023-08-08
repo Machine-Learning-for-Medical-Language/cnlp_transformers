@@ -268,11 +268,22 @@ def main(
                     cache_dir=model_args.cache_dir,
                     layer=model_args.layer
                 )
-            config.finetuning_task = data_args.task_name
-            config.relations = relations
-            config.tagger = tagger
             if model_args.ignore_existing_classifers:
+                config.finetuning_task = data_args.task_name
+                config.relations = relations
+                config.tagger = tagger
                 config.label_dictionary = {} # this gets filled in later
+            elif model_args.keep_existing_classifiers:
+                if (
+                    config.finetuning_task != data_args.task_name
+                    or config.relations != relations
+                    or config.tagger != tagger):
+                    import pdb;pdb.set_trace()
+                    raise ValueError(
+                        "When --keep_existing_classifiers selected, please ensure"
+                        "that you set the settings the same as those used in the"
+                        "previous training run."
+                    )
 
             ## TODO: check if user overwrote parameters in command line that could change behavior of the model and warn
             #if data_args.chunk_len is not None:
