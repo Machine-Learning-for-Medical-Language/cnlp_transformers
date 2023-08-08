@@ -149,7 +149,7 @@ def main(
     ):
         raise ValueError(
             "For hierarchical model, one of --keep_existing_classifiers or "
-            "--keep_existing_classifiers flags should be selected."
+            "--ignore_existing_classifers flags should be selected."
         )
 
     # Setup logging
