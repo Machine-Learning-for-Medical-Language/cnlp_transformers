@@ -164,6 +164,25 @@ class ModelArguments:
                     "document-level transformer layers"
         }
     )
+    keep_existing_classifiers: bool = field(
+        default=False, 
+        metadata={
+            "help": (
+                "For the hierarchical model, load classifier weights from "
+                "the saved checkpoint. For inference of the trained model or "
+                "continued fine-tuning."
+            )
+        },
+    )
+    ignore_existing_classifers: bool = field(
+        default=False, 
+        metadata={
+            "help": (
+                "For the hierarchical model, ignore classifier weights "
+                "from the saved checkpoint. The weights will be initialized."
+            )
+        },
+    )
     def to_dict(self):
         # adapted from transformers.TrainingArguments.to_dict()
         # filter out fields that are defined as field(init=False)
