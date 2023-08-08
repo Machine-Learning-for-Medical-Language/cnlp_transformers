@@ -278,7 +278,6 @@ def main(
                     config.finetuning_task != data_args.task_name
                     or config.relations != relations
                     or config.tagger != tagger):
-                    import pdb;pdb.set_trace()
                     raise ValueError(
                         "When --keep_existing_classifiers selected, please ensure"
                         "that you set the settings the same as those used in the"
