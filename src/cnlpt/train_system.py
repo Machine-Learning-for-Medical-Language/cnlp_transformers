@@ -81,20 +81,7 @@ eval_state = defaultdict(lambda: -1)
 
 # For debugging early stopping logging
 class EvalCallback(TrainerCallback):
-    """ """
-
     def on_evaluate(self, args, state, control, **kwargs):
-        """
-
-        Args:
-          args:
-          state:
-          control:
-          **kwargs:
-
-        Returns:
-
-        """
         if state.is_world_process_zero:
             model_dict = {}
             if "model" in kwargs:
@@ -133,6 +120,22 @@ def is_hub_model(model_name: str) -> bool:
         pass
 
     return False
+
+
+def is_cnlpt_model(model_path: str) -> bool:
+    """
+    Infer whether a model path refers to a cnlpt
+    model checkpoint (if not, we assume it is an
+    encoder)
+    :param model_path: the path to the model
+    :return: whether the model is a cnlpt classifier model
+    """
+    encoder_config = AutoConfig.from_pretrained(model_path)
+    return encoder_config.model_type == "cnlpt"
+
+
+def encoder_inferred(model_name_or_path: str) -> bool:
+    return is_hub_model(model_name_or_path) or not is_cnlpt_model(model_name_or_path)
 
 
 def get_dataset_segment(
@@ -359,7 +362,6 @@ def main(
         cache_dir=model_args.cache_dir,
         hierarchical=hierarchical,
     )
-
 
     try:
         task_names = (
@@ -624,33 +626,8 @@ def main(
                 bias_fit=training_args.bias_fit,
             )
 
+    best_eval_results = None
     output_eval_file = os.path.join(training_args.output_dir, f"eval_results.txt")
-
-    if training_args.do_train:
-        # TODO: This assumes that if there are multiple training sets, they all have the same length, but
-        # in the future it would be nice to be able to have multiple heterogeneous datasets
-        batches_per_epoch = math.ceil(
-            dataset.num_train_instances / training_args.train_batch_size
-        )
-        total_steps = int(
-            training_args.num_train_epochs
-            * batches_per_epoch
-            // training_args.gradient_accumulation_steps
-        )
-
-        if training_args.evals_per_epoch > 0:
-            logger.warning(
-                "Overwriting the value of logging steps based on provided evals_per_epoch argument"
-            )
-            # steps per epoch factors in gradient accumulation steps (as compared to batches_per_epoch above which doesn't)
-            steps_per_epoch = int(total_steps // training_args.num_train_epochs)
-            training_args.eval_steps = steps_per_epoch // training_args.evals_per_epoch
-            training_args.evaluation_strategy = IntervalStrategy.STEPS
-            # This will save model per epoch
-            # training_args.save_strategy = IntervalStrategy.EPOCH
-        elif training_args.do_eval:
-            logger.info("Evaluation strategy not specified so evaluating every epoch")
-            training_args.evaluation_strategy = IntervalStrategy.EPOCH
 
     current_prediction_packet = deque()
 
@@ -679,6 +656,8 @@ def main(
                 )
                 task_label_ind += pad
 
+                task_label_to_label_packet[task_name] = (preds, labels)
+
                 metrics[task_name] = cnlp_compute_metrics(
                     task_name,
                     preds,
@@ -686,9 +665,6 @@ def main(
                     dataset.output_modes[task_name],
                     dataset.tasks_to_labels[task_name],
                 )
-
-                task_label_to_label_packet[task_name] = (preds, labels)
-
                 # FIXME - Defaulting to accuracy for model selection score, when it should be task-specific
                 if training_args.model_selection_score is not None:
                     score = metrics[task_name].get(
@@ -777,6 +753,7 @@ def main(
                                 task_label_to_boundaries,
                             )
                         )
+
             return metrics
 
         return compute_metrics_fn
@@ -909,8 +886,7 @@ def main(
                 raw_test_predictions = trainer.predict(
                     test_dataset=dataset_test_segment
                 )
-                print(tagger)
-                print(relations)
+
                 (
                     task_to_label_packet,
                     task_to_label_boundaries,
