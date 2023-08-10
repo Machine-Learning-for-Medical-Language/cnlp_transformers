@@ -411,7 +411,7 @@ def _build_pytorch_representations(
     output_modes: Dict[str, str],
     num_instances: int,
     max_length: int,
-    label_lists: Union[Dict[str, List[str]], None],
+    label_lists: List[List[str]],
 ):
     """
     _build_pytorch_representations: Logic taken straight from _build_pytorch_labels for storing representations of
@@ -436,7 +436,7 @@ def _build_pytorch_representations(
 
     for task_ind, task in enumerate(tasks):
         encoded_labels = []
-        if output_modes is not None and output_modes[task] == tagging:
+        if output_modes[task] == tagging:
             for sent_ind in range(num_instances):
                 sent_labels = []
 
@@ -480,7 +480,7 @@ def _build_pytorch_representations(
 
                 encoded_labels.append(sent_labels)
             labels_out.append(encoded_labels)
-        elif output_modes is not None and output_modes[task] == classification:
+        elif output_modes[task] == classification:
             for inst_ind in range(num_instances):
                 if pad_classification:
                     padded_inst = np.zeros((max_length, 1)) - 100
@@ -507,12 +507,12 @@ def _build_pytorch_representations(
 def _build_pytorch_labels(
     result: BatchEncoding,
     tasks: List[str],
-    labels: list,
+    labels: List,
     output_modes: Dict[str, str],
     num_instances: int,
     max_length: int,
     label_lists: List[List[str]],
-) -> list:
+):
     """
     _build_pytorch_labels: we do two things here: map from labels in input space to ints in a softmax, and in a data
     structure that can contain multiple task types such that the Trainer class will be happy with, and then that
