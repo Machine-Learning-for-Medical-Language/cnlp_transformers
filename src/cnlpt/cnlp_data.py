@@ -14,7 +14,6 @@ from transformers import BatchEncoding, InputExample
 from transformers.tokenization_utils import PreTrainedTokenizer
 from datasets import Features
 from dataclasses import dataclass, field, asdict, astuple
-from itertools import product
 import datasets
 from enum import Enum
 
@@ -25,6 +24,10 @@ text_columns = ["text", "text_a", "text_b"]
 none_column = "__None__"
 
 logger = logging.getLogger(__name__)
+
+
+def list_field(default=None, metadata=None):
+    return field(default_factory=lambda: default, metadata=metadata)
 
 
 class Split(Enum):
@@ -405,6 +408,11 @@ def cnlp_preprocess_data(
     return result
 
 
+# essentially non-gold-label dependent version of
+# _build_pytorch_labels, so that we can recover in
+# a tokenizer independent way what's a wordpiece or what isn't,
+# thought to split it off here to avoid decorating
+# _build...labels with a ton of conditionals
 def _build_pytorch_representations(
     result: BatchEncoding,
     tasks: List[str],
@@ -426,12 +434,10 @@ def _build_pytorch_representations(
         and relex in output_modes.values()
         or tagging in output_modes.values()
     ):
-        # we have tagging as the highest dimensional output
         max_dims = 2
         if classification in output_modes.values():
             pad_classification = True
     else:
-        # classification only
         max_dims = 1
 
     for task_ind, task in enumerate(tasks):
@@ -462,7 +468,6 @@ def _build_pytorch_representations(
                 tokeni_to_wpi = {}
                 sent_labels = np.zeros((max_length, max_length)) - 100
 
-                ## align word-piece tokens to the tokenization we got as input and only assign labels to input tokens
                 previous_word_idx = None
                 for word_pos_idx, word_idx in enumerate(word_ids):
                     if word_idx != previous_word_idx and word_idx is not None:
@@ -472,13 +477,11 @@ def _build_pytorch_representations(
                         wpi_to_tokeni[key] = val
                         tokeni_to_wpi[val] = key
                     previous_word_idx = word_idx
-                # make every label beween pairs a 0 to start:
                 for wpi in wpi_to_tokeni.keys():
                     for wpi2 in wpi_to_tokeni.keys():
                         if wpi != wpi2:
                             sent_labels[wpi, wpi2] = label_lists[task].index("None")
 
-                encoded_labels.append(sent_labels)
             labels_out.append(encoded_labels)
         elif output_modes[task] == classification:
             for inst_ind in range(num_instances):
@@ -963,6 +966,7 @@ class ClinicalNlpDataset(Dataset):
         same-named tasks.
         """
         for task, output_mode in processor.get_output_modes().items():
+
             if task in self.output_modes:
                 # There is an existing task with this name
                 existing_output_mode = self.output_modes[task]
