@@ -238,10 +238,10 @@ def cnlp_convert_features_to_hierarchical(
 def cnlp_preprocess_data(
     examples: Dict[str, Union[List[str], List[int], List[float]]],
     tokenizer: PreTrainedTokenizer,
-    max_length: int,
+    max_length: Optional[int] = None,
     tasks: List[str] = None,
-    label_lists: Dict[str, List[str],
-    output_modes: Dict[str, str],
+    label_lists: Optional[Dict[str, List[str]]] = None,
+    output_modes: Optional[Dict[str, str]] = None,
     inference: bool = False,
     hierarchical: bool = False,
     chunk_len: int = -1,
@@ -380,7 +380,7 @@ def cnlp_preprocess_data(
         result["label"] = _build_pytorch_labels(
             result, tasks, labels, output_modes, num_instances, max_length, label_lists
         )
-    else:
+    elif not [x for x in (tasks, output_modes, max_length, label_lists) if x is None]:
         result["label"] = _build_pytorch_representations(
             result, tasks, output_modes, num_instances, max_length, label_lists
         )
