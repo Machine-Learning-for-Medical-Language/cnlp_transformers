@@ -384,37 +384,6 @@ def get_tagging_prints(
             for disagreements, instance in zip(disagreement_dicts, text_samples)
         ]
 
-        return f"Ground : {ground_string} Predicted : {predicted_string}"
-
-    ground_span_dictionaries = (
-        types2spans(ground_truth, torch_label)
-        for ground_truth, torch_label in zip(ground_truths, torch_labels)
-    )
-
-        return dict_to_str(type2spans, instance_tokens)
-        
-    pred_span_dictionaries = (
-        types2spans(pred, torch_label)
-        for pred, torch_label in zip(resolved_predictions, torch_labels)
-    )
-    if ground_truths is not None:
-        ground_span_dictionaries = (
-            types2spans(ground_truth, torch_label)
-            for ground_truth, torch_label in zip(ground_truths, torch_labels)
-        )
-        disagreement_dicts = (
-            dictmerge(ground_dictionary, pred_dictionary)
-            for ground_dictionary, pred_dictionary in zip(
-                ground_span_dictionaries, pred_span_dictionaries
-            )
-        )
-
-        # returning list instead of generator since pandas needs that
-        return [
-            get_error_out_string(disagreements, instance)
-            for disagreements, instance in zip(disagreement_dicts, text_samples)
-        ]
-
     return [
         get_pred_out_string(type_2_pred_spans, instance)
         for type_2_pred_spans, instance in zip(pred_span_dictionaries, text_samples)
