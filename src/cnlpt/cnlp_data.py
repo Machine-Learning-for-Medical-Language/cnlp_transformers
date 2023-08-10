@@ -381,16 +381,15 @@ def cnlp_preprocess_data(
             result, tasks, labels, output_modes, num_instances, max_length, label_lists
         )
     else:
-
         result["label"] = _build_pytorch_representations(
             result, tasks, output_modes, num_instances, max_length, label_lists
         )
-        result["event_mask"] = _build_event_mask(
-            result,
-            num_instances,
-            tokenizer.convert_tokens_to_ids("<e>"),
-            tokenizer.convert_tokens_to_ids("</e>"),
-        )
+    result["event_mask"] = _build_event_mask(
+        result,
+        num_instances,
+        tokenizer.convert_tokens_to_ids("<e>"),
+        tokenizer.convert_tokens_to_ids("</e>"),
+    )
 
     if hierarchical:
         result = cnlp_convert_features_to_hierarchical(
@@ -422,7 +421,11 @@ def _build_pytorch_representations(
     labels_out = []
 
     pad_classification = False
-    if relex in output_modes.values() or tagging in output_modes.values():
+    if (
+        output_modes is not None
+        and relex in output_modes.values()
+        or tagging in output_modes.values()
+    ):
         # we have tagging as the highest dimensional output
         max_dims = 2
         if classification in output_modes.values():
@@ -433,7 +436,7 @@ def _build_pytorch_representations(
 
     for task_ind, task in enumerate(tasks):
         encoded_labels = []
-        if output_modes[task] == tagging:
+        if output_modes is not None and output_modes[task] == tagging:
             for sent_ind in range(num_instances):
                 sent_labels = []
 
@@ -477,7 +480,7 @@ def _build_pytorch_representations(
 
                 encoded_labels.append(sent_labels)
             labels_out.append(encoded_labels)
-        elif output_modes[task] == classification:
+        elif output_modes is not None and output_modes[task] == classification:
             for inst_ind in range(num_instances):
                 if pad_classification:
                     padded_inst = np.zeros((max_length, 1)) - 100
