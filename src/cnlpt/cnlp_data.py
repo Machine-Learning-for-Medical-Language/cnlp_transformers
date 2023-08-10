@@ -243,10 +243,10 @@ def cnlp_convert_features_to_hierarchical(
 def cnlp_preprocess_data(
     examples: Dict[str, Union[List[str], List[int], List[float]]],
     tokenizer: PreTrainedTokenizer,
-    max_length: int,
+    max_length: Optional[int] = None,
     tasks: List[str] = None,
-    label_lists: Dict[str, List[str],
-    output_modes: Dict[str, str],
+    label_lists: Optional[Dict[str, List[str]]] = None,
+    output_modes: Optional[Dict[str, str]] = None,
     inference: bool = False,
     hierarchical: bool = False,
     chunk_len: int = -1,
