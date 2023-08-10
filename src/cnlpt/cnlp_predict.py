@@ -345,7 +345,7 @@ def get_tagging_prints(
         instance_tokens = [*filter(None, instance.split())]
 
         return dict_to_str(type2spans, instance_tokens)
-        
+
     pred_span_dictionaries = (
         types2spans(pred, torch_label)
         for pred, torch_label in zip(resolved_predictions, torch_labels)
@@ -377,13 +377,13 @@ def get_tagging_prints(
 def get_relex_prints(
     task_name: str,
     relex_labels: List[str],
-    ground_truths: Union[None, np.ndarray],  # List[str],
+    ground_truths: Union[None, np.ndarray],
     task_predictions: np.ndarray,
     torch_labels: np.ndarray,
 ) -> List[str]:
     Cell = Tuple[int, int, int]
 
-    resolved_predictions = task_predictions  # np.argmax(task_predictions, axis=3)
+    resolved_predictions = task_predictions
     none_index = relex_labels.index("None") if "None" in relex_labels else -1
 
     # thought we'd filtered them out but apparently not
@@ -417,12 +417,18 @@ def get_relex_prints(
         )
 
         # adding the diagonal back in...
-        final_reduced_matrix = np.array(
-            [
-                np.insert(row, row_idx, none_index, axis=0)
-                for row_idx, row in enumerate(reduced_matrix)
-            ]
+        final_reduced_matrix = (
+            np.array(
+                [
+                    np.insert(row, row_idx, none_index, axis=0)
+                    for row_idx, row in enumerate(reduced_matrix)
+                ]
+            )
+            if len(reduced_matrix) > 0
+            else np.zeros((1, 1)) + none_index
         )
+
+        assert final_reduced_matrix.shape[0] == final_reduced_matrix.shape[1]
         return invalid_inds, final_reduced_matrix
 
     def find_disagreements(
