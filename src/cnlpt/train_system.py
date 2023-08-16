@@ -140,6 +140,18 @@ def main(
             f"Output directory ({training_args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overcome."
         )
 
+    model_name = model_args.model
+    hierarchical = model_name == 'hier'
+
+    if (
+        hierarchical
+        and (model_args.keep_existing_classifiers == model_args.ignore_existing_classifers) # XNOR
+    ):
+        raise ValueError(
+            "For hierarchical model, one of --keep_existing_classifiers or "
+            "--ignore_existing_classifers flags should be selected."
+        )
+
     # Setup logging
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
@@ -160,7 +172,6 @@ def main(
     # Set seed
     set_seed(training_args.seed)
 
-
     # Load tokenizer: Need this first for loading the datasets
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.encoder_name,
@@ -168,9 +179,6 @@ def main(
         add_prefix_space=True,
         additional_special_tokens=['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>', '<neg>']
     )
-
-    model_name = model_args.model
-    hierarchical = model_name == 'hier'
 
     # Get datasets
     dataset = (
@@ -260,10 +268,21 @@ def main(
                     cache_dir=model_args.cache_dir,
                     layer=model_args.layer
                 )
-            config.finetuning_task = data_args.task_name
-            config.relations = relations
-            config.tagger = tagger
-            config.label_dictionary = {} # this gets filled in later
+            if model_args.ignore_existing_classifers:
+                config.finetuning_task = data_args.task_name
+                config.relations = relations
+                config.tagger = tagger
+                config.label_dictionary = {} # this gets filled in later
+            elif model_args.keep_existing_classifiers:
+                if (
+                    config.finetuning_task != data_args.task_name
+                    or config.relations != relations
+                    or config.tagger != tagger):
+                    raise ValueError(
+                        "When --keep_existing_classifiers selected, please ensure"
+                        "that you set the settings the same as those used in the"
+                        "previous training run."
+                    )
 
             ## TODO: check if user overwrote parameters in command line that could change behavior of the model and warn
             #if data_args.chunk_len is not None:
@@ -271,9 +290,10 @@ def main(
             logger.info("Loading pre-trained hierarchical model...")
             model = AutoModel.from_pretrained(encoder_name, config=config)
 
-            model.remove_task_classifiers()
-            for task in data_args.task_name:
-                model.add_task_classifier(task, dataset.get_labels()[task])
+            if model_args.ignore_existing_classifers:
+                model.remove_task_classifiers()
+                for task in data_args.task_name:
+                    model.add_task_classifier(task, dataset.get_labels()[task])
             model.set_class_weights(dataset.class_weights)
 
     else:
