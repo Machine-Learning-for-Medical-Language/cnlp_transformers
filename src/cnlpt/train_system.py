@@ -186,7 +186,7 @@ def main(
     )
 
     try:
-        task_names = data_args.task_name
+        task_names = data_args.task_name if data_args.task_name is not None else dataset.tasks
         num_labels = {}
         output_mode = {}
         tagger = {}
@@ -269,7 +269,7 @@ def main(
                     layer=model_args.layer
                 )
             if model_args.ignore_existing_classifers:
-                config.finetuning_task = data_args.task_name
+                config.finetuning_task = data_args.task_name if data_args.task_name is not None else dataset.tasks
                 config.relations = relations
                 config.tagger = tagger
                 config.label_dictionary = {} # this gets filled in later
@@ -367,7 +367,7 @@ def main(
             encoder_name = model_args.config_name if model_args.config_name else model_args.encoder_name
             config = CnlpConfig(
                 encoder_name=encoder_name,
-                finetuning_task=data_args.task_name,
+                finetuning_task=data_args.task_name if data_args.task_name is not None else dataset.tasks,
                 layer=model_args.layer,
                 tokens=model_args.token,
                 num_rel_attention_heads=model_args.num_rel_feats,
