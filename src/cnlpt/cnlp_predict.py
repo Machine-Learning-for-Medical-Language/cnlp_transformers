@@ -84,14 +84,14 @@ def write_predictions_and_probabilities_for_dataset(output_fn: str,
     with open(output_fn, 'w') as writer:
         eval_dataset = Dataset.from_dict(dataset.processed_dataset[split_name][start_ind:end_ind])
         predictions = trainer.predict(test_dataset=eval_dataset).predictions
-        import pdb;pdb.set_trace()
+        # predictions: num_tasks x num_samples x [logit for 0, logit for 1]
         for task_ind,task_name in enumerate(dataset.tasks):
             if output_mode[task_name] == classification:
                 task_predictions = predictions[task_ind]
-                for index, probs in enumerate(task_predictions):
-                    task_predictions = np.argmax(probs, axis=1)
+                for index, logits in enumerate(task_predictions):
+                    task_predictions = np.argmax(logits, axis=1)
                     item = task_labels[task_name][task_predictions]
-                    prob_value = probs[task_predictions]
+                    prob_value = logits[task_predictions]
                     writer.write("Task %d (%s) - Index %d - %s - %.6f\n" % (task_ind, task_name, index, item, prob_value))
             elif output_mode[task_name] == tagging:
                 raise NotImplementedError('Writing probablities of predictions is not implemented for this output_mode!')

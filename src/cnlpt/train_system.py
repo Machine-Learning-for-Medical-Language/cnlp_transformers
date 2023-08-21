@@ -556,8 +556,16 @@ def main(
             for dataset_ind, dataset_path in enumerate(data_args.data_dir):
                 subdir = os.path.split(dataset_path.rstrip('/'))[1]
                 output_test_predictions_file = os.path.join(training_args.output_dir, f'test_predictions_%s_%d.txt' % (subdir, dataset_ind))
-                #write_predictions_for_dataset(output_test_predictions_file, 
-                write_predictions_and_probabilities_for_dataset(output_test_predictions_file, 
+                if training_args.output_prob:
+                    write_predictions_and_probabilities_for_dataset(output_test_predictions_file, 
+                                                trainer,
+                                                dataset,
+                                                'test',
+                                                dataset_ind,
+                                                output_mode,
+                                                tokenizer)
+                else:
+                    write_predictions_for_dataset(output_test_predictions_file, 
                                                 trainer,
                                                 dataset,
                                                 'test',
