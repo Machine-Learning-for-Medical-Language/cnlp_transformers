@@ -174,7 +174,7 @@ class ModelArguments:
             )
         },
     )
-    ignore_existing_classifers: bool = field(
+    ignore_existing_classifiers: bool = field(
         default=False, 
         metadata={
             "help": (

@@ -143,15 +143,6 @@ def main(
     model_name = model_args.model
     hierarchical = model_name == 'hier'
 
-    if (
-        hierarchical
-        and (model_args.keep_existing_classifiers == model_args.ignore_existing_classifers) # XNOR
-    ):
-        raise ValueError(
-            "For hierarchical model, one of --keep_existing_classifiers or "
-            "--ignore_existing_classifers flags should be selected."
-        )
-
     # Setup logging
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
@@ -260,6 +251,13 @@ def main(
                 freeze=training_args.freeze,
             )
         else:
+            if (
+                hierarchical
+                and (model_args.keep_existing_classifiers == model_args.ignore_existing_classifiers) # XNOR
+            ):
+                raise ValueError(
+                    "For continued training of a cnlpt hierarchical model, one of --keep_existing_classifiers or --ignore_existing_classifiers flags should be selected."
+                )
             # use a checkpoint from an existing model
             AutoModel.register(CnlpConfig, HierarchicalModel)
 
