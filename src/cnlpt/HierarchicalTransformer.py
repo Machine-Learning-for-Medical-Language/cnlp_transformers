@@ -26,21 +26,6 @@ from .CnlpModelForClassification import (
 logger = logging.getLogger(__name__)
 
 
-def set_seed(seed, n_gpu):
-    """
-    Set the random seeds for ``random``, numpy, and pytorch to a specific value.
-
-    Args:
-        seed: the seed to use
-        n_gpu: the number of GPUs being used
-    """
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if n_gpu > 0:
-        torch.cuda.manual_seed_all(seed)
-
-
 @dataclass
 class HierarchicalSequenceClassifierOutput(SequenceClassifierOutput):
     chunk_attentions: Optional[Tuple[torch.FloatTensor]] = None
@@ -296,7 +281,7 @@ class HierarchicalModel(PreTrainedModel):
         self.label_dictionary = config.label_dictionary
         self.set_class_weights(class_weights)
 
-    def remove_task_classifiers(self, tasks=None):
+    def remove_task_classifiers(self, tasks: List[str] = None):
         if tasks is None:
             self.classifiers = nn.ModuleDict()
             self.tasks = []

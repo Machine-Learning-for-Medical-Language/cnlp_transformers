@@ -70,8 +70,12 @@ AutoConfig.register("cnlpt", CnlpConfig)
 logger = logging.getLogger(__name__)
 
 
-def is_hub_model(model_name):
-    # check if it's a model on the huggingface model hub:
+def is_hub_model(model_name: str) -> bool:
+    """
+    Check for whether a model specification string is on the huggingface model hub
+    :param model_name: the string to check
+    :return: whether the model is on the huggingface hub
+    """
     try:
         url = hf_hub_url(model_name, CONFIG_NAME)
         r = requests.head(url)
@@ -95,7 +99,13 @@ def is_cnlpt_model(model_path: str) -> bool:
     return encoder_config.model_type == "cnlpt"
 
 
-def encoder_inferred(model_name_or_path: str) -> bool:
+def is_external_encoder(model_name_or_path: str) -> bool:
+    """
+    Check whether a specified model is not a cnlpt model -- an external model like a
+    huggingface hub model or a downloaded local directory.
+    :param model_name_or_path: specified model
+    :return: whether the encoder is an external (non-cnlpt) model
+    """
     return is_hub_model(model_name_or_path) or not is_cnlpt_model(model_name_or_path)
 
 
@@ -258,7 +268,7 @@ def main(
             if model_args.config_name
             else model_args.encoder_name
         )
-        if encoder_inferred(encoder_name):
+        if is_external_encoder(encoder_name):
             config = CnlpConfig(
                 encoder_name=encoder_name,
                 finetuning_task=data_args.task_name
@@ -341,7 +351,7 @@ def main(
 
         # TODO check when download any pretrained language model to local disk, if
         # the following condition "is_hub_model(encoder_name)" works or not.
-        if not encoder_inferred(encoder_name):
+        if not is_external_encoder(encoder_name):
             # we are loading one of our own trained models as a starting point.
             #
             # 1) if training_args.do_train is true:
