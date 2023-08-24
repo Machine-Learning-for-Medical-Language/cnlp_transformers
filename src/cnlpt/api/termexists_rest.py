@@ -19,7 +19,12 @@ from pydantic import BaseModel
 
 from typing import List
 
-from .cnlp_rest import EntityDocument, create_instance_string, initialize_cnlpt_model, get_dataset
+from .cnlp_rest import (
+    EntityDocument,
+    create_instance_string,
+    initialize_cnlpt_model,
+    get_dataset,
+)
 import numpy as np
 
 import logging
@@ -27,26 +32,33 @@ from time import time
 
 app = FastAPI()
 model_name = "mlml-chip/sharpseed-termexists"
-logger = logging.getLogger('TermExists_REST_Processor')
+logger = logging.getLogger("TermExists_REST_Processor")
 logger.setLevel(logging.DEBUG)
 
-task = 'TermExists'
+task = "TermExists"
 labels = [-1, 1]
 
 max_length = 128
 
+
 class TermExistsResults(BaseModel):
-    ''' statuses: list of classifier outputs for every input'''
+    """statuses: list of classifier outputs for every input"""
+
     statuses: List[int]
+
 
 @app.on_event("startup")
 async def startup_event():
     initialize_cnlpt_model(app, model_name)
 
+
 @app.post("/termexists/process")
 async def process(doc: EntityDocument):
     doc_text = doc.doc_text
-    logger.warn('Received document of len %d to process with %d entities' % (len(doc_text), len(doc.entities)))
+    logger.warn(
+        "Received document of len %d to process with %d entities"
+        % (len(doc_text), len(doc.entities))
+    )
     instances = []
     start_time = time()
 
@@ -55,7 +67,7 @@ async def process(doc: EntityDocument):
 
     for ent_ind, offsets in enumerate(doc.entities):
         inst_str = create_instance_string(doc_text, offsets)
-        logger.debug('Instance string is %s' % (inst_str))
+        logger.debug("Instance string is %s" % (inst_str))
         instances.append(inst_str)
 
     dataset = get_dataset(instances, app.state.tokenizer, max_length)
@@ -79,20 +91,34 @@ async def process(doc: EntityDocument):
     pred_time = pred_end - preproc_end
     postproc_time = postproc_end - pred_end
 
-    logging.warn("Pre-processing time: %f, processing time: %f, post-processing time %f" % (preproc_time, pred_time, postproc_time))
-    
+    logging.warn(
+        "Pre-processing time: %f, processing time: %f, post-processing time %f"
+        % (preproc_time, pred_time, postproc_time)
+    )
+
     return output
+
 
 def rest():
     import argparse
 
-    parser = argparse.ArgumentParser(description='Run the http server for term exists')
-    parser.add_argument('-p', '--port', type=int, help='The port number to run the server on', default=8000)
+    parser = argparse.ArgumentParser(description="Run the http server for term exists")
+    parser.add_argument(
+        "-p",
+        "--port",
+        type=int,
+        help="The port number to run the server on",
+        default=8000,
+    )
 
     args = parser.parse_args()
 
     import uvicorn
-    uvicorn.run("cnlpt.api.termexists_rest:app", host='0.0.0.0', port=args.port, reload=True)
 
-if __name__ == '__main__':
+    uvicorn.run(
+        "cnlpt.api.termexists_rest:app", host="0.0.0.0", port=args.port, reload=True
+    )
+
+
+if __name__ == "__main__":
     rest()
