@@ -67,41 +67,41 @@ The main entry point for fine-tuning is the ```cnlp_transformers/src/cnlpt/train
 ### Workflow
 To use the library for fine-tuning, you'll need to take the following steps:
 1. Write your dataset to one of the following formats in a folder with train, dev, and test files:
-  1. csv or tsv: The first row should have column names separated by comma or tab. The name ```text``` has special meaning as the input string. Likewise if there are columns named ```text_a``` and ```text_b``` it will be interpreted as two parts of a transformer input string separated by a <sep>-token equivalent. All other columns are treated as potential targets -- their names can be passed to the ```train_system.py``` script as ```--task_name``` arguments. For tagging targets, the field must consist of space-delimited labels, one per space-delimited token in the ```text``` field. For relation extraction targets, the field must be a ``` , ``` delimited list of relation tuples, where each relation tuple is (<offset 1>, <offset 2>,label), where offset 1 and 2 are token indices into the space-delimited tokens in the ```text``` field.
-  2. json: The file format must be the following:
-  ```
-    { 'data': [
-        { 'text': <text of instance>,
-          'id': <instance id>
-          '<sub-task 1 name>': <instance label>,
-          '<sub-task 2 name>': <instance label>,
-          ... // other labels
-          }
-        { }, // instance 2
-        ...  // instances 3...N
-    ],
-      'metadata': {
-        'version': '<optional dataset versioning>',
-        'task': <overall task/dataset name>,
-        'subtasks': [
-          {
-            'task_name': '<sub-task 1 name>',
-            'output_mode': <sub-task output mode (e.g. tagging, relex, classification)>,
-          }
-          ...
-          {
-            'task_name': '<sub-task n name>'
-            'output_mode': <sub-task output mode (e.g. tagging, relex, classification)>,
-          }
-        ]
+   1. csv or tsv: The first row should have column names separated by comma or tab. The name ```text``` has special meaning as the input string. Likewise if there are columns named ```text_a``` and ```text_b``` it will be interpreted as two parts of a transformer input string separated by a <sep>-token equivalent. All other columns are treated as potential targets -- their names can be passed to the ```train_system.py``` script as ```--task_name``` arguments. For tagging targets, the field must consist of space-delimited labels, one per space-delimited token in the ```text``` field. For relation extraction targets, the field must be a ``` , ``` delimited list of relation tuples, where each relation tuple is (<offset 1>, <offset 2>,label), where offset 1 and 2 are token indices into the space-delimited tokens in the ```text``` field.
+   2. json: The file format must be the following:
+      ```
+      { 'data': [
+          { 'text': <text of instance>,
+            'id': <instance id>
+            '<sub-task 1 name>': <instance label>,
+            '<sub-task 2 name>': <instance label>,
+            ... // other labels
+            }
+          { }, // instance 2
+          ...  // instances 3...N
+      ],
+        'metadata': {
+          'version': '<optional dataset versioning>',
+          'task': <overall task/dataset name>,
+          'subtasks': [
+            {
+              'task_name': '<sub-task 1 name>',
+              'output_mode': <sub-task output mode (e.g. tagging, relex, classification)>,
+            }
+            ...
+            {
+              'task_name': '<sub-task n name>'
+              'output_mode': <sub-task output mode (e.g. tagging, relex, classification)>,
+            }
+          ]
+        }
       }
-    }
-``` 
-Instance labels should be formatted the same way as in the csv/tsv example above, see specifically the formats for tagging and relations. The 'metadata' field can either be included in the train/dev/test files or as a separate metadata.json file.
+      ``` 
+      Instance labels should be formatted the same way as in the csv/tsv example above, see specifically the formats for tagging and relations. The 'metadata' field can either be included in the train/dev/test files or as a separate metadata.json file.
 
 
 
-2. Run train_system.py with a ```--task_name``` from your data files and the ```--data-dir``` argument from Step 1.
+2. Run train_system.py with a ```--task_name``` from your data files and the ```--data-dir``` argument from Step 1. If no ```--task_name``` is provided, all tasks will be trained.
 
 
 ### Step-by-step finetuning examples
@@ -114,9 +114,10 @@ We provided the following step-by-step examples how to finetune in clinical NLP 
 
 ### Fine-tuning options
 Run ```python -m cnlpt.train_system -h``` to see all the available options. In addition to inherited Huggingface Transformers options, there are options to do the following:
-* Run simple baselines (use ``--model cnn --tokenizer_name roberta-base`` -- since there is no HF model then you must specify the tokenizer explicitly)
+* Select different models: ```--model hier``` uses a hierarchical transformer layer on top of a specified encoder model. We recommend using a very small encoder: ```--encoder microsoft/xtremedistil-l6-h256-uncased``` so that the full model fits into memory.
+* Run simple baselines (use ``--model cnn|lstm --tokenizer_name roberta-base`` -- since there is no HF model then you must specify the tokenizer explicitly)
 * Use a different layer's CLS token for the classification (e.g., ```--layer 10```)
-* Only update the weights of the classifier head and leave the encoder weights alone (```--freeze```)
+* Probabilistically freeze weights of the encoder (leaving classifier weights all unfrozen) (```--freeze``` alone freezes all encoder weights, ```--freeze <float>``` when given a parameter between 0 and 1, freezes that percentage of encoder weights)
 * Classify based on a token embedding instead of the CLS embedding (```--token``` -- applies to the event/entity classification setting only, and requires the input to have xml-style tags (<e>, </e>) around the tokens representing the event/entity)
 * Use class-weighted loss function (```--class_weights```)
 
