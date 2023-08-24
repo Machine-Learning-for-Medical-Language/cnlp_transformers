@@ -13,6 +13,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Optional, List, Union, Any, Set
 from transformers.data.processors.utils import DataProcessor, InputExample
+import datasets
 from datasets import load_dataset
 import torch
 from torch.utils.data.dataset import Dataset
@@ -29,7 +30,15 @@ tagging = "tagging"
 relex = "relations"
 
 
-def get_unique_labels(dataset, tasks, task_output_modes):
+def get_unique_labels(
+    dataset, tasks: List[str], task_output_modes: Dict[str, str]
+) -> Dict[str, List[str]]:
+    """
+    Return the set of unique labels defined in a dataset by iterating through the dataset.
+    :param tasks: List of tasks that the caller cares about
+    :param task_output_modes: Dictionary mapping from task names to task output mode
+    :return: Dictionary from task names to a list of unique labels for that task
+    """
     dataset_unique_labels = dict()
     for task_ind, task_name in enumerate(tasks):
         unique_labels = set()
@@ -68,7 +77,12 @@ def get_unique_labels(dataset, tasks, task_output_modes):
     return dataset_unique_labels
 
 
-def infer_output_modes(dataset):
+def infer_output_modes(dataset: datasets.DatasetDict) -> Dict[str, str]:
+    """
+    Figure out what output mode each task in the dataset requires by looking at the format of the labels.
+    :param dataset: HF datasets DatasetDict containing the loaded dataset
+    :return: Dictionary mapping from task names to output modes
+    """
     task_output_modes = {}
     for task_ind, task_name in enumerate(dataset.tasks):
         output_mode = classification
@@ -96,7 +110,12 @@ def infer_output_modes(dataset):
     return task_output_modes
 
 
-def get_task_pruned_dataset(dataset, tasks, unique_labels):
+def get_task_pruned_dataset(
+    dataset: datasets.DatasetDict, tasks: List[str], unique_labels: Dict[str, List[str]]
+) -> datasets.DatasetDict:
+    """
+    Remove tasks from the dataset that only have 1 unique label
+    """
     tasks_to_remove = []
     for task_ind, task_name in enumerate(tasks):
         if len(unique_labels[task_name]) == 1:
