@@ -13,7 +13,8 @@ def write_predictions_for_dataset(output_fn: str,
                                   split_name: str,
                                   dataset_ind: int, 
                                   output_mode: Dict[str, str], 
-                                  tokenizer: PreTrainedTokenizer):
+                                  tokenizer: PreTrainedTokenizer,
+                                  output_prob: bool = False):
 
     task_labels = dataset.get_labels()
     start_ind = end_ind = 0
@@ -25,11 +26,19 @@ def write_predictions_for_dataset(output_fn: str,
         eval_dataset = Dataset.from_dict(dataset.processed_dataset[split_name][start_ind:end_ind])
         predictions = trainer.predict(test_dataset=eval_dataset).predictions
         for task_ind,task_name in enumerate(dataset.tasks):
+            if output_prob and output_mode[task_name] != classification:
+                raise NotImplementedError('Writing predictions is not implemented for this output_mode!')
+
             if output_mode[task_name] == classification:
-                task_predictions = np.argmax(predictions[task_ind], axis=1)
-                for index, item in enumerate(task_predictions):
-                    item = task_labels[task_name][item]
-                    writer.write("Task %d (%s) - Index %d - %s\n" % (task_ind, task_name, index, item))
+                task_predictions = predictions[task_ind]
+                for index, logits in enumerate(task_predictions):
+                    task_prediction_idx = np.argmax(logits, axis=1)
+                    item = task_labels[task_name][task_prediction_idx]
+                    prob_value = logits[task_prediction_idx]
+                    if output_prob:
+                        writer.write("Task %d (%s) - Index %d - %s - %.6f\n" % (task_ind, task_name, index, item, prob_value))
+                    else:
+                        writer.write("Task %d (%s) - Index %d - %s\n" % (task_ind, task_name, index, item))
             elif output_mode[task_name] == tagging:
                 task_predictions = np.argmax(predictions[task_ind], axis=2)
                 tagging_labels = task_labels[task_name]
@@ -66,37 +75,3 @@ def write_predictions_for_dataset(output_fn: str,
             else:
                 raise NotImplementedError('Writing predictions is not implemented for this output_mode!')
 
-
-def write_predictions_and_probabilities_for_dataset(output_fn: str, 
-                                                    trainer: Trainer, 
-                                                    dataset: ClinicalNlpDataset, 
-                                                    split_name: str,
-                                                    dataset_ind: int, 
-                                                    output_mode: Dict[str, str], 
-                                                    tokenizer: PreTrainedTokenizer):
-
-    task_labels = dataset.get_labels()
-    start_ind = end_ind = 0
-    for ind in range(dataset_ind):
-        start_ind += len(dataset.datasets[ind][split_name])
-    end_ind = start_ind + len(dataset.datasets[dataset_ind][split_name])
-
-    with open(output_fn, 'w') as writer:
-        eval_dataset = Dataset.from_dict(dataset.processed_dataset[split_name][start_ind:end_ind])
-        predictions = trainer.predict(test_dataset=eval_dataset).predictions
-        # predictions: num_tasks x num_samples x [logit for 0, logit for 1]
-        for task_ind,task_name in enumerate(dataset.tasks):
-            if output_mode[task_name] == classification:
-                task_predictions = predictions[task_ind]
-                for index, logits in enumerate(task_predictions):
-                    task_predictions = np.argmax(logits, axis=1)
-                    item = task_labels[task_name][task_predictions]
-                    prob_value = logits[task_predictions]
-                    writer.write("Task %d (%s) - Index %d - %s - %.6f\n" % (task_ind, task_name, index, item, prob_value))
-            elif output_mode[task_name] == tagging:
-                raise NotImplementedError('Writing probablities of predictions is not implemented for this output_mode!')
-            elif output_mode[task_name] == relex:
-                raise NotImplementedError('Writing probablities of predictions is not implemented for this output_mode!')
-            else:
-                raise NotImplementedError('Writing probablities of predictions is not implemented for this output_mode!')
- 
