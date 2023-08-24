@@ -42,6 +42,12 @@ class CnlpTrainingArguments(TrainingArguments):
             "help": "Only optimize the bias parameters of the encoder (and the weights of the classifier heads), as proposed in the BitFit paper by Ben Zaken et al. 2021 (https://arxiv.org/abs/2106.10199)"
         },
     )
+    output_prob: Optional[bool] = field(
+        default=False,
+        metadata={
+            "help": "If selected, probability scores will be added to the output prediction file for test data."
+        },
+    )
 
 
 cnlpt_models = ["cnn", "lstm", "hier", "cnlpt"]
