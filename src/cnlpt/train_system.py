@@ -652,7 +652,7 @@ def main(
                     dataset_ind,
                     output_mode,
                     tokenizer,
-                    output_prob=training_args.output_prob
+                    output_prob=training_args.output_prob,
                 )
 
     return eval_results

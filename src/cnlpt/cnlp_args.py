@@ -43,10 +43,15 @@ class CnlpTrainingArguments(TrainingArguments):
         },
     )
     output_prob: Optional[bool] = field(
-        default=False, metadata={"help": "If selected, probability scores will be added to the output prediction file for test data."}
+        default=False,
+        metadata={
+            "help": "If selected, probability scores will be added to the output prediction file for test data."
+        },
     )
-    
-cnlpt_models = ['cnn', 'lstm', 'hier', 'cnlpt']
+
+
+cnlpt_models = ["cnn", "lstm", "hier", "cnlpt"]
+
 
 @dataclass
 class ModelArguments:
