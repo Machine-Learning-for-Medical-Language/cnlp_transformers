@@ -1,26 +1,26 @@
 """
 Module containing the Hierarchical Transformer module, adapted from Xin Su.
 """
-import logging
 import copy
+import logging
 import random
-from typing import Optional, List, cast, Dict, Tuple
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple, cast
 
 import numpy as np
-from torch import nn
-import torch.nn.functional as F
 import torch
+import torch.nn.functional as F
+from torch import nn
 from torch.nn import CrossEntropyLoss
-from dataclasses import dataclass
+from transformers import AutoConfig, AutoModel
 from transformers.modeling_outputs import SequenceClassifierOutput
 from transformers.modeling_utils import PreTrainedModel
-from transformers import AutoModel, AutoConfig
 
 from .CnlpModelForClassification import (
-    CnlpConfig,
     ClassificationHead,
-    generalize_encoder_forward_kwargs,
+    CnlpConfig,
     freeze_encoder_weights,
+    generalize_encoder_forward_kwargs,
 )
 
 logger = logging.getLogger(__name__)

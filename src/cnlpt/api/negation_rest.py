@@ -14,22 +14,21 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import logging
+from time import time
+from typing import Dict, List, Tuple
+
+import numpy as np
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from typing import List, Tuple, Dict
-
+from ..CnlpModelForClassification import CnlpConfig, CnlpModelForClassification
 from .cnlp_rest import (
     EntityDocument,
     create_instance_string,
-    initialize_cnlpt_model,
     get_dataset,
+    initialize_cnlpt_model,
 )
-from ..CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
-import numpy as np
-
-import logging
-from time import time
 
 app = FastAPI()
 model_name = "mlml-chip/negation_pubmedbert_sharpseed"

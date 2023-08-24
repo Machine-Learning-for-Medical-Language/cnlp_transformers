@@ -1,11 +1,12 @@
-import numpy as np
-
-from datasets import Dataset
-from transformers import Trainer, PreTrainedTokenizer
-from .cnlp_processors import tagging, relex, classification
-from .cnlp_data import ClinicalNlpDataset
-from seqeval.metrics.sequence_labeling import get_entities
 from typing import Dict
+
+import numpy as np
+from datasets import Dataset
+from seqeval.metrics.sequence_labeling import get_entities
+from transformers import PreTrainedTokenizer, Trainer
+
+from .cnlp_data import ClinicalNlpDataset
+from .cnlp_processors import classification, relex, tagging
 
 
 def write_predictions_for_dataset(

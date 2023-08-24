@@ -14,20 +14,19 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from fastapi import FastAPI
-
+import json
 import logging
 import os
-from os.path import join
 import sys
-import json
+from os.path import join
 
-from transformers import AutoTokenizer, Trainer
-import torch
 import numpy as np
+import torch
+from fastapi import FastAPI
+from transformers import AutoTokenizer, Trainer
 
-from .cnlp_rest import UnannotatedDocument, get_dataset
 from ..BaselineModels import CnnSentenceClassifier
+from .cnlp_rest import UnannotatedDocument, get_dataset
 
 app = FastAPI()
 model_name = os.getenv("MODEL_PATH")

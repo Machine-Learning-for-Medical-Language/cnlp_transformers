@@ -3,23 +3,23 @@ Module containing auto processor class, which infers labels, task type, and outp
 modes for tasks and datasets that use a few conventional formats.
 
 """
+import json
+import logging
 import os
 import random
-from os.path import basename, dirname, join
 import time
-import logging
-import json
-
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Optional, List, Union, Any, Set
-from transformers.data.processors.utils import DataProcessor, InputExample
-from datasets import load_dataset
-import torch
-from torch.utils.data.dataset import Dataset
-from transformers.tokenization_utils import PreTrainedTokenizer
-import numpy as np
+from os.path import basename, dirname, join
+from typing import Any, Callable, Dict, List, Optional, Set, Union
+
 import numpy  # for Sphinx
+import numpy as np
+import torch
+from datasets import load_dataset
+from torch.utils.data.dataset import Dataset
 from tqdm import tqdm
+from transformers.data.processors.utils import DataProcessor, InputExample
+from transformers.tokenization_utils import PreTrainedTokenizer
 
 logger = logging.getLogger(__name__)
 

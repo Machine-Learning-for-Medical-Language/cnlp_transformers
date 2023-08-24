@@ -1,23 +1,22 @@
-import os
-from os.path import basename, dirname
-import time
-import logging
 import json
+import logging
+import os
+import time
+from dataclasses import asdict, astuple, dataclass, field
+from enum import Enum
+from os.path import basename, dirname
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
-from filelock import FileLock
-from typing import Callable, Dict, Optional, List, Union, Tuple
-
+import datasets
 import numpy as np
 import torch
+from datasets import Features
+from filelock import FileLock
 from torch.utils.data.dataset import Dataset
 from transformers import BatchEncoding, InputExample
 from transformers.tokenization_utils import PreTrainedTokenizer
-from datasets import Features
-from dataclasses import dataclass, field, asdict, astuple
-import datasets
-from enum import Enum
 
-from .cnlp_processors import classification, tagging, relex, mtl, AutoProcessor
+from .cnlp_processors import AutoProcessor, classification, mtl, relex, tagging
 
 special_tokens = ["<e>", "</e>", "<a1>", "</a1>", "<a2>", "</a2>", "<cr>", "<neg>"]
 text_columns = ["text", "text_a", "text_b"]
