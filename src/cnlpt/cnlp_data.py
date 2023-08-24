@@ -1,6 +1,7 @@
 import os
 from os.path import basename, dirname
 import time
+import functools
 import logging
 import json
 
@@ -11,12 +12,14 @@ import numpy as np
 import torch
 from torch.utils.data.dataset import Dataset
 from transformers import BatchEncoding, InputExample
+from transformers import DataCollatorForLanguageModeling
 from transformers.tokenization_utils import PreTrainedTokenizer
-from datasets import Features
+from datasets import Features, DatasetDict, IterableDatasetDict
 from dataclasses import dataclass, field, asdict, astuple
 import datasets
 from enum import Enum
 
+from .cnlp_args import DaptArguments
 from .cnlp_processors import classification, tagging, relex, mtl, AutoProcessor
 
 special_tokens = ["<e>", "</e>", "<a1>", "</a1>", "<a2>", "</a2>", "<cr>", "<neg>"]
@@ -927,3 +930,80 @@ class ClinicalNlpDataset(Dataset):
         :return: the dictionary of label lists indexed by task name
         """
         return self.tasks_to_labels
+
+
+def group_texts(chunk_size, examples):
+    # Concatenate all texts
+    concatenated_examples = {k: sum(examples[k], []) for k in examples.keys()}
+    # Compute length of concatenated texts
+    total_length = len(concatenated_examples[list(examples.keys())[0]])
+    # We drop the last chunk if it's smaller than chunk_size
+    total_length = (total_length // chunk_size) * chunk_size
+    # Split by chunks of max_len
+    result = {
+        k: [t[i : i + chunk_size] for i in range(0, total_length, chunk_size)]
+        for k, t in concatenated_examples.items()
+    }
+    # Create a new labels column
+    result["labels"] = result["input_ids"].copy()
+    return result
+
+
+def tokenize_fn(tokenizer, examples):
+    result = tokenizer(examples["text"])
+    if tokenizer.is_fast:
+        result["word_ids"] = [
+            result.word_ids(i) for i in range(len(result["input_ids"]))
+        ]
+    return result
+
+
+class DaptDataset(Dataset):
+    def __getitem__(self, index):
+        return self.train[index]
+
+    def __init__(
+        self,
+        args: DaptArguments,
+        tokenizer: PreTrainedTokenizer,
+    ):
+        self.args = args
+        self.tokenizer = tokenizer
+
+        processor = AutoProcessor(self.args.data_dir, tasks=None)
+
+        # This can probably be refined
+        dataset: DatasetDict = processor.dataset
+        remove_columns = {"text", "id", *processor.get_labels()}.intersection(
+            set(dataset.column_names["train"])
+        )
+
+        dataset = dataset.map(
+            functools.partial(tokenize_fn, self.tokenizer),
+            batched=True,
+            remove_columns=list(remove_columns),
+        )
+        dataset = dataset.map(
+            functools.partial(group_texts, self.args.chunk_size),
+            batched=True,
+        )
+
+        if isinstance(dataset, (DatasetDict, IterableDatasetDict)) or args.no_eval:
+            self.dataset = dataset
+        else:
+            self.dataset = dataset.train_test_split(
+                test_size=args.test_size,
+                seed=args.seed,
+            )
+
+        self.data_collator = DataCollatorForLanguageModeling(
+            tokenizer=tokenizer, mlm_probability=self.args.mlm_probability
+        )
+
+    @property
+    def train(self):
+        return self.dataset["train"]
+
+    @property
+    def test(self):
+        return self.dataset["test"]
