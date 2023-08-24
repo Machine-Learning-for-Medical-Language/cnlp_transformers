@@ -23,11 +23,16 @@ clone this repository and set up your Python environment.
    ```sh
    $ pip install -r dev-requirements.txt
    ```
-   
-5. See [README.md](README.md) for the note about PyTorch; 
+
+5. Install pre-commit:
+   ```sh
+   $ pre-commit install
+   ```
+
+6. See [README.md](README.md) for the note about PyTorch; 
    if needed, manually install it now.
 
-6. Install `cnlp-transformers` in editable mode: 
+7. Install `cnlp-transformers` in editable mode: 
    ```sh
    $ pip install -e .
    ```

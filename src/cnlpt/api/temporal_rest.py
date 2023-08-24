@@ -29,97 +29,134 @@ from nltk.tokenize import wordpunct_tokenize as tokenize
 
 app = FastAPI()
 model_name = "mlml-chip/thyme2_colon_e2e"
-logger = logging.getLogger('Temporal_REST_Processor')
+logger = logging.getLogger("Temporal_REST_Processor")
 logger.setLevel(logging.INFO)
 
 labels = ["-1", "1"]
-timex_label_list = ["O", "B-DATE","B-DURATION","B-PREPOSTEXP","B-QUANTIFIER","B-SET","B-TIME","B-SECTIONTIME","B-DOCTIME",
-                    "I-DATE","I-DURATION","I-PREPOSTEXP","I-QUANTIFIER","I-SET","I-TIME","I-SECTIONTIME","I-DOCTIME"]
-timex_label_dict = { val:ind for ind,val in enumerate(timex_label_list)}
-event_label_list = ["O", "B-AFTER","B-BEFORE","B-BEFORE/OVERLAP","B-OVERLAP","I-AFTER","I-BEFORE"
-    ,"I-BEFORE/OVERLAP","I-OVERLAP"]
-event_label_dict = { val:ind for ind,val in enumerate(event_label_list)}
+timex_label_list = [
+    "O",
+    "B-DATE",
+    "B-DURATION",
+    "B-PREPOSTEXP",
+    "B-QUANTIFIER",
+    "B-SET",
+    "B-TIME",
+    "B-SECTIONTIME",
+    "B-DOCTIME",
+    "I-DATE",
+    "I-DURATION",
+    "I-PREPOSTEXP",
+    "I-QUANTIFIER",
+    "I-SET",
+    "I-TIME",
+    "I-SECTIONTIME",
+    "I-DOCTIME",
+]
+timex_label_dict = {val: ind for ind, val in enumerate(timex_label_list)}
+event_label_list = [
+    "O",
+    "B-AFTER",
+    "B-BEFORE",
+    "B-BEFORE/OVERLAP",
+    "B-OVERLAP",
+    "I-AFTER",
+    "I-BEFORE",
+    "I-BEFORE/OVERLAP",
+    "I-OVERLAP",
+]
+event_label_dict = {val: ind for ind, val in enumerate(event_label_list)}
 
-relation_label_list = ['None', 'CONTAINS', 'OVERLAP', 'BEFORE', 'BEGINS-ON', 'ENDS-ON']
-relation_label_dict = { val:ind for ind,val in enumerate(relation_label_list)}
+relation_label_list = ["None", "CONTAINS", "OVERLAP", "BEFORE", "BEGINS-ON", "ENDS-ON"]
+relation_label_dict = {val: ind for ind, val in enumerate(relation_label_list)}
 
 dtr_label_list = ["AFTER", "BEFORE", "BEFORE/OVERLAP", "OVERLAP"]
 old_dtr_label_list = ["BEFORE", "OVERLAP", "BEFORE/OVERLAP", "AFTER"]
 
-labels = [ timex_label_list, event_label_list, relation_label_list]
+labels = [timex_label_list, event_label_list, relation_label_list]
 max_length = 128
+
 
 class SentenceDocument(BaseModel):
     sentence: str
 
+
 class TokenizedSentenceDocument(BaseModel):
-    '''sent_tokens: a list of sentences, where each sentence is a list of tokens'''
+    """sent_tokens: a list of sentences, where each sentence is a list of tokens"""
+
     sent_tokens: List[List[str]]
     metadata: str
+
 
 class Timex(BaseModel):
     begin: int
     end: int
     timeClass: str
 
+
 class Event(BaseModel):
     begin: int
     end: int
     dtr: str
 
+
 class Relation(BaseModel):
     # Allow args to be none, so that we can potentially link them to times or events in the client, or if they don't
     # care about that. pass back the token indices of the args in addition.
-    arg1: Union[str,None]
-    arg2: Union[str,None]
+    arg1: Union[str, None]
+    arg2: Union[str, None]
     category: str
     arg1_start: int
     arg2_start: int
 
+
 class TemporalResults(BaseModel):
-    ''' lists of timexes, events and relations for list of sentences '''
+    """lists of timexes, events and relations for list of sentences"""
+
     timexes: List[List[Timex]]
     events: List[List[Event]]
     relations: List[List[Relation]]
 
 
 def create_instance_string(tokens: List[str]):
-    return ' '.join(tokens)
+    return " ".join(tokens)
+
 
 @app.on_event("startup")
 async def startup_event():
     global timex_label_list, timex_label_dict, event_label_list, event_label_dict, relation_label_list, relation_label_dict, task_order
 
-    local_model_name = os.getenv('MODEL_NAME', model_name)
+    local_model_name = os.getenv("MODEL_NAME", model_name)
     initialize_cnlpt_model(app, local_model_name)
 
     config_dict = app.state.trainer.model.config.to_dict()
     # For newer models (version >= 0.6.0), the label dictionary is saved with the model
     # config. we can look for it to preserve backwards compatibility for now but
     # should eventually remove the hardcoded label lists from our inference tools.
-    label_dict = config_dict.get('label_dictionary', None)
+    label_dict = config_dict.get("label_dictionary", None)
     if label_dict is not None:
         # some older versions have one label dictionary per dataset, future versions should just
         # have a task-keyed dictionary
         if type(label_dict) == list:
             label_dict = label_dict[0]
-        
-        if 'event' in label_dict:
-            event_label_list = label_dict['event']
-            event_label_dict = { val:ind for ind,val in enumerate(event_label_list)}
+
+        if "event" in label_dict:
+            event_label_list = label_dict["event"]
+            event_label_dict = {val: ind for ind, val in enumerate(event_label_list)}
             print(event_label_list)
-        
-        if 'timex' in label_dict:
-            timex_label_list = label_dict['timex']
-            timex_label_dict = { val:ind for ind,val in enumerate(timex_label_list)}
+
+        if "timex" in label_dict:
+            timex_label_list = label_dict["timex"]
+            timex_label_dict = {val: ind for ind, val in enumerate(timex_label_list)}
             print(timex_label_list)
 
-        if 'tlinkx' in label_dict:
-            relation_label_list = label_dict['tlinkx']
-            relation_label_dict = { val:ind for ind,val in enumerate(relation_label_list)}
+        if "tlinkx" in label_dict:
+            relation_label_list = label_dict["tlinkx"]
+            relation_label_dict = {
+                val: ind for ind, val in enumerate(relation_label_list)
+            }
             print(relation_label_list)
 
-    app.state.tasks = config_dict.get('finetuning_task', None)
+    app.state.tasks = config_dict.get("finetuning_task", None)
     app.state.task_order = {}
     if app.state.tasks is not None:
         print("Overwriting finetuning task order")
@@ -129,15 +166,23 @@ async def startup_event():
     else:
         print("Didn't find a new task ordering in the model config")
 
+
 @app.post("/temporal/process")
 async def process(doc: TokenizedSentenceDocument):
     return process_tokenized_sentence_document(doc)
 
+
 @app.post("/temporal/process_sentence")
 async def process_sentence(doc: SentenceDocument):
     tokenized_sent = tokenize(doc.sentence)
-    doc = TokenizedSentenceDocument(sent_tokens=[tokenized_sent,], metadata='Single sentence')
+    doc = TokenizedSentenceDocument(
+        sent_tokens=[
+            tokenized_sent,
+        ],
+        metadata="Single sentence",
+    )
     return process_tokenized_sentence_document(doc)
+
 
 def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     sents = doc.sent_tokens
@@ -147,13 +192,15 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     print(timex_label_list)
     print(relation_label_list)
 
-    logger.warn('Received document labeled %s with %d sentences' % (metadata, len(sents)))
+    logger.warn(
+        "Received document labeled %s with %d sentences" % (metadata, len(sents))
+    )
     instances = []
     start_time = time()
 
     for sent_ind, token_list in enumerate(sents):
         inst_str = create_instance_string(token_list)
-        logger.debug('Instance string is %s' % (inst_str))
+        logger.debug("Instance string is %s" % (inst_str))
         instances.append(inst_str)
 
     dataset = get_dataset(instances, app.state.tokenizer, max_length)
@@ -161,12 +208,18 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
 
     output = app.state.trainer.predict(test_dataset=dataset)
 
-    timex_predictions = np.argmax(output.predictions[app.state.task_order['timex']], axis=2)
-    event_predictions = np.argmax(output.predictions[app.state.task_order['event']], axis=2)
-    rel_predictions = np.argmax(output.predictions[app.state.task_order['tlinkx']], axis=3)
+    timex_predictions = np.argmax(
+        output.predictions[app.state.task_order["timex"]], axis=2
+    )
+    event_predictions = np.argmax(
+        output.predictions[app.state.task_order["event"]], axis=2
+    )
+    rel_predictions = np.argmax(
+        output.predictions[app.state.task_order["tlinkx"]], axis=3
+    )
     rel_inds = np.where(rel_predictions != relation_label_dict["None"])
 
-    logging.debug('Found relation indices: %s' % (str(rel_inds)))
+    logging.debug("Found relation indices: %s" % (str(rel_inds)))
 
     rels_by_sent = {}
     for rel_num in range(len(rel_inds[0])):
@@ -178,12 +231,12 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
         arg2_ind = rel_inds[2][rel_num]
         if arg1_ind == arg2_ind:
             # no relations between an entity and itself
-            logger.warn('Found relation between an entity and itself... skipping')
+            logger.warn("Found relation between an entity and itself... skipping")
             continue
 
-        rel_cat = rel_predictions[sent_ind,arg1_ind,arg2_ind]
+        rel_cat = rel_predictions[sent_ind, arg1_ind, arg2_ind]
 
-        rels_by_sent[sent_ind].append( (arg1_ind, arg2_ind, rel_cat) )
+        rels_by_sent[sent_ind].append((arg1_ind, arg2_ind, rel_cat))
 
     pred_end = time()
 
@@ -192,9 +245,13 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     rel_results = []
 
     for sent_ind in range(len(dataset)):
-        batch_encoding = app.state.tokenizer.batch_encode_plus([sents[sent_ind],],
-                                                           is_split_into_words=True,
-                                                           max_length=max_length)
+        batch_encoding = app.state.tokenizer.batch_encode_plus(
+            [
+                sents[sent_ind],
+            ],
+            is_split_into_words=True,
+            max_length=max_length,
+        )
         word_ids = batch_encoding.word_ids(0)
         wpind_to_ind = {}
         timex_labels = []
@@ -208,56 +265,87 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
 
                 wpind_to_ind[key] = val
                 # tokeni_to_wpi[val] = key
-                timex_labels.append(timex_label_list[timex_predictions[sent_ind][word_pos_idx]])
+                timex_labels.append(
+                    timex_label_list[timex_predictions[sent_ind][word_pos_idx]]
+                )
                 try:
-                    event_labels.append(event_label_list[event_predictions[sent_ind][word_pos_idx]])
+                    event_labels.append(
+                        event_label_list[event_predictions[sent_ind][word_pos_idx]]
+                    )
                 except:
-                    print('exception thrown when sent_ind=%d and word_pos_idx=%d' %( sent_ind, word_pos_idx))
-                    print('prediction is %s' % str(event_predictions[sent_ind][word_pos_idx]))
+                    print(
+                        "exception thrown when sent_ind=%d and word_pos_idx=%d"
+                        % (sent_ind, word_pos_idx)
+                    )
+                    print(
+                        "prediction is %s"
+                        % str(event_predictions[sent_ind][word_pos_idx])
+                    )
                     raise Exception
-                
+
             previous_word_idx = word_idx
 
         timex_entities = get_entities(timex_labels)
-        logging.info("Extracted %d timex entities from the sentence" % (len(timex_entities)))
-        timex_results.append( [Timex(timeClass=label[0], begin=label[1], end=label[2]) for label in timex_entities] )
+        logging.info(
+            "Extracted %d timex entities from the sentence" % (len(timex_entities))
+        )
+        timex_results.append(
+            [
+                Timex(timeClass=label[0], begin=label[1], end=label[2])
+                for label in timex_entities
+            ]
+        )
 
         event_entities = get_entities(event_labels)
         logging.info("Extracted %d events from the sentence" % (len(event_entities)))
-        event_results.append( [Event(dtr=label[0], begin=label[1], end=label[2]) for label in event_entities] )
+        event_results.append(
+            [
+                Event(dtr=label[0], begin=label[1], end=label[2])
+                for label in event_entities
+            ]
+        )
 
         rel_sent_results = []
         for rel in rels_by_sent.get(sent_ind, []):
             arg1 = None
             arg2 = None
             if rel[0] not in wpind_to_ind or rel[1] not in wpind_to_ind:
-                logging.warn('Found a relation to a non-leading wordpiece token... ignoring')
+                logging.warn(
+                    "Found a relation to a non-leading wordpiece token... ignoring"
+                )
                 continue
 
             arg1_ind = wpind_to_ind[rel[0]]
             arg2_ind = wpind_to_ind[rel[1]]
 
             sent_timexes = timex_results[-1]
-            for timex_ind,timex in enumerate(sent_timexes):
+            for timex_ind, timex in enumerate(sent_timexes):
                 if timex.begin == arg1_ind:
-                    arg1 = 'TIMEX-%d' % timex_ind
+                    arg1 = "TIMEX-%d" % timex_ind
                 if timex.begin == arg2_ind:
-                    arg2 = 'TIMEX-%d' % timex_ind
+                    arg2 = "TIMEX-%d" % timex_ind
 
             sent_events = event_results[-1]
-            for event_ind,event in enumerate(sent_events):
+            for event_ind, event in enumerate(sent_events):
                 if event.begin == arg1_ind:
-                    arg1 = 'EVENT-%d' % event_ind
+                    arg1 = "EVENT-%d" % event_ind
                 if event.begin == arg2_ind:
-                    arg2 = 'EVENT-%d' % event_ind
+                    arg2 = "EVENT-%d" % event_ind
 
-            rel = Relation(arg1=arg1, arg2=arg2, category=relation_label_list[rel[2]], arg1_start=arg1_ind, arg2_start=arg2_ind)
-            rel_sent_results.append( rel )
-
+            rel = Relation(
+                arg1=arg1,
+                arg2=arg2,
+                category=relation_label_list[rel[2]],
+                arg1_start=arg1_ind,
+                arg2_start=arg2_ind,
+            )
+            rel_sent_results.append(rel)
 
         rel_results.append(rel_sent_results)
 
-    results = TemporalResults(timexes=timex_results, events=event_results, relations=rel_results)
+    results = TemporalResults(
+        timexes=timex_results, events=event_results, relations=rel_results
+    )
 
     postproc_end = time()
 
@@ -265,7 +353,10 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     pred_time = pred_end - preproc_end
     postproc_time = postproc_end - pred_end
 
-    logging.info("Pre-processing time: %f, processing time: %f, post-processing time %f" % (preproc_time, pred_time, postproc_time))
+    logging.info(
+        "Pre-processing time: %f, processing time: %f, post-processing time %f"
+        % (preproc_time, pred_time, postproc_time)
+    )
 
     return results
 
@@ -273,14 +364,23 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
 def rest():
     import argparse
 
-    parser = argparse.ArgumentParser(description='Run the http server for temporal')
-    parser.add_argument('-p', '--port', type=int, help='The port number to run the server on', default=8000)
+    parser = argparse.ArgumentParser(description="Run the http server for temporal")
+    parser.add_argument(
+        "-p",
+        "--port",
+        type=int,
+        help="The port number to run the server on",
+        default=8000,
+    )
 
     args = parser.parse_args()
 
     import uvicorn
-    uvicorn.run("cnlpt.api.temporal_rest:app", host='0.0.0.0', port=args.port, reload=True)
+
+    uvicorn.run(
+        "cnlpt.api.temporal_rest:app", host="0.0.0.0", port=args.port, reload=True
+    )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     rest()

@@ -1,12 +1,8 @@
-FROM nvidia/cuda:10.2-runtime-ubi8 as base
+FROM nvidia/cuda:11.6.2-cudnn8-runtime-ubi8 as base
 
 RUN yum -y install python39 python39-pip
-RUN  pip3.9 install cython torch
+#RUN  pip3.9 install cython torch
 RUN pip3.9 install cnlp-transformers
-
-# temporary workaround for transformers/huggingface version issue 
-RUN pip3.9 uninstall -y huggingface-hub
-RUN pip3.9 install huggingface-hub==0.11.0
 
 
 
@@ -45,11 +41,11 @@ ENTRYPOINT ["cnlpt_timex_rest", "-p", "8000"]
 
 FROM base as hier_local
 ENV MODEL_PATH /opt/cnlp/model
-ENTRYPOINT ["bash"]
+ENTRYPOINT ["python3.9", "-m", "cnlpt.api.hier_rest", "-p", "8000"]
 
 FROM base as hier
 run /usr/bin/python3.9 -c "import sys;sys.path.append('/home/docker'); import model_download; print('$model_loc'); model_download.hier('$model_loc')"
-ENTRYPOINT ["python3.9 -m cnlpt.api.hier_rest", "-p", "8000"]
+ENTRYPOINT ["python3.9", "-m", "cnlpt.api.hier_rest", "-p", "8000"]
 
 FROM base as cnn
 ENV MODEL_PATH /opt/cnlp/model
