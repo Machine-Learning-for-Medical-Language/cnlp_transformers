@@ -64,6 +64,7 @@ from transformers import (
     set_seed,
 )
 import json
+import pdb
 
 AutoConfig.register("cnlpt", CnlpConfig)
 
@@ -173,6 +174,11 @@ def main(
     logger.info("Model parameters %s" % model_args)
     # Set seed
     set_seed(training_args.seed)
+
+    if any(isinstance(item, int) for item in training_args.model_selection_label):
+        logger.warning(
+            f"It is not recommended to use ints as model selection labels: {tuple([item for item in training_args.model_selection_label if isinstance(item, int)])}. Labels should be input in string form."
+        )
 
     # Load tokenizer: Need this first for loading the datasets
     tokenizer = AutoTokenizer.from_pretrained(
