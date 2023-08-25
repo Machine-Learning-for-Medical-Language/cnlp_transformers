@@ -450,7 +450,7 @@ def _build_pytorch_representations(
                 previous_word_idx = None
                 label_ids = []
                 for word_idx in word_ids:
-                    if word_idx is None or labels[sent_ind][task_ind] == [-100]:
+                    if word_idx is None:
                         label_ids.append(-100)
                     elif word_idx != previous_word_idx:
                         label_ids.append(0)
@@ -966,7 +966,6 @@ class ClinicalNlpDataset(Dataset):
         same-named tasks.
         """
         for task, output_mode in processor.get_output_modes().items():
-
             if task in self.output_modes:
                 # There is an existing task with this name
                 existing_output_mode = self.output_modes[task]
