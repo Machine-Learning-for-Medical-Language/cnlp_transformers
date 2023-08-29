@@ -119,22 +119,6 @@ def is_hub_model(model_name: str) -> bool:
     return False
 
 
-def is_cnlpt_model(model_path: str) -> bool:
-    """
-    Infer whether a model path refers to a cnlpt
-    model checkpoint (if not, we assume it is an
-    encoder)
-    :param model_path: the path to the model
-    :return: whether the model is a cnlpt classifier model
-    """
-    encoder_config = AutoConfig.from_pretrained(model_path)
-    return encoder_config.model_type == "cnlpt"
-
-
-def encoder_inferred(model_name_or_path: str) -> bool:
-    return is_hub_model(model_name_or_path) or not is_cnlpt_model(model_name_or_path)
-
-
 def get_dataset_segment(
     split_name: str,
     dataset_ind: int,
