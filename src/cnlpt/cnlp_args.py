@@ -52,6 +52,11 @@ class CnlpTrainingArguments(TrainingArguments):
         default=None,
         metadata={
             "help": "Class whose score should be used in evalutation. Should be an integer if scores are indexed, or a string if they are labeled by name."
+    )
+    output_prob: Optional[bool] = field(
+        default=False,
+        metadata={
+            "help": "If selected, probability scores will be added to the output prediction file for test data."
         },
     )
 
@@ -217,6 +222,25 @@ class ModelArguments:
         metadata={
             "help": "For the hierarchical model, the dropout probability for the "
             "document-level transformer layers"
+        },
+    )
+    keep_existing_classifiers: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "For the hierarchical model, load classifier weights from "
+                "the saved checkpoint. For inference of the trained model or "
+                "continued fine-tuning."
+            )
+        },
+    )
+    ignore_existing_classifiers: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "For the hierarchical model, ignore classifier weights "
+                "from the saved checkpoint. The weights will be initialized."
+            )
         },
     )
 

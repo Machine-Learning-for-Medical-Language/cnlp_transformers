@@ -71,8 +71,12 @@ AutoConfig.register("cnlpt", CnlpConfig)
 logger = logging.getLogger(__name__)
 
 
-def is_hub_model(model_name):
-    # check if it's a model on the huggingface model hub:
+def is_hub_model(model_name: str) -> bool:
+    """
+    Check for whether a model specification string is on the huggingface model hub
+    :param model_name: the string to check
+    :return: whether the model is on the huggingface hub
+    """
     try:
         url = hf_hub_url(model_name, CONFIG_NAME)
         r = requests.head(url)
@@ -96,7 +100,13 @@ def is_cnlpt_model(model_path: str) -> bool:
     return encoder_config.model_type == "cnlpt"
 
 
-def encoder_inferred(model_name_or_path: str) -> bool:
+def is_external_encoder(model_name_or_path: str) -> bool:
+    """
+    Check whether a specified model is not a cnlpt model -- an external model like a
+    huggingface hub model or a downloaded local directory.
+    :param model_name_or_path: specified model
+    :return: whether the encoder is an external (non-cnlpt) model
+    """
     return is_hub_model(model_name_or_path) or not is_cnlpt_model(model_name_or_path)
 
 
@@ -153,6 +163,9 @@ def main(
             f"Output directory ({training_args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overcome."
         )
 
+    model_name = model_args.model
+    hierarchical = model_name == "hier"
+
     # Setup logging
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
@@ -199,9 +212,6 @@ def main(
         ],
     )
 
-    model_name = model_args.model
-    hierarchical = model_name == "hier"
-
     # Get datasets
     dataset = ClinicalNlpDataset(
         data_args,
@@ -211,7 +221,9 @@ def main(
     )
 
     try:
-        task_names = data_args.task_name
+        task_names = (
+            data_args.task_name if data_args.task_name is not None else dataset.tasks
+        )
         num_labels = {}
         output_mode = {}
         tagger = {}
@@ -293,7 +305,7 @@ def main(
             if model_args.config_name
             else model_args.encoder_name
         )
-        if encoder_inferred(encoder_name):
+        if is_external_encoder(encoder_name):
             config = CnlpConfig(
                 encoder_name=encoder_name,
                 finetuning_task=data_args.task_name
@@ -324,16 +336,39 @@ def main(
                 freeze=training_args.freeze,
             )
         else:
+            if hierarchical and (
+                model_args.keep_existing_classifiers
+                == model_args.ignore_existing_classifiers
+            ):  # XNOR
+                raise ValueError(
+                    "For continued training of a cnlpt hierarchical model, one of --keep_existing_classifiers or --ignore_existing_classifiers flags should be selected."
+                )
             # use a checkpoint from an existing model
             AutoModel.register(CnlpConfig, HierarchicalModel)
 
             config = AutoConfig.from_pretrained(
                 encoder_name, cache_dir=model_args.cache_dir, layer=model_args.layer
             )
-            config.finetuning_task = data_args.task_name
-            config.relations = relations
-            config.tagger = tagger
-            config.label_dictionary = {}  # this gets filled in later
+            if model_args.ignore_existing_classifers:
+                config.finetuning_task = (
+                    data_args.task_name
+                    if data_args.task_name is not None
+                    else dataset.tasks
+                )
+                config.relations = relations
+                config.tagger = tagger
+                config.label_dictionary = {}  # this gets filled in later
+            elif model_args.keep_existing_classifiers:
+                if (
+                    config.finetuning_task != data_args.task_name
+                    or config.relations != relations
+                    or config.tagger != tagger
+                ):
+                    raise ValueError(
+                        "When --keep_existing_classifiers selected, please ensure"
+                        "that you set the settings the same as those used in the"
+                        "previous training run."
+                    )
 
             ## TODO: check if user overwrote parameters in command line that could change behavior of the model and warn
             # if data_args.chunk_len is not None:
@@ -341,9 +376,10 @@ def main(
             logger.info("Loading pre-trained hierarchical model...")
             model = AutoModel.from_pretrained(encoder_name, config=config)
 
-            model.remove_task_classifiers()
-            for task in data_args.task_name:
-                model.add_task_classifier(task, dataset.get_labels()[task])
+            if model_args.ignore_existing_classifers:
+                model.remove_task_classifiers()
+                for task in data_args.task_name:
+                    model.add_task_classifier(task, dataset.get_labels()[task])
             model.set_class_weights(dataset.class_weights)
 
     else:
@@ -352,7 +388,7 @@ def main(
 
         # TODO check when download any pretrained language model to local disk, if
         # the following condition "is_hub_model(encoder_name)" works or not.
-        if not encoder_inferred(encoder_name):
+        if not is_external_encoder(encoder_name):
             # we are loading one of our own trained models as a starting point.
             #
             # 1) if training_args.do_train is true:
@@ -426,7 +462,9 @@ def main(
             )
             config = CnlpConfig(
                 encoder_name=encoder_name,
-                finetuning_task=data_args.task_name,
+                finetuning_task=data_args.task_name
+                if data_args.task_name is not None
+                else dataset.tasks,
                 layer=model_args.layer,
                 tokens=model_args.token,
                 num_rel_attention_heads=model_args.num_rel_feats,
@@ -573,11 +611,14 @@ def main(
                         if training_args.do_train:
                             trainer.save_model()
                             tokenizer.save_pretrained(training_args.output_dir)
-                            with open(
-                                os.path.join(training_args.output_dir, "config.json"),
-                                "w",
-                            ) as f:
-                                json.dump(model_args.to_dict(), f)
+                            if model_name == "cnn" or model_name == "lstm":
+                                with open(
+                                    os.path.join(
+                                        training_args.output_dir, "config.json"
+                                    ),
+                                    "w",
+                                ) as f:
+                                    json.dump(model_args.to_dict(), f)
                         for task_ind, task_name in enumerate(metrics):
                             with open(output_eval_file, "w") as writer:
                                 # logger.info("***** Eval results for task %s *****" % (task_name))
@@ -616,10 +657,11 @@ def main(
             if trainer.is_world_process_zero():
                 trainer.save_model()
                 tokenizer.save_pretrained(training_args.output_dir)
-                with open(
-                    os.path.join(training_args.output_dir, "config.json"), "w"
-                ) as f:
-                    json.dump(model_args, f)
+                if model_name == "cnn" or model_name == "lstm":
+                    with open(
+                        os.path.join(training_args.output_dir, "config.json"), "w"
+                    ) as f:
+                        json.dump(model_args, f)
 
     # Evaluation
     eval_results = {}
@@ -697,6 +739,7 @@ def main(
                     dataset_ind,
                     output_mode,
                     tokenizer,
+                    output_prob=training_args.output_prob,
                 )
 
     return eval_results

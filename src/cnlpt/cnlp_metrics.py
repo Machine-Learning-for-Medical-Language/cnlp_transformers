@@ -2,12 +2,20 @@ import logging
 from typing import Set, Any, Dict
 
 import numpy as np
-from sklearn.metrics import matthews_corrcoef, f1_score, recall_score, precision_score, classification_report, accuracy_score
+from sklearn.metrics import (
+    matthews_corrcoef,
+    f1_score,
+    recall_score,
+    precision_score,
+    classification_report,
+    accuracy_score,
+)
 from seqeval.metrics import f1_score as seq_f1, classification_report as seq_cls
 from .cnlp_processors import classification, mtl, tagging, relex
 from .cnlp_data import ClinicalNlpDataset
 
 logger = logging.getLogger(__name__)
+
 
 def fix_np_types(input_variable):
     """
@@ -19,8 +27,9 @@ def fix_np_types(input_variable):
     """
     if isinstance(input_variable, np.ndarray):
         return list(input_variable)
-    
+
     return input_variable
+
 
 def tagging_metrics(
     label_set: Set[str],
@@ -51,21 +60,27 @@ def tagging_metrics(
     :return: a dictionary containing evaluation metrics
     """
     preds = preds.flatten()
-    labels = labels.flatten().astype('int')
+    labels = labels.flatten().astype("int")
 
     pred_inds = np.where(labels != -100)
     preds = preds[pred_inds]
     labels = labels[pred_inds]
 
-    pred_seq = [ label_set[x] for x in preds]
-    label_seq = [ label_set[x] for x in labels]
+    pred_seq = [label_set[x] for x in preds]
+    label_seq = [label_set[x] for x in labels]
 
-    num_correct = (preds==labels).sum()
+    num_correct = (preds == labels).sum()
 
     acc = num_correct / len(preds)
     f1 = f1_score(labels, preds, average=None, zero_division=0)
 
-    return {'acc': acc, 'token_f1': fix_np_types(f1), 'f1': fix_np_types(seq_f1([label_seq], [pred_seq])), 'report':'\n'+seq_cls([label_seq], [pred_seq])}
+    return {
+        "acc": acc,
+        "token_f1": fix_np_types(f1),
+        "f1": fix_np_types(seq_f1([label_seq], [pred_seq])),
+        "report": "\n" + seq_cls([label_seq], [pred_seq]),
+    }
+
 
 def relation_metrics(
     label_set: Set[str],
@@ -95,24 +110,39 @@ def relation_metrics(
     :return: a dictionary containing evaluation metrics
     """
 
-
     # If we are using the attention-based relation extractor, many impossible pairs
     # are set to -100 so pytorch loss functions ignore them. We need to make sure the
     # scorer also ignores them.
     relevant_inds = np.where(labels != -100)
-    relevant_labels = labels[relevant_inds].astype('int')
+    relevant_labels = labels[relevant_inds].astype("int")
     relevant_preds = preds[relevant_inds]
 
     num_correct = (relevant_labels == relevant_preds).sum()
     acc = num_correct / len(relevant_preds)
 
     recall = recall_score(y_pred=relevant_preds, y_true=relevant_labels, average=None)
-    precision = precision_score(y_pred=relevant_preds, y_true=relevant_labels, average=None, zero_division=0)
-    f1_scores = fix_np_types(f1_score(y_true=relevant_labels, y_pred=relevant_preds, average=None, zero_division=0))
-    report_dict = classification_report(y_true=relevant_labels, y_pred=relevant_preds, output_dict=True)
+    precision = precision_score(
+        y_pred=relevant_preds, y_true=relevant_labels, average=None, zero_division=0
+    )
+    f1_scores = fix_np_types(
+        f1_score(
+            y_true=relevant_labels, y_pred=relevant_preds, average=None, zero_division=0
+        )
+    )
+    report_dict = classification_report(
+        y_true=relevant_labels, y_pred=relevant_preds, output_dict=True
+    )
     report_str = classification_report(y_true=relevant_labels, y_pred=relevant_preds)
 
-    return {'f1': f1_scores, 'acc': acc, 'recall':fix_np_types(recall), 'precision':fix_np_types(precision), 'report_dict':report_dict, 'report_str':report_str }
+    return {
+        "f1": f1_scores,
+        "acc": acc,
+        "recall": fix_np_types(recall),
+        "precision": fix_np_types(precision),
+        "report_dict": report_dict,
+        "report_str": report_str,
+    }
+
 
 def acc_and_f1(preds: np.ndarray, labels: np.ndarray) -> Dict[str, Any]:
     """
@@ -136,15 +166,17 @@ def acc_and_f1(preds: np.ndarray, labels: np.ndarray) -> Dict[str, Any]:
     """
     acc = accuracy_score(y_pred=preds, y_true=labels)
     recall = recall_score(y_true=labels, y_pred=preds, average=None)
-    precision = precision_score(y_true=labels, y_pred=preds, average=None, zero_division=0)
+    precision = precision_score(
+        y_true=labels, y_pred=preds, average=None, zero_division=0
+    )
     f1 = f1_score(y_true=labels, y_pred=preds, average=None, zero_division=0)
-    
+
     return {
         "acc": fix_np_types(acc),
         "f1": fix_np_types(f1),
         "acc_and_f1": fix_np_types((acc + f1) / 2),
         "recall": fix_np_types(recall),
-        "precision": fix_np_types(precision)
+        "precision": fix_np_types(precision),
     }
 
 
@@ -177,8 +209,14 @@ def cnlp_compute_metrics(
     if output_mode == classification:
         return acc_and_f1(preds=preds, labels=labels)
     elif output_mode == tagging:
-        return tagging_metrics(label_set, preds=preds, labels=labels, task_name=task_name)
+        return tagging_metrics(
+            label_set, preds=preds, labels=labels, task_name=task_name
+        )
     elif output_mode == relex:
-        return relation_metrics(label_set, preds=preds, labels=labels, task_name=task_name)
+        return relation_metrics(
+            label_set, preds=preds, labels=labels, task_name=task_name
+        )
     else:
-        raise Exception('There is no metric defined for this task in function cnlp_compute_metrics()')
+        raise Exception(
+            "There is no metric defined for this task in function cnlp_compute_metrics()"
+        )

@@ -1,9 +1,11 @@
 ### Fine-tuning for tagging: End-to-end example
+> Note: this example is not runnable on ARM and non-Linux platforms, and is only tested on Linux x86_64 platforms.
+
 1. Download the data from the [ChemProt website](https://biocreative.bioinformatics.udel.edu/news/corpora/chemprot-corpus-biocreative-vi/) to ``data`` folder.  Note, the evaluation on the data will approximate since it is done in terms of the preprocessed data, *not* ChemProt's specified evaluation method.
 
 2. Unzip the folder and each of the contents in the folder. Make sure that each folder starts with `chemprot_`. For example, train data folder should have a name of `chemprot_training`.
 
-3. Run ```pip install scispacy https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.1/en_core_sci_sm-0.5.1.tar.gz``` to get dependencies for the preprocessing tokenization and sentence splitting.
+3. Run ```pip install -r chemprot_requirements.txt``` to get dependencies for the preprocessing tokenization and sentence splitting.
 
 4. Preprocess the data with ```python -m cnlpt.data.transform_prot data/ChemProt_Corpus/ data/scispacy_chemprot/ chemprot```.  Note, this only gives us {train,dev}.tsv in `data/scispacy_chemprot` since there are no gold labels for the test data.
 

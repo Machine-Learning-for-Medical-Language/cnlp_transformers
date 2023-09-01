@@ -16,28 +16,20 @@ from transformers.modeling_outputs import SequenceClassifierOutput
 from transformers.modeling_utils import PreTrainedModel
 from transformers import AutoModel, AutoConfig
 
-from .CnlpModelForClassification import CnlpConfig, ClassificationHead, generalize_encoder_forward_kwargs, freeze_encoder_weights
+from .CnlpModelForClassification import (
+    CnlpConfig,
+    ClassificationHead,
+    generalize_encoder_forward_kwargs,
+    freeze_encoder_weights,
+)
 
 logger = logging.getLogger(__name__)
 
 
-def set_seed(seed, n_gpu):
-    """
-    Set the random seeds for ``random``, numpy, and pytorch to a specific value.
-
-    Args:
-        seed: the seed to use
-        n_gpu: the number of GPUs being used
-    """
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if n_gpu > 0:
-        torch.cuda.manual_seed_all(seed)
-
 @dataclass
 class HierarchicalSequenceClassifierOutput(SequenceClassifierOutput):
     chunk_attentions: Optional[Tuple[torch.FloatTensor]] = None
+
 
 class MultiHeadAttention(nn.Module):
     """
@@ -174,6 +166,7 @@ class EncoderLayer(nn.Module):
         dropout: the amount of dropout to use in training in both the
           attention and FFN steps (default 0.1)
     """
+
     def __init__(self, d_model, d_inner, n_head, d_k, d_v, dropout=0.1):
         super(EncoderLayer, self).__init__()
         self.slf_attn = MultiHeadAttention(n_head, d_model, d_k, d_v, dropout=dropout)
@@ -200,6 +193,7 @@ class HierarchicalModel(PreTrainedModel):
         final_task_weight:
         freeze:
     """
+
     base_model_prefix = "hier"
     config_class = CnlpConfig
 
@@ -217,7 +211,9 @@ class HierarchicalModel(PreTrainedModel):
 
         self.config = cast(CnlpConfig, self.config)  # for PyCharm
 
-        assert self.config.hier_head_config is not None, "Hierarchical model is being instantiated with no hierarchical head config"
+        assert (
+            self.config.hier_head_config is not None
+        ), "Hierarchical model is being instantiated with no hierarchical head config"
 
         encoder_config = AutoConfig.from_pretrained(self.config.encoder_name)
         encoder_config.vocab_size = self.config.vocab_size
@@ -227,23 +223,27 @@ class HierarchicalModel(PreTrainedModel):
         self.encoder.resize_token_embeddings(encoder_config.vocab_size)
 
         if self.config.layer > self.config.hier_head_config["n_layers"]:
-            raise ValueError('The layer specified (%d) is too big for the specified chunk transformer which has %d layers' % (
-                self.config.layer,
-                self.config.hier_head_config["n_layers"]
-            ))
-        
+            raise ValueError(
+                "The layer specified (%d) is too big for the specified chunk transformer which has %d layers"
+                % (self.config.layer, self.config.hier_head_config["n_layers"])
+            )
+
         if self.config.layer < 0:
-            self.layer = self.config.hier_head_config["n_layers"] + self.config.layer + 1
+            self.layer = (
+                self.config.hier_head_config["n_layers"] + self.config.layer + 1
+            )
             if self.layer < 0:
-                raise ValueError("The layer specified (%d) is a negative value which is larger than the actual number of layers %d" % (
-                    self.config.layer, 
-                    self.config.hier_head_config["n_layers"]
-                ))
+                raise ValueError(
+                    "The layer specified (%d) is a negative value which is larger than the actual number of layers %d"
+                    % (self.config.layer, self.config.hier_head_config["n_layers"])
+                )
         else:
             self.layer = self.config.layer
 
         if self.layer == 0:
-            raise ValueError("The classifier layer derived is 0 which is ambiguous -- there is no usable 0th layer in a hierarchical model. Enter a value for the layer argument that at least 1 (use one layer) or -1 (use the final layer)")
+            raise ValueError(
+                "The classifier layer derived is 0 which is ambiguous -- there is no usable 0th layer in a hierarchical model. Enter a value for the layer argument that at least 1 (use one layer) or -1 (use the final layer)"
+            )
 
         # This would seem to be redundant with the label list, which maps from tasks to labels,
         # but this version is ordered. This will allow the user to specify an order for any methods
@@ -272,14 +272,16 @@ class HierarchicalModel(PreTrainedModel):
 
         self.classifiers = nn.ModuleDict()
         # for task_num_labels in self.num_labels:
-        for task_name,task_labels in config.label_dictionary.items():
+        for task_name, task_labels in config.label_dictionary.items():
             task_num_labels = len(task_labels)
-            self.classifiers[task_name] = ClassificationHead(self.config, task_num_labels)
+            self.classifiers[task_name] = ClassificationHead(
+                self.config, task_num_labels
+            )
 
         self.label_dictionary = config.label_dictionary
         self.set_class_weights(class_weights)
 
-    def remove_task_classifiers(self, tasks=None):
+    def remove_task_classifiers(self, tasks: List[str] = None):
         if tasks is None:
             self.classifiers = nn.ModuleDict()
             self.tasks = []
@@ -292,7 +294,9 @@ class HierarchicalModel(PreTrainedModel):
 
     def add_task_classifier(self, task_name: str, label_dictionary: Dict[str, List]):
         self.tasks.append(task_name)
-        self.classifiers[task_name] = ClassificationHead(self.config, len(label_dictionary))
+        self.classifiers[task_name] = ClassificationHead(
+            self.config, len(label_dictionary)
+        )
         self.label_dictionary[task_name] = label_dictionary
 
     def set_class_weights(self, class_weights: Optional[List[float]] = None):
@@ -370,10 +374,8 @@ class HierarchicalModel(PreTrainedModel):
         )
 
         outputs = self.encoder(
-            input_ids.reshape(flat_shape[:3])
-            if input_ids is not None
-            else None,
-            **kwargs
+            input_ids.reshape(flat_shape[:3]) if input_ids is not None else None,
+            **kwargs,
         )
 
         logits = []
@@ -381,7 +383,9 @@ class HierarchicalModel(PreTrainedModel):
 
         # outputs.last_hidden_state.shape: (B * n_chunks, chunk_len, hidden_size)
         # (B * n_chunk, hidden_size)
-        chunks_reps = outputs.last_hidden_state[...,0,:].reshape(batch_size, num_chunks, outputs.last_hidden_state.shape[-1])
+        chunks_reps = outputs.last_hidden_state[..., 0, :].reshape(
+            batch_size, num_chunks, outputs.last_hidden_state.shape[-1]
+        )
 
         # Use pre-trained model's position embedding
         position_ids = torch.arange(
@@ -390,9 +394,7 @@ class HierarchicalModel(PreTrainedModel):
         position_ids = position_ids.unsqueeze(0).expand_as(
             chunks_reps[:, :, 0]
         )  # (B, n_chunk)
-        position_embeddings = self.encoder.embeddings.position_embeddings(
-            position_ids
-        )
+        position_embeddings = self.encoder.embeddings.position_embeddings(position_ids)
         chunks_reps = chunks_reps + position_embeddings
         chunks_attns = None
 
@@ -408,7 +410,7 @@ class HierarchicalModel(PreTrainedModel):
             ## hierarchical model and we want to check whether an earlier layer might provide better
             ## classification performance (e.g., if we think the last layer(s) are overfit to the pre-training
             ## objective) Just short circuit rather than doing the whole computation.
-            if layer_ind+1 >= self.layer:
+            if layer_ind + 1 >= self.layer:
                 break
 
         if output_hidden_states:
@@ -420,7 +422,9 @@ class HierarchicalModel(PreTrainedModel):
         total_loss = None
         for task_ind, task_name in enumerate(self.tasks):
             if not self.class_weights[task_name] is None:
-                class_weights = torch.FloatTensor(self.class_weights[task_name]).to(self.device)
+                class_weights = torch.FloatTensor(self.class_weights[task_name]).to(
+                    self.device
+                )
             else:
                 class_weights = None
             loss_fct = CrossEntropyLoss(weight=class_weights)
@@ -431,12 +435,13 @@ class HierarchicalModel(PreTrainedModel):
 
             if labels is not None:
                 task_labels = labels[:, task_ind]
-                task_loss = loss_fct(task_logits, task_labels.type(torch.LongTensor).to(labels.device))
+                task_loss = loss_fct(
+                    task_logits, task_labels.type(torch.LongTensor).to(labels.device)
+                )
                 if total_loss is None:
                     total_loss = task_loss
                 else:
                     total_loss += task_loss
-
 
         if self.training:
             return HierarchicalSequenceClassifierOutput(
@@ -447,4 +452,10 @@ class HierarchicalModel(PreTrainedModel):
                 chunk_attentions=chunks_attns,
             )
         else:
-            return HierarchicalSequenceClassifierOutput(loss=total_loss, logits=logits, hidden_states=hidden_states, attentions=outputs.attentions, chunk_attentions=chunks_attns)
+            return HierarchicalSequenceClassifierOutput(
+                loss=total_loss,
+                logits=logits,
+                hidden_states=hidden_states,
+                attentions=outputs.attentions,
+                chunk_attentions=chunks_attns,
+            )

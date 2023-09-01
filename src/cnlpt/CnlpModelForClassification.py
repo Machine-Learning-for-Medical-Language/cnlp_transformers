@@ -25,6 +25,12 @@ logger = logging.getLogger(__name__)
 
 
 def generalize_encoder_forward_kwargs(encoder, **kwargs: Any) -> Dict[str, Any]:
+    """
+    Create a new input feature argument that preserves only the features that are valid for this encoder.
+    Warn if a feature is present but not valid for the encoder.
+    :param encoder: A HF encoder model
+    :return: Dictionary of valid arguments for this encoder
+    """
     new_kwargs = dict()
     params = inspect.signature(encoder.forward).parameters
     for name, value in kwargs.items():
@@ -41,7 +47,13 @@ def generalize_encoder_forward_kwargs(encoder, **kwargs: Any) -> Dict[str, Any]:
     return new_kwargs
 
 
-def freeze_encoder_weights(encoder, freeze):
+def freeze_encoder_weights(encoder, freeze: float):
+    """
+    Probabilistically freeze the weights of this HF encoder model according to the freeze parameter.
+    Values of freeze >=1 are treated as if every parameter should be frozen.
+    :param encoder: HF encoder model
+    :param freeze: Probability of freezing any given parameter (0-1)
+    """
     for param in encoder.parameters():
         if freeze >= 1.0:
             param.requires_grad = False
@@ -243,7 +255,7 @@ class CnlpConfig(PretrainedConfig):
 class CnlpModelForClassification(PreTrainedModel):
     """
     The CNLP transformer model.
-
+    :param config: The CnlpConfig object that configures this model
     :param class_weights: if provided,
         the weights to use for each task when computing the loss
     :param final_task_weight: the weight to use for the final task
@@ -340,7 +352,16 @@ class CnlpModelForClassification(PreTrainedModel):
 
         # self.init_weights()
 
-    def predict_relations_with_previous_logits(self, features, logits):
+    def predict_relations_with_previous_logits(
+        self, features: torch.Tensor, logits: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        For the relation prediction task, use previous predictions of the tagging task as additional features in the
+        representation used for making the relation prediction.
+        :param features: The existing feature vector for the relations
+        :param logits: The predicted logits from the tagging task
+        :return: The augmented feature tensor
+        """
         seq_len = features.shape[1]
         pdb.set_trace()
         for prior_task_logits in logits:
@@ -378,9 +399,9 @@ class CnlpModelForClassification(PreTrainedModel):
         task_logits: torch.FloatTensor,
         labels: torch.LongTensor,
         task_ind: int,
-        task_num_labels,
-        batch_size,
-        seq_len,
+        task_num_labels: int,
+        batch_size: int,
+        seq_len: int,
         state: dict,
     ) -> None:
         """

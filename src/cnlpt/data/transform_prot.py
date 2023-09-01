@@ -12,7 +12,24 @@ from heapq import merge
 
 TEST_DIR = "chemprot_development"
 TRAIN_DIR = "chemprot_training"
-nlp = spacy.load("en_core_sci_sm")
+
+# allow script to run only if scispacy is installed
+#  (gated behind certain Python versions and platforms)
+nlp = None
+try:
+    import scispacy
+
+    nlp = spacy.load("en_core_sci_sm")
+except ImportError:
+    import platform
+
+    print(
+        f"scispacy not installed; cannot run transform_prot.\n"
+        f"Note: transform_prot is not runnable on ARM and non-Linux platforms, "
+        f"and is only tested on Linux x86_64 platforms."
+    )
+    print(f"Current platform: {sys.platform} {platform.machine()}")
+    sys.exit(1)
 
 
 def remove_newline(review):
@@ -56,7 +73,10 @@ def get_intersect(ls1, ls2):
 
 
 def to_stanza_style_dict(text):
-    processed_doc = nlp(text)
+    if nlp is not None:
+        processed_doc = nlp(text)
+    else:
+        raise RuntimeError("nlp object not initialized but execution proceeded??")
 
     def sent_dict(spacy_sent):
         return [
@@ -112,7 +132,6 @@ def build_abstract_dictionary(filename):
     with open(filename) as fd:
         rd = csv.reader(fd, delimiter="\t")  # quotechar='"')
         for row in tqdm(rd, total=lines):
-
             identifier, title, raw_article = row
             # character indices involve both title and abstract
             identifier_to_processed_article[int(identifier)] = to_stanza_style_dict(
@@ -195,7 +214,6 @@ def get_tok_inds_table(stanza_sents):
 
 
 def abs_ent_coord(entity_to_info, stanza_sents):
-
     sent_inds_table = get_sent_inds_table(stanza_sents)
     tok_inds_table = get_tok_inds_table(stanza_sents)
 
@@ -245,7 +263,6 @@ def abs_ent_coord(entity_to_info, stanza_sents):
         stok_inds = tok_inds_table[sent_ind]
 
         def _inside(tok_pairs):
-
             tok_pair_1, tok_pair_2 = tok_pairs
             tok_1_idx, tok_1_inds = tok_pair_1
             tok_2_idx, tok_2_inds = tok_pair_2
@@ -328,7 +345,6 @@ def build_ner_data_dict(entity_to_info, stanza_sents, mode):
         sorted_tags = sorted(tags, key=lambda s: s[:2])
         final_tags = defaultdict(lambda: [])
         for i in range(0, len(sorted_tags)):
-
             curr_begin, curr_end, curr_type = sorted_tags[i]
             prev_ls = final_tags[curr_type]
             dict_type = curr_type.split("-")[0]
@@ -341,7 +357,6 @@ def build_ner_data_dict(entity_to_info, stanza_sents, mode):
                 final_tags[dict_type].append((curr_begin, curr_end, curr_type))
 
             elif prev_end < curr_begin:
-
                 final_tags[dict_type].append((curr_begin, curr_end, curr_type))
 
         sent_idx_to_tags[sent_idx] = intervals_to_tags(final_tags, len(stanza_sent))
@@ -350,13 +365,11 @@ def build_ner_data_dict(entity_to_info, stanza_sents, mode):
 
 
 def coalesce(abs_dict, ent_dict, rel_dict, mode="drugprot"):
-
     columns = ["end_to_end", "chemical_ner", "gene_ner", "text"]
 
     build_entity_data(abs_dict, ent_dict)
 
     def to_samples(abs_id, stanza_sents):
-
         ent_info_dict = ent_dict.get(abs_id, {})
 
         rel_info_dict = rel_dict.get(abs_id, {})
@@ -399,7 +412,6 @@ def get_dataframe(tsv_dir, mode="drugprot"):
 
 
 def main():
-
     input_path = Path(sys.argv[1])
     output_path = Path(sys.argv[2])
     mode = sys.argv[3]
