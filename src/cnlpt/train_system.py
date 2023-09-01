@@ -185,9 +185,9 @@ def structure_labels(
     else:
         preds = np.argmax(p.predictions[task_ind], axis=1)
         if output_prob:
-            prob_values = np.ndarray([
-                p.predictions[task_ind][pred_argmax] for pred_argmax in preds
-            ])
+            prob_values = np.ndarray(
+                [p.predictions[task_ind][pred_argmax] for pred_argmax in preds]
+            )
 
     # for inference
     if not hasattr(p, "label_ids") or p.label_ids is None:
@@ -664,10 +664,10 @@ def main(
                     tagger,
                     relations,
                     task_label_to_boundaries,
-                    output_prob
+                    output_prob,
                 )
                 task_label_ind += pad
-                
+
                 task_label_to_label_packet[task_name] = (preds, labels, prob_values)
 
                 metrics[task_name] = cnlp_compute_metrics(
