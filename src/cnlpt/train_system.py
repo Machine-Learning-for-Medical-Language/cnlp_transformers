@@ -171,11 +171,12 @@ def structure_labels(
     tagger: Dict[str, bool],
     relations: Dict[str, bool],
     task_label_to_boundaries: Dict[str, Tuple[int, int]],
-) -> Tuple[np.ndarray, np.ndarray, int]:
+    output_prob: bool,
+) -> Tuple[np.ndarray, np.ndarray, int, np.ndarray]:
     # disagreement collection stuff for this scope
 
     pad = 0
-
+    prob_values = np.ndarray([])
     if tagger[task_name]:
         preds = np.argmax(p.predictions[task_ind], axis=2)
         # labels will be -100 where we don't need to tag
@@ -183,6 +184,10 @@ def structure_labels(
         preds = np.argmax(p.predictions[task_ind], axis=3)
     else:
         preds = np.argmax(p.predictions[task_ind], axis=1)
+        if output_prob:
+            prob_values = np.ndarray([
+                p.predictions[task_ind][pred_argmax] for pred_argmax in preds
+            ])
 
     # for inference
     if not hasattr(p, "label_ids") or p.label_ids is None:
@@ -207,7 +212,7 @@ def structure_labels(
     elif p.label_ids.ndim == 2:
         labels = p.label_ids[:, task_ind].squeeze()
 
-    return preds, labels, pad
+    return preds, labels, pad, prob_values
 
 
 def is_cnlpt_model(model_path: str) -> bool:
@@ -650,7 +655,7 @@ def main(
             task_label_to_label_packet = {}
 
             for task_ind, task_name in enumerate(dataset.tasks):
-                preds, labels, pad = structure_labels(
+                preds, labels, pad, prob_values = structure_labels(
                     p,
                     task_name,
                     task_ind,
@@ -659,10 +664,11 @@ def main(
                     tagger,
                     relations,
                     task_label_to_boundaries,
+                    output_prob
                 )
                 task_label_ind += pad
-
-                task_label_to_label_packet[task_name] = (preds, labels)
+                
+                task_label_to_label_packet[task_name] = (preds, labels, prob_values)
 
                 metrics[task_name] = cnlp_compute_metrics(
                     task_name,
@@ -864,6 +870,7 @@ def main(
                         dataset.tasks,
                         output_eval_predictions_file,
                         True,
+                        training_args.output_prob,
                         task_to_label_packet,
                         task_to_label_boundaries,
                         dataset_dev_segment,
@@ -908,6 +915,7 @@ def main(
                     dataset.tasks,
                     output_test_predictions_file,
                     False,
+                    training_args.output_prob,
                     task_to_label_packet,
                     task_to_label_boundaries,
                     dataset_test_segment,
