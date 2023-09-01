@@ -363,7 +363,6 @@ class CnlpModelForClassification(PreTrainedModel):
         :return: The augmented feature tensor
         """
         seq_len = features.shape[1]
-        pdb.set_trace()
         for prior_task_logits in logits:
             if len(features.shape) == 4:
                 # relations - batch x len x len x dim
