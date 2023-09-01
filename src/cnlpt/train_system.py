@@ -64,6 +64,7 @@ from transformers import (
     set_seed,
 )
 import json
+import pdb
 
 AutoConfig.register("cnlpt", CnlpConfig)
 
@@ -187,6 +188,11 @@ def main(
     # Set seed
     set_seed(training_args.seed)
 
+    if any(isinstance(item, int) for item in training_args.model_selection_label):
+        logger.warning(
+            f"It is not recommended to use ints as model selection labels: {tuple([item for item in training_args.model_selection_label if isinstance(item, int)])}. Labels should be input in string form."
+        )
+
     # Load tokenizer: Need this first for loading the datasets
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name
@@ -232,7 +238,36 @@ def main(
     except KeyError:
         raise ValueError("Task not found: %s" % (data_args.task_name))
 
+    class_weights = None
+    # get class weights, if desired
+    if data_args.weight_classes:
+        from collections import Counter
+
+        class_weights = []
+        for task in task_names:
+            # get labels in the right order ([0, 1])
+            if isinstance(
+                dataset.tasks_to_labels[task][1], str
+            ) and dataset.tasks_to_labels[task][1].startswith("No_"):
+                dataset.tasks_to_labels[task] = dataset.tasks_to_labels[task][1:] + [
+                    dataset.tasks_to_labels[task][0]
+                ]
+            labels = dataset.processed_dataset["train"][task]
+            weights = []
+            label_counts = Counter(labels)
+            for label in dataset.tasks_to_labels[task]:
+                weights.append(len(labels) / (num_labels[task] * label_counts[label]))
+                # class weights are determined by severity of class imbalance
+            if len(task_names) > 1:
+                class_weights.append(weights)
+            else:
+                class_weights = weights  # if we just have the one class, simplify the tensor or pytorch will be mad
+        class_weights = torch.tensor(class_weights).to(training_args.device)
+        # sm = torch.nn.Softmax(dim=class_weights.ndim - 1)
+        # class_weights = sm(class_weights)
+
     # Load pretrained model and tokenizer
+
     #
     # Distributed training:
     # The .from_pretrained methods guarantee that only one local process can concurrently
@@ -245,6 +280,8 @@ def main(
             embed_dims=model_args.cnn_embed_dim,
             num_filters=model_args.cnn_num_filters,
             filters=model_args.cnn_filter_sizes,
+            use_prior_tasks=model_args.use_prior_tasks,
+            class_weights=class_weights,
         )
         # Check if the caller specified a saved model to load (e.g., for an inference-only run)
         model_path = join(model_args.encoder_name, "pytorch_model.bin")
@@ -517,11 +554,51 @@ def main(
                     dataset.tasks_to_labels[task_name],
                 )
                 # FIXME - Defaulting to accuracy for model selection score, when it should be task-specific
-                task_scores.append(
-                    metrics[task_name].get(
-                        "one_score", np.mean(metrics[task_name].get("f1"))
+                if training_args.model_selection_score is not None:
+                    score = metrics[task_name].get(
+                        "one_score",
+                        metrics[task_name].get(training_args.model_selection_score),
                     )
-                )
+                    # TODO handle multi-task cases where a label is present in one class but not all
+                    if isinstance(training_args.model_selection_label, int):
+                        task_scores.append(score[training_args.model_selection_label])
+                    # we can only get the scores in list form,
+                    # so we have to maneuver a bit to get the sccore
+                    # if the label is provided in string form
+                    elif isinstance(training_args.model_selection_label, str):
+                        index = dataset.tasks_to_labels[task_name].index(
+                            training_args.model_selection_label
+                        )
+                        task_scores.append(score[index])
+                    elif isinstance(
+                        training_args.model_selection_label, list
+                    ) or isinstance(training_args.model_selection_label, tuple):
+                        scores = []
+                        for label in training_args.model_selection_label:
+                            if isinstance(label, int):
+                                scores.append(score[label])
+                            elif isinstance(label, str):
+                                index = dataset.tasks_to_labels[task_name].index(label)
+                                scores.append(score[index])
+                            else:
+                                raise RuntimeError(
+                                    f"Unrecognized label type: {type(label)}"
+                                )
+                        task_scores.append(np.mean(scores))
+                    elif training_args.model_selection_label is None:
+                        task_scores.append(
+                            metrics[task_name].get("one_score", np.mean(score))
+                        )
+                    else:
+                        raise RuntimeError(
+                            f"Unrecognized label type: {type(training_args.model_selection_label)}"
+                        )
+                else:  # same default as in 0.6.0
+                    task_scores.append(
+                        metrics[task_name].get(
+                            "one_score", np.mean(metrics[task_name].get("f1"))
+                        )
+                    )
                 # task_scores.append(processor.get_one_score(metrics.get(task_name, metrics.get(task_name.split('-')[0], None))))
 
             one_score = sum(task_scores) / len(task_scores)

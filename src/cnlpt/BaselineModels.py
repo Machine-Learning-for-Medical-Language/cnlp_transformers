@@ -15,6 +15,8 @@ class CnnSentenceClassifier(nn.Module):
         num_filters=25,
         dropout=0.2,
         filters=(1, 2, 3),
+        use_prior_tasks=False,
+        class_weights=None,
     ):
         super(CnnSentenceClassifier, self).__init__()
         self.dropout = dropout
@@ -23,8 +25,22 @@ class CnnSentenceClassifier(nn.Module):
         self.convs = nn.ModuleList(
             [nn.Conv1d(embed_dims, num_filters, x) for x in filters]
         )
-        self.loss_fn = nn.CrossEntropyLoss()
-
+        # need separate loss functions with different weights
+        if class_weights is not None:
+            if class_weights.ndim > 1:
+                self.loss_fn = {
+                    task_name: nn.CrossEntropyLoss(weight=class_weights[i])
+                    for i, task_name in enumerate(task_names)
+                }
+            else:
+                self.loss_fn = {
+                    task_name: nn.CrossEntropyLoss(weight=class_weights)
+                    for task_name in task_names
+                }
+        else:
+            self.loss_fn = {
+                task_name: nn.CrossEntropyLoss() for task_name in task_names
+            }
         self.fcs = nn.ModuleList()
 
         self.task_names = task_names
@@ -34,6 +50,17 @@ class CnnSentenceClassifier(nn.Module):
             self.fcs.append(
                 nn.Linear(num_filters * len(filters), num_labels_dict[task_name])
             )
+
+        self.use_prior_tasks = use_prior_tasks
+        if self.use_prior_tasks:
+            self.intertask_matrices = []
+            for i in range(len(self.task_names)):
+                matrices = []
+                for j in range(len(self.task_names) - i):
+                    matrices.append(nn.Linear(2, num_filters * len(filters)))
+                self.intertask_matrices.append(matrices)
+            # self.intertask_matrix = nn.Linear(2, num_filters * len(filters))
+            # put logits for task a through intertask_matrix[a][b] to get features to add to features of task b
 
     def forward(
         self,
@@ -54,15 +81,26 @@ class CnnSentenceClassifier(nn.Module):
         logits = []
         loss = 0
         for task_ind, task_fc in enumerate(self.fcs):
+            # get feaures from previous tasks using the world's tiniest linear layer
+            if self.use_prior_tasks:
+                for prev_task_ind in range(task_ind):
+                    prev_task_matrix = self.intertask_matrices[prev_task_ind][
+                        task_ind - prev_task_ind - 1
+                    ]
+                    prev_task_matrix = prev_task_matrix.to(logits[prev_task_ind].device)
+                    prev_task_features = prev_task_matrix(logits[prev_task_ind])
+                    fc_in = fc_in + prev_task_features
             task_logits = task_fc(fc_in)
             logits.append(task_logits)
 
             if not labels is None:
                 if labels.ndim == 2:
-                    task_labels = labels[:, 0]
+                    # if len(self.fcs) == 1:
+                    #     task_labels = labels[:,0]
+                    task_labels = labels[:, task_ind]
                 elif labels.ndim == 3:
                     task_labels = labels[:, 0, task_ind]
-                loss += self.loss_fn(
+                loss += self.loss_fn[self.task_names[task_ind]](
                     task_logits, task_labels.type(torch.LongTensor).to(labels.device)
                 )
 
