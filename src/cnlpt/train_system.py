@@ -655,6 +655,11 @@ def main(
             task_label_to_boundaries = {}
             task_label_to_label_packet = {}
 
+            log_probs = (
+                training_args.output_prob
+                if training_args.output_prob is not None
+                else False
+            )
             for task_ind, task_name in enumerate(dataset.tasks):
                 preds, labels, pad, prob_values = structure_labels(
                     p,
@@ -665,7 +670,7 @@ def main(
                     tagger,
                     relations,
                     task_label_to_boundaries,
-                    output_prob,
+                    log_probs,
                 )
                 task_label_ind += pad
 
