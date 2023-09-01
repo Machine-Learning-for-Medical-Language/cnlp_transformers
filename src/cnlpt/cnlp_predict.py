@@ -80,7 +80,8 @@ def process_prediction(
     task_names: List[str],
     output_fn: str,
     error_analysis: bool,
-    task_to_label_packet: Dict[str, Tuple[np.ndarray, np.ndarray]],
+    output_prob: bool,
+    task_to_label_packet: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
     task_to_label_boundaries: Dict[str, Tuple[int, int]],
     eval_dataset,
     task2labels: Dict[str, List[str]],
@@ -91,7 +92,7 @@ def process_prediction(
         for task, label_packet in tqdm.tqdm(
             task_to_label_packet.items(), desc=f"computing disagreements"
         ):
-            preds, labels = label_packet
+            preds, labels, prob_values = label_packet
             task_to_error_inds[task] = compute_disagreements(
                 preds, labels, output_mode[task]
             )
@@ -129,12 +130,15 @@ def process_prediction(
     for task_name, packet in tqdm.tqdm(
         task_to_label_packet.items(), desc="getting human readable labels"
     ):
-        preds, labels = packet
+        preds, labels, prob_values = packet
+        if not output_prob:
+            prob_values = np.array([])
         task_labels = task2labels[task_name]
         error_inds = task_to_error_inds[task_name]
         target_inds = error_inds if len(error_inds) > 0 else relevant_indices
         out_table[task_name][target_inds] = get_output_list(
             error_analysis,
+            prob_values,
             task_name,
             task_labels,
             task_to_label_boundaries,
@@ -159,6 +163,7 @@ def process_prediction(
 # assignment and populate it via a generator but for now just use a list
 def get_output_list(
     error_analysis: bool,
+    prob_values: np.ndarray,
     pred_task: str,
     task_labels: List[str],
     task2boundaries: Dict[str, Tuple[int, int]],
@@ -185,7 +190,7 @@ def get_output_list(
     # probe those data structures when we run the code
     if task_type == classification:
         return get_classification_prints(
-            pred_task, task_labels, ground_truth, task_prediction
+            pred_task, task_labels, ground_truth, task_prediction, prob_values
         )
 
     elif task_type == tagging:
@@ -218,6 +223,7 @@ def get_classification_prints(
     classification_labels: List[str],
     ground_truths: Union[None, np.ndarray],
     task_predictions: np.ndarray,
+    prob_values: np.ndarray,
 ) -> List[str]:
     predicted_labels = [classification_labels[index] for index in task_predictions]
 
@@ -227,11 +233,18 @@ def get_classification_prints(
             return f"_no_{task_name}_error_"
         return f"Ground: {ground} , Predicted {predicted}"
 
+    pred_list = predicted_labels
     if ground_truths is not None:
         ground_strings = [classification_labels[index] for index in ground_truths]
 
-        return [*map(clean_string, zip(ground_strings, predicted_labels))]
-    return predicted_labels
+        pred_list = [*map(clean_string, zip(ground_strings, predicted_labels))]
+
+    if len(prob_values) == len(predicted_labels):
+        return [
+            f"{pred} , Probability {prob:.6f}"
+            for pred, prob in zip(pred_list, prob_values)
+        ]
+    return pred_list
 
 
 def get_tagging_prints(

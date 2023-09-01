@@ -52,6 +52,7 @@ class CnlpTrainingArguments(TrainingArguments):
         default=None,
         metadata={
             "help": "Class whose score should be used in evalutation. Should be an integer if scores are indexed, or a string if they are labeled by name."
+            }
     )
     output_prob: Optional[bool] = field(
         default=False,
