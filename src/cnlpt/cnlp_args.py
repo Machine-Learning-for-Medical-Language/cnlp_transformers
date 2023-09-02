@@ -43,6 +43,24 @@ class CnlpTrainingArguments(TrainingArguments):
             "help": "Only optimize the bias parameters of the encoder (and the weights of the classifier heads), as proposed in the BitFit paper by Ben Zaken et al. 2021 (https://arxiv.org/abs/2106.10199)"
         },
     )
+    model_selection_score: str = field(
+        default=None,
+        metadata={
+            "help": "Score to use in evaluation. Should be one of acc, f1, acc_and_f1, recall, or precision."
+        },
+    )
+    model_selection_label: Union[int, str, List[int], List[str]] = field(
+        default=None,
+        metadata={
+            "help": "Class whose score should be used in evalutation. Should be an integer if scores are indexed, or a string if they are labeled by name."
+        },
+    )
+    output_prob: Optional[bool] = field(
+        default=False,
+        metadata={
+            "help": "If selected, probability scores will be added to the output prediction file for test data."
+        },
+    )
 
 
 cnlpt_models = ["cnn", "lstm", "hier", "cnlpt"]
@@ -245,3 +263,70 @@ class ModelArguments:
             if k.endswith("_token"):
                 d[k] = f"<{k.upper()}>"
         return d
+
+
+@dataclass
+class DaptArguments:
+    encoder_name: Optional[str] = field(
+        default="roberta-base",
+        metadata={
+            "help": "Path to pretrained model or model identifier from huggingface.co/models"
+        },
+    )
+    config_name: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Pretrained config name or path if not the same as model_name"
+        },
+    )
+    tokenizer_name: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Pretrained tokenizer name or path if not the same as model_name"
+        },
+    )
+    output_dir: Optional[str] = field(
+        default=None, metadata={"help": "Directory path to write trained model to."}
+    )
+    overwrite_output_dir: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Overwrite the content of the output directory. "
+                "Use this to continue training if output_dir points to a checkpoint directory."
+            )
+        },
+    )
+    data_dir: Optional[str] = field(
+        default=None, metadata={"help": "The data dir for domain-adaptive pretraining."}
+    )
+    cache_dir: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Where do you want to store the pretrained models downloaded from s3"
+        },
+    )
+    chunk_size: int = field(
+        default=128,
+        metadata={"help": "The chunk size for domain-adaptive pretraining."},
+    )
+    mlm_probability: float = field(
+        default=0.15,
+        metadata={
+            "help": "The token masking probability for domain-adaptive pretraining."
+        },
+    )
+    test_size: float = field(
+        default=0.2,
+        metadata={"help": "The test split proportion for domain-adaptive pretraining."},
+    )
+    seed: int = field(
+        default=42,
+        metadata={
+            "help": "The random seed to use for a train/test split for domain-adaptive pretraining (requires --dapt-encoder)."
+        },
+    )
+    no_eval: bool = field(
+        default=False,
+        metadata={"help": "Don't split into train and test; just pretrain."},
+    )
