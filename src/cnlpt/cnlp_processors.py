@@ -185,8 +185,11 @@ class AutoProcessor(DataProcessor):
             dataset_tasks = first_split.features.keys() - set(
                 ["text", "text_a", "text_b"]
             )
-            active_tasks = set(tasks).intersection(dataset_tasks)
-            active_tasks = list(active_tasks)
+            if tasks is None:
+                active_tasks = list(dataset_tasks)
+            else:
+                active_tasks = set(tasks).intersection(dataset_tasks)
+                active_tasks = list(active_tasks)
             active_tasks.sort()
             self.dataset.task_output_modes = {}
         elif ext_check_file.endswith("json"):
