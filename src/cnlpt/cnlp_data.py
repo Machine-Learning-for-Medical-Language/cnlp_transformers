@@ -1,3 +1,4 @@
+import functools
 import json
 import logging
 import os
@@ -10,11 +11,10 @@ from typing import Callable, Dict, List, Optional, Tuple, Union
 import datasets
 import numpy as np
 import torch
-from datasets import Features
+from datasets import DatasetDict, Features, IterableDatasetDict
 from filelock import FileLock
 from torch.utils.data.dataset import Dataset
-from transformers import BatchEncoding, InputExample
-from transformers import DataCollatorForLanguageModeling
+from transformers import BatchEncoding, DataCollatorForLanguageModeling, InputExample
 from transformers.tokenization_utils import PreTrainedTokenizer
 
 from .cnlp_args import DaptArguments
