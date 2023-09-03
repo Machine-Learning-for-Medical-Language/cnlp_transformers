@@ -2,6 +2,7 @@
 Test suite for running the API models
 """
 import asyncio
+
 import pytest
 
 from cnlpt.api import cnlp_rest
@@ -18,7 +19,8 @@ class TestNegation:
         pass
 
     def test_negation_process(self, startup_negation):
-        from cnlpt.api.negation_rest import process as negation_process, NegationResults
+        from cnlpt.api.negation_rest import NegationResults
+        from cnlpt.api.negation_rest import process as negation_process
 
         doc = cnlp_rest.EntityDocument(
             doc_text="The patient has a sore knee and headache "
@@ -41,12 +43,14 @@ class TestTemporal:
 
     def test_temporal_process_sentence(self, startup_temporal):
         from cnlpt.api.temporal_rest import (
-            process_sentence as temporal_process_sentence,
-            TemporalResults,
-            SentenceDocument,
-            Timex,
             Event,
             Relation,
+            SentenceDocument,
+            TemporalResults,
+            Timex,
+        )
+        from cnlpt.api.temporal_rest import (
+            process_sentence as temporal_process_sentence,
         )
 
         doc = SentenceDocument(

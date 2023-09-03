@@ -5,19 +5,19 @@ Domain-adaptive pretraining (see DAPT.md for details)
 import logging
 import os
 import sys
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 from transformers import (
-    Trainer,
-    AutoTokenizer,
     AutoModelForMaskedLM,
-    set_seed,
+    AutoTokenizer,
     HfArgumentParser,
+    Trainer,
     TrainingArguments,
+    set_seed,
 )
 
-from .cnlp_data import DaptDataset
 from .cnlp_args import DaptArguments
+from .cnlp_data import DaptDataset
 
 logger = logging.getLogger(__name__)
 

@@ -14,25 +14,24 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import logging
+import os
+from time import time
+from typing import Dict, List, Tuple
+
+import numpy as np
+import torch
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from typing import List, Tuple, Dict
-
+from ..CnlpModelForClassification import CnlpConfig, CnlpModelForClassification
 from .cnlp_rest import (
     UnannotatedDocument,
     create_instance_string,
+    get_dataset,
     initialize_cnlpt_model,
     initialize_hier_model,
-    get_dataset,
 )
-from ..CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
-import torch
-import numpy as np
-
-import logging
-from time import time
-import os
 
 app = FastAPI()
 model_name = os.getenv("MODEL_PATH")

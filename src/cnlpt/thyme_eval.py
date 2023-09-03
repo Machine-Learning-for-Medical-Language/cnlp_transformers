@@ -2,22 +2,23 @@
 Module used for evaluating a model on THYME data.
 Not currently documented for public use.
 """
-import os
-import sys
-import re
-from os.path import join
 import logging
+import os
+import re
+import sys
+from os.path import join
 
 import anafora
-from anafora import AnaforaData, AnaforaEntity, AnaforaRelation
 import requests
-from .api.temporal_rest import TokenizedSentenceDocument
+from anafora import AnaforaData, AnaforaEntity, AnaforaRelation
+from nltk.tokenize import TreebankWordTokenizer
+from nltk.tokenize import wordpunct_tokenize as tokenize
+from nltk.tokenize.util import align_tokens
 
 # sentence and token splitters:
 from PyRuSH import RuSH
-from nltk.tokenize import wordpunct_tokenize as tokenize
-from nltk.tokenize.util import align_tokens
-from nltk.tokenize import TreebankWordTokenizer
+
+from .api.temporal_rest import TokenizedSentenceDocument
 
 xml_name_regex = r"Temporal-(Entity|Relation)\.gold\.completed\.xml"
 tb_tokenize = False

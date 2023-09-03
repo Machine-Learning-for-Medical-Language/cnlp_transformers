@@ -1,14 +1,14 @@
-import os
 import csv
+import os
 import sys
+from collections import defaultdict
+from heapq import merge
+from itertools import chain, groupby, tee
+from pathlib import Path
+
 import pandas as pd
 import spacy
 from tqdm import tqdm
-from pathlib import Path
-from itertools import chain
-from collections import defaultdict
-from itertools import groupby, tee
-from heapq import merge
 
 TEST_DIR = "chemprot_development"
 TRAIN_DIR = "chemprot_training"

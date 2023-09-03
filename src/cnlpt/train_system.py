@@ -15,56 +15,50 @@
 # limitations under the License.
 """ Finetuning the library models for sequence classification on clinical NLP tasks"""
 import logging
-import os
-from os.path import basename, dirname, join, exists
-import sys
-
-from typing import Callable, Dict, Optional, List, Union, Any
-from filelock import FileLock
-import tempfile
 import math
-
+import os
+import sys
+import tempfile
 from enum import Enum
+from os.path import basename, dirname, exists, join
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
-
 import torch
+from filelock import FileLock
+from huggingface_hub import hf_hub_url
+from torch.optim import AdamW
 from torch.utils.data.dataset import Dataset
-from transformers import AutoConfig, AutoTokenizer, AutoModel, EvalPrediction
-from transformers.training_args import IntervalStrategy
-from transformers.data.processors.utils import InputFeatures
-from transformers.tokenization_utils import PreTrainedTokenizer
+from transformers import (
+    ALL_PRETRAINED_CONFIG_ARCHIVE_MAP,
+    AutoConfig,
+    AutoModel,
+    AutoTokenizer,
+    EvalPrediction,
+)
 from transformers.data.processors.utils import (
     DataProcessor,
     InputExample,
     InputFeatures,
 )
-from transformers import ALL_PRETRAINED_CONFIG_ARCHIVE_MAP
-from torch.optim import AdamW
 from transformers.file_utils import CONFIG_NAME
-from huggingface_hub import hf_hub_url
-
-import sys
+from transformers.tokenization_utils import PreTrainedTokenizer
+from transformers.training_args import IntervalStrategy
 
 sys.path.append(os.path.join(os.getcwd()))
-from .cnlp_processors import tagging, relex, classification
-from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
-from .cnlp_metrics import cnlp_compute_metrics
-from .cnlp_args import CnlpTrainingArguments, ModelArguments
-from .cnlp_predict import write_predictions_for_dataset
-from .CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
-from .BaselineModels import CnnSentenceClassifier, LstmSentenceClassifier
-from .HierarchicalTransformer import HierarchicalModel
+import json
 
 import requests
+from transformers import HfArgumentParser, Trainer, set_seed
 
-from transformers import (
-    HfArgumentParser,
-    Trainer,
-    set_seed,
-)
-import json
-import pdb
+from .BaselineModels import CnnSentenceClassifier, LstmSentenceClassifier
+from .cnlp_args import CnlpTrainingArguments, ModelArguments
+from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
+from .cnlp_metrics import cnlp_compute_metrics
+from .cnlp_predict import write_predictions_for_dataset
+from .cnlp_processors import classification, relex, tagging
+from .CnlpModelForClassification import CnlpConfig, CnlpModelForClassification
+from .HierarchicalTransformer import HierarchicalModel
 
 AutoConfig.register("cnlpt", CnlpConfig)
 
