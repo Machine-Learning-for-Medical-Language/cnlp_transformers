@@ -107,7 +107,7 @@ Instance labels should be formatted the same way as in the csv/tsv example above
 ### Step-by-step finetuning examples
 We provided the following step-by-step examples how to finetune in clinical NLP tasks:
 
-#### 1. [Classification task](examples/uci_drug/): using [Drug Review Dataset (Drugs.com) Data Set](https://archive.ics.uci.edu/ml/datasets/Drug+Review+Dataset+%28Drugs.com%29)
+#### 1. [Classification task](examples/uci_drug/): using [Drug Review Dataset (Drugs.com) Data Set](https://archive.ics.uci.edu/dataset/462/drug+review+dataset+drugs+com)
 
 #### 2. [Sequence tagging task](examples/chemprot/): using [ChemProt website](https://biocreative.bioinformatics.udel.edu/news/corpora/chemprot-corpus-biocreative-vi/)
 
