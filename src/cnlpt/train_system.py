@@ -67,6 +67,9 @@ from transformers import (
     TrainerCallback,
 )
 import json
+import pdb
+
+from collections import defaultdict
 
 from collections import defaultdict
 
@@ -140,7 +143,11 @@ def restructure_prediction(
     max_seq_length: int,
     tagger: Dict[str, bool],
     relations: Dict[str, bool],
-) -> Tuple[Dict[str, Tuple[np.ndarray, np.ndarray]], Dict[str, Tuple[int, int]]]:
+    output_prob: bool,
+) -> Tuple[
+    Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
+    Dict[str, Tuple[int, int]],
+]:
     task_label_ind = 0
 
     # disagreement collection stuff for this scope
@@ -148,7 +155,7 @@ def restructure_prediction(
     task_label_to_label_packet: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
 
     for task_ind, task_name in enumerate(task_names):
-        preds, labels, pad = structure_labels(
+        preds, labels, pad, prob_values = structure_labels(
             raw_prediction,
             task_name,
             task_ind,
@@ -157,11 +164,15 @@ def restructure_prediction(
             tagger,
             relations,
             task_label_to_boundaries,
+            output_prob,
         )
         task_label_ind += pad
 
-        task_label_to_label_packet[task_name] = (preds, labels)
-    return task_label_to_label_packet, task_label_to_boundaries
+        task_label_to_label_packet[task_name] = (preds, labels, prob_values)
+    return (
+        task_label_to_label_packet,
+        task_label_to_boundaries,
+    )
 
 
 def structure_labels(
@@ -173,11 +184,12 @@ def structure_labels(
     tagger: Dict[str, bool],
     relations: Dict[str, bool],
     task_label_to_boundaries: Dict[str, Tuple[int, int]],
-) -> Tuple[np.ndarray, np.ndarray, int]:
+    output_prob: bool,
+) -> Tuple[np.ndarray, np.ndarray, int, np.ndarray]:
     # disagreement collection stuff for this scope
 
     pad = 0
-
+    prob_values = np.ndarray([])
     if tagger[task_name]:
         preds = np.argmax(p.predictions[task_ind], axis=2)
         # labels will be -100 where we don't need to tag
@@ -185,6 +197,8 @@ def structure_labels(
         preds = np.argmax(p.predictions[task_ind], axis=3)
     else:
         preds = np.argmax(p.predictions[task_ind], axis=1)
+        if output_prob:
+            prob_values = np.max(p.predictions[task_ind], axis=1)
 
     # for inference
     if not hasattr(p, "label_ids") or p.label_ids is None:
@@ -209,7 +223,7 @@ def structure_labels(
     elif p.label_ids.ndim == 2:
         labels = p.label_ids[:, task_ind].squeeze()
 
-    return preds, labels, pad
+    return preds, labels, pad, prob_values
 
 
 def is_cnlpt_model(model_path: str) -> bool:
@@ -312,6 +326,13 @@ def main(
     # Set seed
     set_seed(training_args.seed)
 
+    if training_args.model_selection_label is not None and any(
+        isinstance(item, int) for item in training_args.model_selection_label
+    ):
+        logger.warning(
+            f"It is not recommended to use ints as model selection labels: {tuple([item for item in training_args.model_selection_label if isinstance(item, int)])}. Labels should be input in string form."
+        )
+
     # Load tokenizer: Need this first for loading the datasets
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name
@@ -357,7 +378,36 @@ def main(
     except KeyError:
         raise ValueError("Task not found: %s" % (data_args.task_name))
 
+    class_weights = None
+    # get class weights, if desired
+    if data_args.weight_classes:
+        from collections import Counter
+
+        class_weights = []
+        for task in task_names:
+            # get labels in the right order ([0, 1])
+            if isinstance(
+                dataset.tasks_to_labels[task][1], str
+            ) and dataset.tasks_to_labels[task][1].startswith("No_"):
+                dataset.tasks_to_labels[task] = dataset.tasks_to_labels[task][1:] + [
+                    dataset.tasks_to_labels[task][0]
+                ]
+            labels = dataset.processed_dataset["train"][task]
+            weights = []
+            label_counts = Counter(labels)
+            for label in dataset.tasks_to_labels[task]:
+                weights.append(len(labels) / (num_labels[task] * label_counts[label]))
+                # class weights are determined by severity of class imbalance
+            if len(task_names) > 1:
+                class_weights.append(weights)
+            else:
+                class_weights = weights  # if we just have the one class, simplify the tensor or pytorch will be mad
+        class_weights = torch.tensor(class_weights).to(training_args.device)
+        # sm = torch.nn.Softmax(dim=class_weights.ndim - 1)
+        # class_weights = sm(class_weights)
+
     # Load pretrained model and tokenizer
+
     #
     # Distributed training:
     # The .from_pretrained methods guarantee that only one local process can concurrently
@@ -370,6 +420,8 @@ def main(
             embed_dims=model_args.cnn_embed_dim,
             num_filters=model_args.cnn_num_filters,
             filters=model_args.cnn_filter_sizes,
+            use_prior_tasks=model_args.use_prior_tasks,
+            class_weights=class_weights,
         )
         # Check if the caller specified a saved model to load (e.g., for an inference-only run)
         model_path = join(model_args.encoder_name, "pytorch_model.bin")
@@ -614,7 +666,7 @@ def main(
             task_label_to_label_packet = {}
 
             for task_ind, task_name in enumerate(dataset.tasks):
-                preds, labels, pad = structure_labels(
+                preds, labels, pad, prob_values = structure_labels(
                     p,
                     task_name,
                     task_ind,
@@ -623,10 +675,11 @@ def main(
                     tagger,
                     relations,
                     task_label_to_boundaries,
+                    training_args.output_prob,
                 )
                 task_label_ind += pad
 
-                task_label_to_label_packet[task_name] = (preds, labels)
+                task_label_to_label_packet[task_name] = (preds, labels, prob_values)
 
                 metrics[task_name] = cnlp_compute_metrics(
                     task_name,
@@ -636,11 +689,51 @@ def main(
                     dataset.tasks_to_labels[task_name],
                 )
                 # FIXME - Defaulting to accuracy for model selection score, when it should be task-specific
-                task_scores.append(
-                    metrics[task_name].get(
-                        "one_score", np.mean(metrics[task_name].get("f1"))
+                if training_args.model_selection_score is not None:
+                    score = metrics[task_name].get(
+                        "one_score",
+                        metrics[task_name].get(training_args.model_selection_score),
                     )
-                )
+                    # TODO handle multi-task cases where a label is present in one class but not all
+                    if isinstance(training_args.model_selection_label, int):
+                        task_scores.append(score[training_args.model_selection_label])
+                    # we can only get the scores in list form,
+                    # so we have to maneuver a bit to get the sccore
+                    # if the label is provided in string form
+                    elif isinstance(training_args.model_selection_label, str):
+                        index = dataset.tasks_to_labels[task_name].index(
+                            training_args.model_selection_label
+                        )
+                        task_scores.append(score[index])
+                    elif isinstance(
+                        training_args.model_selection_label, list
+                    ) or isinstance(training_args.model_selection_label, tuple):
+                        scores = []
+                        for label in training_args.model_selection_label:
+                            if isinstance(label, int):
+                                scores.append(score[label])
+                            elif isinstance(label, str):
+                                index = dataset.tasks_to_labels[task_name].index(label)
+                                scores.append(score[index])
+                            else:
+                                raise RuntimeError(
+                                    f"Unrecognized label type: {type(label)}"
+                                )
+                        task_scores.append(np.mean(scores))
+                    elif training_args.model_selection_label is None:
+                        task_scores.append(
+                            metrics[task_name].get("one_score", np.mean(score))
+                        )
+                    else:
+                        raise RuntimeError(
+                            f"Unrecognized label type: {type(training_args.model_selection_label)}"
+                        )
+                else:  # same default as in 0.6.0
+                    task_scores.append(
+                        metrics[task_name].get(
+                            "one_score", np.mean(metrics[task_name].get("f1"))
+                        )
+                    )
                 # task_scores.append(processor.get_one_score(metrics.get(task_name, metrics.get(task_name.split('-')[0], None))))
 
             one_score = sum(task_scores) / len(task_scores)
@@ -753,20 +846,20 @@ def main(
                     for key, value in eval_state.items():
                         writer.write(f"{key} : {value} \n")
             # here we probably want separate predictions for each dataset:
-            if training_args.load_best_model_at_end:
-                model.load_state_dict(
-                    torch.load(join(training_args.output_dir, "pytorch_model.bin"))
-                )  # load best model
-                trainer = Trainer(  # maake trainer from best model
-                    model=model,
-                    args=training_args,
-                    train_dataset=dataset.processed_dataset.get("train", None),
-                    eval_dataset=dataset.processed_dataset.get("validation", None),
-                    compute_metrics=build_compute_metrics_fn(
-                        task_names, model, dataset
-                    ),
-                )
-                # use trainer to predict
+            # if training_args.load_best_model_at_end:
+            #     model.load_state_dict(
+            #         torch.load(join(training_args.output_dir, "pytorch_model.bin"))
+            #     )  # load best model
+            #     trainer = Trainer(  # maake trainer from best model
+            #         model=model,
+            #         args=training_args,
+            #         train_dataset=dataset.processed_dataset.get("train", None),
+            #         eval_dataset=dataset.processed_dataset.get("validation", None),
+            #         compute_metrics=build_compute_metrics_fn(
+            #             task_names, model, dataset
+            #         ),
+            #     )
+            #     # use trainer to predict
 
             (
                 task_to_label_packet,
@@ -777,7 +870,7 @@ def main(
                 subdir = os.path.split(dataset_path.rstrip("/"))[1]
                 output_eval_predictions_file = os.path.join(
                     training_args.output_dir,
-                    f"eval_predictions_%s_%d_%d.txt" % (subdir, dataset_ind, curr_step),
+                    f"eval_predictions_%s_step_%d.tsv" % (subdir, curr_step),
                 )
 
                 dataset_dev_segment = get_dataset_segment(
@@ -788,6 +881,7 @@ def main(
                         dataset.tasks,
                         output_eval_predictions_file,
                         True,
+                        training_args.output_prob,
                         task_to_label_packet,
                         task_to_label_boundaries,
                         dataset_dev_segment,
@@ -809,7 +903,7 @@ def main(
                 subdir = os.path.split(dataset_path.rstrip("/"))[1]
                 output_test_predictions_file = os.path.join(
                     training_args.output_dir,
-                    f"test_predictions_%s_%d.txt" % (subdir, dataset_ind),
+                    f"test_predictions_%s.tsv" % (subdir),
                 )
 
                 dataset_test_segment = get_dataset_segment("test", dataset_ind, dataset)
@@ -826,12 +920,14 @@ def main(
                     data_args.max_seq_length,
                     tagger,
                     relations,
+                    training_args.output_prob,
                 )
 
                 process_prediction(
                     dataset.tasks,
                     output_test_predictions_file,
                     False,
+                    training_args.output_prob,
                     task_to_label_packet,
                     task_to_label_boundaries,
                     dataset_test_segment,
