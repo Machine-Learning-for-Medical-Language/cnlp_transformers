@@ -182,7 +182,9 @@ def main(
     # Set seed
     set_seed(training_args.seed)
 
-    if not training_args.model_selection_label is None and any(isinstance(item, int) for item in training_args.model_selection_label):
+    if not training_args.model_selection_label is None and any(
+        isinstance(item, int) for item in training_args.model_selection_label
+    ):
         logger.warning(
             f"It is not recommended to use ints as model selection labels: {tuple([item for item in training_args.model_selection_label if isinstance(item, int)])}. Labels should be input in string form."
         )
