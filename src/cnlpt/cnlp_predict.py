@@ -174,11 +174,13 @@ def get_output_list(
     text_column: pd.Series,
 ) -> List[str]:
     if len(error_inds) > 0 and error_analysis:
+        relevant_prob_values = prob_values[error_inds]
         ground_truth = labels[error_inds].astype(int)
         task_prediction = prediction[error_inds].astype(int)
         all_torch_labels = torch_labels[error_inds].astype(int)
         text_samples = pd.Series(text_column[error_inds])
     else:
+        relevant_prob_values = prob_values
         ground_truth = labels.astype(int) if error_analysis else None
         task_prediction = prediction.astype(int)
         all_torch_labels = torch_labels.astype(int)
@@ -186,7 +188,7 @@ def get_output_list(
     task_type = output_mode[pred_task]
     if task_type == classification:
         return get_classification_prints(
-            pred_task, task_labels, ground_truth, task_prediction, prob_values
+            pred_task, task_labels, ground_truth, task_prediction, relevant_prob_values
         )
 
     elif task_type == tagging:
@@ -235,9 +237,6 @@ def get_classification_prints(
 
         pred_list = [*map(clean_string, zip(ground_strings, predicted_labels))]
 
-    print("HERE")
-    print(prob_values.shape)
-    print(len(predicted_labels))
     if len(prob_values) == len(predicted_labels):
         return [
             f"{pred} , Probability {prob:.6f}"
