@@ -174,7 +174,11 @@ def get_output_list(
     text_column: pd.Series,
 ) -> List[str]:
     if len(error_inds) > 0 and error_analysis:
-        relevant_prob_values = prob_values[error_inds]
+        relevant_prob_values = (
+            prob_values[error_inds]
+            if output_mode[pred_task] == tagging
+            else prob_values
+        )
         ground_truth = labels[error_inds].astype(int)
         task_prediction = prediction[error_inds].astype(int)
         all_torch_labels = torch_labels[error_inds].astype(int)
