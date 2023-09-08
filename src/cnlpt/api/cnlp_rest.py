@@ -1,3 +1,6 @@
+"""
+isort:skip_file
+"""
 # Core python imports
 import os
 

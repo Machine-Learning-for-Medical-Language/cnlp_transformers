@@ -4,21 +4,21 @@ Module containing the CNLP transformer model.
 # from transformers.models.auto import  AutoModel, AutoConfig
 import copy
 import inspect
+import logging
+import math
+import random
 from os import PathLike
-from typing import Optional, List, Any, Dict, Union
-
-from transformers import AutoModel, AutoConfig
-from transformers.modeling_utils import PreTrainedModel
-from transformers.configuration_utils import PretrainedConfig
+from typing import Any, Dict, List, Optional, Union
 
 import torch
 from torch import nn
-import logging
 from torch.nn import CrossEntropyLoss, MSELoss
+from torch.nn.functional import relu, softmax
+from transformers import AutoConfig, AutoModel
+from transformers.configuration_utils import PretrainedConfig
 from transformers.modeling_outputs import SequenceClassifierOutput
-from torch.nn.functional import softmax, relu
-import math
-import random
+from transformers.modeling_utils import PreTrainedModel
+
 from . import __version__ as cnlpt_version
 
 logger = logging.getLogger(__name__)

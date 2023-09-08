@@ -1,19 +1,15 @@
-import logging
-import numpy as np
-import pandas as pd
-import re
 import csv
-import tqdm
-import inspect
-
-from datasets import Dataset
-from transformers.trainer_utils import EvalPrediction
-from .cnlp_processors import tagging, relex, classification
-from .cnlp_data import ClinicalNlpDataset
-from typing import Dict, List, Tuple, Union, Iterable
+import logging
+from collections import defaultdict
 from itertools import chain, groupby
 from operator import itemgetter
-from collections import defaultdict
+from typing import Dict, Iterable, List, Tuple, Union
+
+import numpy as np
+import pandas as pd
+import tqdm
+
+from .cnlp_processors import classification, relex, tagging
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +107,7 @@ def process_prediction(
     tagging_tasks = filter(lambda t: output_mode[t] == tagging, task_names)
 
     relex_tasks = filter(lambda t: output_mode[t] == relex, task_names)
+
     # ordering in terms of ease of reading
     out_table = pd.DataFrame(
         columns=["text", *classification_tasks, *tagging_tasks, *relex_tasks],
@@ -410,15 +407,11 @@ def get_relex_prints(
     def normalize_cells(
         raw_cells: np.ndarray, token_ids: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray]:
-        # resolved_predictions[index]  shape is sent length x sent length
-        # not the same shape insanity that we had for tagging
-
         (invalid_inds,) = np.where(np.diag(raw_cells) != -100)
         # just in case
         np.fill_diagonal(raw_cells, -100)
 
         np.fill_diagonal(token_ids, -100)
-        # TODO find a more facile way to do the following two steps in numpy if possible
         reduced_matrix = np.array(
             [
                 *filter(

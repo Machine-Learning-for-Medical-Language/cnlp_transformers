@@ -14,62 +14,46 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """ Finetuning the library models for sequence classification on clinical NLP tasks"""
+import json
 import logging
-import os
-from os.path import basename, dirname, join, exists
-import sys
-
-from typing import Callable, Dict, Optional, List, Union, Any, Tuple
-from filelock import FileLock
-import tempfile
 import math
-
-from enum import Enum
+import os
+import pdb
+import sys
+import tempfile
+from collections import defaultdict, deque
+from os.path import exists, join
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
-
+import requests
 import torch
 from datasets import Dataset
-from transformers import AutoConfig, AutoTokenizer, AutoModel, EvalPrediction
-from transformers.training_args import IntervalStrategy
-from transformers.data.processors.utils import InputFeatures
-from transformers.tokenization_utils import PreTrainedTokenizer
-from transformers.data.processors.utils import (
-    DataProcessor,
-    InputExample,
-    InputFeatures,
-)
-from transformers import ALL_PRETRAINED_CONFIG_ARCHIVE_MAP
-from torch.optim import AdamW
-from transformers.file_utils import CONFIG_NAME
 from huggingface_hub import hf_hub_url
-
-import sys
-
-sys.path.append(os.path.join(os.getcwd()))
-from .cnlp_processors import tagging, relex, classification
-from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
-from .cnlp_metrics import cnlp_compute_metrics
-from .cnlp_args import CnlpTrainingArguments, ModelArguments
-from .cnlp_predict import process_prediction
-from .CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
-from .BaselineModels import CnnSentenceClassifier, LstmSentenceClassifier
-from .HierarchicalTransformer import HierarchicalModel
-
-import requests
-
-from collections import deque
-
 from transformers import (
+    AutoConfig,
+    AutoModel,
+    AutoTokenizer,
+    EvalPrediction,
     HfArgumentParser,
     Trainer,
-    set_seed,
     TrainerCallback,
+    set_seed,
 )
-import json
-import pdb
+from transformers.file_utils import CONFIG_NAME
+from transformers.training_args import IntervalStrategy
 
-from collections import defaultdict
+from .BaselineModels import CnnSentenceClassifier, LstmSentenceClassifier
+from .cnlp_args import CnlpTrainingArguments, ModelArguments
+from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
+from .cnlp_metrics import cnlp_compute_metrics
+from .cnlp_predict import process_prediction
+from .cnlp_processors import classification, relex, tagging
+from .CnlpModelForClassification import CnlpConfig, CnlpModelForClassification
+from .HierarchicalTransformer import HierarchicalModel
+
+sys.path.append(os.path.join(os.getcwd()))
+
 
 from collections import defaultdict
 
@@ -510,7 +494,7 @@ def main(
                         "previous training run."
                     )
 
-            ## TODO: check if user overwrote parameters in command line that could change behavior of the model and warn
+            # TODO: check if user overwrote parameters in command line that could change behavior of the model and warn
             # if data_args.chunk_len is not None:
 
             logger.info("Loading pre-trained hierarchical model...")
@@ -623,8 +607,7 @@ def main(
                 bias_fit=training_args.bias_fit,
             )
 
-    best_eval_results = None
-    output_eval_file = os.path.join(training_args.output_dir, f"eval_results.txt")
+    output_eval_file = os.path.join(training_args.output_dir, "eval_results.txt")
     if training_args.do_train:
         # TODO: This assumes that if there are multiple training sets, they all have the same length, but
         # in the future it would be nice to be able to have multiple heterogeneous datasets
@@ -738,7 +721,7 @@ def main(
 
             one_score = sum(task_scores) / len(task_scores)
 
-            if not model is None:
+            if model is not None:
                 if not hasattr(model, "best_score") or one_score > model.best_score:
                     # For convenience, we also re-save the tokenizer to the same directory,
                     # so that you can share your model easily on huggingface.co/models =)
@@ -841,25 +824,25 @@ def main(
                 if any(eval_state):
                     curr_step = eval_state["curr_step"]
                     writer.write(
-                        f"\n\n Current state (In Compute Metrics Function) \n\n"
+                        "\n\n Current state (In Compute Metrics Function) \n\n"
                     )
                     for key, value in eval_state.items():
                         writer.write(f"{key} : {value} \n")
             # here we probably want separate predictions for each dataset:
-            # if training_args.load_best_model_at_end:
-            #     model.load_state_dict(
-            #         torch.load(join(training_args.output_dir, "pytorch_model.bin"))
-            #     )  # load best model
-            #     trainer = Trainer(  # maake trainer from best model
-            #         model=model,
-            #         args=training_args,
-            #         train_dataset=dataset.processed_dataset.get("train", None),
-            #         eval_dataset=dataset.processed_dataset.get("validation", None),
-            #         compute_metrics=build_compute_metrics_fn(
-            #             task_names, model, dataset
-            #         ),
-            #     )
-            #     # use trainer to predict
+            if training_args.load_best_model_at_end:
+                model.load_state_dict(
+                    torch.load(join(training_args.output_dir, "pytorch_model.bin"))
+                )  # load best model
+                trainer = Trainer(  # maake trainer from best model
+                    model=model,
+                    args=training_args,
+                    train_dataset=dataset.processed_dataset.get("train", None),
+                    eval_dataset=dataset.processed_dataset.get("validation", None),
+                    compute_metrics=build_compute_metrics_fn(
+                        task_names, model, dataset
+                    ),
+                )
+                # use trainer to predict
 
             (
                 task_to_label_packet,
@@ -870,7 +853,7 @@ def main(
                 subdir = os.path.split(dataset_path.rstrip("/"))[1]
                 output_eval_predictions_file = os.path.join(
                     training_args.output_dir,
-                    f"eval_predictions_%s_step_%d.tsv" % (subdir, curr_step),
+                    f"eval_predictions_{subdir}_{dataset_ind}_{curr_step}.tsv",
                 )
 
                 dataset_dev_segment = get_dataset_segment(
@@ -903,7 +886,7 @@ def main(
                 subdir = os.path.split(dataset_path.rstrip("/"))[1]
                 output_test_predictions_file = os.path.join(
                     training_args.output_dir,
-                    f"test_predictions_%s.tsv" % (subdir),
+                    f"test_predictions_{subdir}_{dataset_ind}.tsv",
                 )
 
                 dataset_test_segment = get_dataset_segment("test", dataset_ind, dataset)

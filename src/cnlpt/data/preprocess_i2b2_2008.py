@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 
+import json
+import random  # for splitting train into train+dev
 import sys
 import xml.etree.ElementTree as ET
-import json
 from os.path import join
-import random  # for splitting train into train+dev
 
 
 def add_notes_file(fn, ids, texts):

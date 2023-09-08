@@ -1,18 +1,20 @@
 import logging
-from typing import Set, Any, Dict
+from typing import Any, Dict, Set
 
 import numpy as np
+from seqeval.metrics import classification_report as seq_cls
+from seqeval.metrics import f1_score as seq_f1
 from sklearn.metrics import (
-    matthews_corrcoef,
-    f1_score,
-    recall_score,
-    precision_score,
-    classification_report,
     accuracy_score,
+    classification_report,
+    f1_score,
+    matthews_corrcoef,
+    precision_score,
+    recall_score,
 )
-from seqeval.metrics import f1_score as seq_f1, classification_report as seq_cls
-from .cnlp_processors import classification, mtl, tagging, relex
+
 from .cnlp_data import ClinicalNlpDataset
+from .cnlp_processors import classification, mtl, relex, tagging
 
 logger = logging.getLogger(__name__)
 

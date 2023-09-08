@@ -14,21 +14,14 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import logging
+from time import time
+from typing import List
+
+import numpy as np
 from fastapi import FastAPI
 from pydantic import BaseModel
-import logging
-from typing import List
-from time import time
-
-from ..CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
-from .cnlp_rest import (
-    EntityDocument,
-    initialize_cnlpt_model,
-    create_instance_string,
-    get_dataset,
-)
-from .temporal_rest import dtr_label_list, old_dtr_label_list
-
+from torch.utils.data.dataset import Dataset
 from transformers import (
     AutoConfig,
     AutoModel,
@@ -37,9 +30,16 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
-from transformers.data.processors.utils import InputFeatures, InputExample
-from torch.utils.data.dataset import Dataset
-import numpy as np
+from transformers.data.processors.utils import InputExample, InputFeatures
+
+from ..CnlpModelForClassification import CnlpConfig, CnlpModelForClassification
+from .cnlp_rest import (
+    EntityDocument,
+    create_instance_string,
+    get_dataset,
+    initialize_cnlpt_model,
+)
+from .temporal_rest import dtr_label_list, old_dtr_label_list
 
 app = FastAPI()
 model_name = "tmills/tiny-dtr"
