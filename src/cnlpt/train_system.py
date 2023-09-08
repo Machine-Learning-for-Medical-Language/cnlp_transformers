@@ -15,31 +15,36 @@
 # limitations under the License.
 """ Finetuning the library models for sequence classification on clinical NLP tasks"""
 import logging
-import math
 import os
+import requests
+
+from collections import deque
+
+import json
+import pdb
+from os.path import join, exists
 import sys
+
+from typing import Callable, Dict, Optional, List, Any, Tuple
 import tempfile
-from enum import Enum
-from os.path import basename, dirname, exists, join
-from typing import Any, Callable, Dict, List, Optional, Union
+import math
+
 
 import numpy as np
+
+import torch
 from datasets import Dataset
 from transformers import AutoConfig, AutoTokenizer, AutoModel, EvalPrediction
 from transformers.training_args import IntervalStrategy
-from transformers.data.processors.utils import InputFeatures
-from transformers.tokenization_utils import PreTrainedTokenizer
-from transformers.data.processors.utils import (
-    DataProcessor,
-    InputExample,
-    InputFeatures,
+from transformers import (
+    HfArgumentParser,
+    Trainer,
+    set_seed,
+    TrainerCallback,
 )
 from transformers.file_utils import CONFIG_NAME
-from transformers.tokenization_utils import PreTrainedTokenizer
-from transformers.training_args import IntervalStrategy
-import json
-
-sys.path.append(os.path.join(os.getcwd()))
+from huggingface_hub import hf_hub_url
+from collections import defaultdict
 from .cnlp_processors import tagging, relex, classification
 from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
 from .cnlp_metrics import cnlp_compute_metrics
@@ -49,24 +54,8 @@ from .CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
 from .BaselineModels import CnnSentenceClassifier, LstmSentenceClassifier
 from .HierarchicalTransformer import HierarchicalModel
 
-import requests
-from transformers import HfArgumentParser, Trainer, set_seed
+sys.path.append(os.path.join(os.getcwd()))
 
-from collections import deque
-
-from collections import deque
-
-from transformers import (
-    HfArgumentParser,
-    Trainer,
-    set_seed,
-    TrainerCallback,
-)
-import json
-
-from collections import defaultdict
-
-from collections import defaultdict
 
 AutoConfig.register("cnlpt", CnlpConfig)
 
@@ -315,7 +304,7 @@ def main(
     # Set seed
     set_seed(training_args.seed)
 
-    if not training_args.model_selection_label is None and any(
+    if training_args.model_selection_label is not None and any(
         isinstance(item, int) for item in training_args.model_selection_label
     ):
         logger.warning(
@@ -499,7 +488,7 @@ def main(
                         "previous training run."
                     )
 
-            ## TODO: check if user overwrote parameters in command line that could change behavior of the model and warn
+            # TODO: check if user overwrote parameters in command line that could change behavior of the model and warn
             # if data_args.chunk_len is not None:
 
             logger.info("Loading pre-trained hierarchical model...")
@@ -612,8 +601,7 @@ def main(
                 bias_fit=training_args.bias_fit,
             )
 
-    best_eval_results = None
-    output_eval_file = os.path.join(training_args.output_dir, f"eval_results.txt")
+    output_eval_file = os.path.join(training_args.output_dir, "eval_results.txt")
     if training_args.do_train:
         # TODO: This assumes that if there are multiple training sets, they all have the same length, but
         # in the future it would be nice to be able to have multiple heterogeneous datasets
@@ -732,7 +720,7 @@ def main(
 
             one_score = sum(task_scores) / len(task_scores)
 
-            if not model is None:
+            if model is not None:
                 if not hasattr(model, "best_score") or one_score > model.best_score:
                     # For convenience, we also re-save the tokenizer to the same directory,
                     # so that you can share your model easily on huggingface.co/models =)
@@ -835,7 +823,7 @@ def main(
                 if any(eval_state):
                     curr_step = eval_state["curr_step"]
                     writer.write(
-                        f"\n\n Current state (In Compute Metrics Function) \n\n"
+                        "\n\n Current state (In Compute Metrics Function) \n\n"
                     )
                     for key, value in eval_state.items():
                         writer.write(f"{key} : {value} \n")
@@ -864,7 +852,7 @@ def main(
                 subdir = os.path.split(dataset_path.rstrip("/"))[1]
                 output_eval_predictions_file = os.path.join(
                     training_args.output_dir,
-                    f"eval_predictions_%s_%d_%d.txt" % (subdir, dataset_ind, curr_step),
+                    f"eval_predictions_{subdir}_{dataset_ind}_{curr_step}.txt",
                 )
 
                 dataset_dev_segment = get_dataset_segment(
@@ -897,7 +885,7 @@ def main(
                 subdir = os.path.split(dataset_path.rstrip("/"))[1]
                 output_test_predictions_file = os.path.join(
                     training_args.output_dir,
-                    f"test_predictions_%s_%d.txt" % (subdir, dataset_ind),
+                    f"test_predictions_{subdir}_{dataset_ind}.txt",
                 )
 
                 dataset_test_segment = get_dataset_segment("test", dataset_ind, dataset)
