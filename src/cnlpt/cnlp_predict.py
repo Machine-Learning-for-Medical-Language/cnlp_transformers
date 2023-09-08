@@ -1,14 +1,15 @@
-import logging
-import numpy as np
-import pandas as pd
 import csv
-import tqdm
-
-from .cnlp_processors import tagging, relex, classification
-from typing import Dict, List, Tuple, Union, Iterable
+import logging
+from collections import defaultdict
 from itertools import chain, groupby
 from operator import itemgetter
-from collections import defaultdict
+from typing import Dict, Iterable, List, Tuple, Union
+
+import numpy as np
+import pandas as pd
+import tqdm
+
+from .cnlp_processors import classification, relex, tagging
 
 logger = logging.getLogger(__name__)
 

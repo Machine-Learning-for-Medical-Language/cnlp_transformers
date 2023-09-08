@@ -16,10 +16,6 @@ from filelock import FileLock
 from torch.utils.data.dataset import Dataset
 from transformers import BatchEncoding, DataCollatorForLanguageModeling, InputExample
 from transformers.tokenization_utils import PreTrainedTokenizer
-from datasets import Features
-from dataclasses import dataclass, field, asdict, astuple
-import datasets
-from enum import Enum
 
 from .cnlp_args import DaptArguments
 from .cnlp_processors import AutoProcessor, classification, mtl, relex, tagging

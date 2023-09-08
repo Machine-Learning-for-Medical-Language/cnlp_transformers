@@ -14,44 +14,42 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """ Finetuning the library models for sequence classification on clinical NLP tasks"""
-import logging
-import os
-import requests
-
-from collections import deque
-
 import json
-import pdb
-from os.path import join, exists
-import sys
-
-from typing import Callable, Dict, Optional, List, Any, Tuple
-import tempfile
+import logging
 import math
-
+import os
+import pdb
+import sys
+import tempfile
+from collections import defaultdict, deque
+from os.path import exists, join
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
-
+import requests
 import torch
 from datasets import Dataset
-from transformers import AutoConfig, AutoTokenizer, AutoModel, EvalPrediction
-from transformers.training_args import IntervalStrategy
+from huggingface_hub import hf_hub_url
 from transformers import (
+    AutoConfig,
+    AutoModel,
+    AutoTokenizer,
+    EvalPrediction,
     HfArgumentParser,
     Trainer,
-    set_seed,
     TrainerCallback,
+    set_seed,
 )
 from transformers.file_utils import CONFIG_NAME
-from huggingface_hub import hf_hub_url
-from collections import defaultdict
-from .cnlp_processors import tagging, relex, classification
+from transformers.training_args import IntervalStrategy
+
+from .BaselineModels import CnnSentenceClassifier, LstmSentenceClassifier
+from .cnlp_args import CnlpTrainingArguments, ModelArguments
 from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
 from .cnlp_metrics import cnlp_compute_metrics
-from .cnlp_args import CnlpTrainingArguments, ModelArguments
 from .cnlp_predict import process_prediction
-from .CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
-from .BaselineModels import CnnSentenceClassifier, LstmSentenceClassifier
+from .cnlp_processors import classification, relex, tagging
+from .CnlpModelForClassification import CnlpConfig, CnlpModelForClassification
 from .HierarchicalTransformer import HierarchicalModel
 
 sys.path.append(os.path.join(os.getcwd()))
