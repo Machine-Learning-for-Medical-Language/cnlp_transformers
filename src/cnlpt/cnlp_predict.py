@@ -1,15 +1,10 @@
 import logging
 import numpy as np
 import pandas as pd
-import re
 import csv
 import tqdm
-import inspect
 
-from datasets import Dataset
-from transformers.trainer_utils import EvalPrediction
 from .cnlp_processors import tagging, relex, classification
-from .cnlp_data import ClinicalNlpDataset
 from typing import Dict, List, Tuple, Union, Iterable
 from itertools import chain, groupby
 from operator import itemgetter
