@@ -407,16 +407,16 @@ def cnlp_preprocess_data(
             label_lists,
             character_level,
         )
-    elif not [x for x in (tasks, output_modes, max_length, label_lists) if x is None]:
-        result["label"] = _build_pytorch_representations(
-            result,
-            tasks,
-            output_modes,
-            num_instances,
-            max_length,
-            label_lists,
-            character_level,
-        )
+    # elif not [x for x in (tasks, output_modes, max_length, label_lists) if x is None]:
+    #     result["label"] = _build_pytorch_representations(
+    #         result,
+    #         tasks,
+    #         output_modes,
+    #         num_instances,
+    #         max_length,
+    #         label_lists,
+    #         character_level,
+    #     )
     if not character_level:
         result["event_mask"] = _build_event_mask_word_piece(
             result,
@@ -520,7 +520,150 @@ def _build_char_level_tag_labels(labels: List, sent_ind: int, task_ind: int):
     return np.expand_dims(np.array(labels[sent_ind][task_ind]), 1)
 
 
+def get_tagging_labels(
+    task_ind: int,
+    result: BatchEncoding,
+    labels: List,
+    num_instances: int,
+    character_level: bool,
+) -> List[np.ndarray]:
+    encoded_labels = []
+    for sent_ind in range(num_instances):
+        if result.is_fast and not character_level:
+            word_ids = result.word_ids(batch_index=sent_ind)
+            encoded_labels.append(
+                _build_word_id_tag_labels(word_ids, labels, sent_ind, task_ind)
+            )
+        elif character_level:
+            encoded_labels.append(
+                _build_char_level_tag_labels(result, labels, sent_ind, task_ind)
+            )
+        else:
+            raise NotImplementedError(
+                "Tagging label generation for non-fast wordpiece based tokenization not yet implemented"
+            )
+    return encoded_labels
+
+
+def get_relex_labels(
+    task_ind: int,
+    result: BatchEncoding,
+    labels: List,
+    num_instances: int,
+    character_level: bool,
+) -> List[np.ndarray]:
+    encoded_labels = []
+    # start by building a matrix that's N' x N' (word-piece length) with "None" as the default
+    # for word pairs, and -100 (mask) as the default if one of word pair is a suffix token
+    out_of_bounds = 0
+    num_relations = 0
+    for sent_ind in range(num_instances):
+        if result.is_fast and not character_level:
+            word_ids = result.word_ids(batch_index=sent_ind)
+            (
+                sent_labels,
+                sent_num_relations,
+                sent_out_of_bounds,
+            ) = _build_word_id_relex_labels(
+                word_ids,
+                labels,
+                sent_ind,
+                task_ind,
+            )
+            out_of_bounds += sent_out_of_bounds
+            num_relations += sent_num_relations
+            encoded_labels.append(sent_labels)
+        elif character_level:
+            raise NotImplementedError(
+                "End to end relation label generation for non-fast character based tokenization not yet implemented"
+            )
+        else:
+            raise NotImplementedError(
+                "End to end relation label generation for non-fast wordpiece based tokenization not yet implemented"
+            )
+    if out_of_bounds > 0:
+        logging.warn(
+            "During relation processing, there were %d relations (out of %d total relations) where at least one argument was truncated so the relation could not be trained/predicted."
+            % (out_of_bounds, num_relations)
+        )
+    return encoded_labels
+
+
+def get_classification_labels(
+    task_ind: int,
+    result: BatchEncoding,
+    labels: List,
+    num_instances: int,
+    max_length: int,
+    label_lists: List[List[str]],
+    character_level: bool,
+) -> np.ndarray:
+    encoded_labels = []
+    for sent_ind in range(num_instances):
+        encoded_labels.append((labels[sent_ind][task_ind],))
+    return np.array(encoded_labels)
+
+
+def _build_labels_for_task(
+    task: str,
+    task_ind: int,
+    output_mode: Dict[str, str],
+    result: BatchEncoding,
+    labels: List,
+    num_instances: int,
+    max_length: int,
+    label_lists: List[List[str]],
+    character_level: bool,
+) -> Union[List[np.ndarray], np.ndarray]:
+    if output_mode[task] == tagging:
+        pass
+    elif output_mode[task] == relex:
+        pass
+    elif output_mode[task] == classification:
+        pass
+
+
 def _build_pytorch_labels(
+    result: BatchEncoding,
+    tasks: List[str],
+    labels: List,
+    output_mode: Dict[str, str],
+    num_instances: int,
+    max_length: int,
+    label_lists: List[List[str]],
+    character_level: bool,
+):
+    # labels_out = []
+    # TODO -- also adapt to character level
+
+    def build_labels_for_task(task_ind, task):
+        return _build_labels_for_task(
+            task,
+            task_ind,
+            output_mode,
+            result,
+            labels,
+            num_instances,
+            max_length,
+            label_lists,
+            character_level,
+        )
+
+    labels_out = [
+        build_labels_for_task(task_ind, task) for task_ind, task in enumerate(tasks)
+    ]
+
+    labels_unshaped = list(zip(*labels_out))
+    labels_shaped = []
+    for ind in range(len(labels_unshaped)):
+        if labels_unshaped[ind][0].ndim == 2:
+            labels_shaped.append(np.concatenate(labels_unshaped[ind], axis=1))
+        elif labels_unshaped[ind][0].ndim == 1:
+            labels_shaped.append(np.concatenate(labels_unshaped[ind], axis=0))
+    return labels_shaped
+
+
+def _build_pytorch_representations(
     result: BatchEncoding,
     tasks: List[str],
     labels: List,
@@ -592,119 +735,6 @@ def _build_pytorch_labels(
         if max_dims == 2:
             labels_shaped.append(np.concatenate(labels_unshaped[ind], axis=1))
         elif max_dims == 1:
-            labels_shaped.append(labels_unshaped[ind])
-        else:
-            raise Exception("This should not be possible that max_dims > 2.")
-
-    return labels_shaped
-
-
-def _build_pytorch_labels(
-    result: BatchEncoding,
-    tasks: List[str],
-    labels: List,
-    output_modes: Dict[str, str],
-    num_instances: int,
-    max_length: int,
-    label_lists: List[List[str]],
-    character_level: bool,
-):
-    """
-    _build_pytorch_labels: we do two things here: map from labels in input space to ints in a softmax, and in a data
-    structure that can contain multiple task types such that the Trainer class will be happy with, and then that
-    the model.forward() can unpack easily to do the loss calculations.
-    """
-    labels_out = []
-
-    pad_classification = False
-    if relex in output_modes.values() or tagging in output_modes.values():
-        # we have tagging as the highest dimensional output
-        max_dims = 2
-        if classification in output_modes.values():
-            pad_classification = True
-    else:
-        # classification only
-        max_dims = 1
-
-    for task_ind, task in enumerate(tasks):
-        encoded_labels = []
-        if output_modes[task] == tagging:
-            for sent_ind in range(num_instances):
-                if result.is_fast and not character_level:
-                    word_ids = result.word_ids(batch_index=sent_ind)
-                    encoded_labels.append(
-                        _build_word_id_tag_labels(word_ids, labels, sent_ind, task_ind)
-                    )
-                elif character_level:
-                    encoded_labels.append(
-                        _build_char_level_tag_labels(result, labels, sent_ind, task_ind)
-                    )
-                else:
-                    raise NotImplementedError(
-                        "Tagging label generation for non-fast wordpiece based tokenization not yet implemented"
-                    )
-            labels_out.append(encoded_labels)
-        elif output_modes[task] == relex:
-            # start by building a matrix that's N' x N' (word-piece length) with "None" as the default
-            # for word pairs, and -100 (mask) as the default if one of word pair is a suffix token
-            out_of_bounds = 0
-            num_relations = 0
-            for sent_ind in range(num_instances):
-                if result.is_fast and not character_level:
-                    word_ids = result.word_ids(batch_index=sent_ind)
-                    (
-                        sent_labels,
-                        sent_num_relations,
-                        sent_out_of_bounds,
-                    ) = _build_word_id_relex_labels(
-                        word_ids,
-                        labels,
-                        sent_ind,
-                        task_ind,
-                        max_length,
-                        label_lists,
-                    )
-                    out_of_bounds += sent_out_of_bounds
-                    num_relations += sent_num_relations
-                    encoded_labels.append(sent_labels)
-                elif character_level:
-                    raise NotImplementedError(
-                        "End to end relation label generation for non-fast character based tokenization not yet implemented"
-                    )
-                else:
-                    raise NotImplementedError(
-                        "End to end relation label generation for non-fast wordpiece based tokenization not yet implemented"
-                    )
-            labels_out.append(encoded_labels)
-            if out_of_bounds > 0:
-                logger.warn(
-                    "During relation processing, there were %d relations (out of %d total relations) where at least one argument was truncated so the relation could not be trained/predicted."
-                    % (out_of_bounds, num_relations)
-                )
-
-        elif output_modes[task] == classification:
-            for inst_ind in range(num_instances):
-                # if we try to combine classification with tagging/relex, we end up with non-rectangular label
-                # arrays. so we need to pad out the classification target to be the length of the sequence
-                # so that we can concatenate it. we'll have to account for this in the forward() and in the
-                # compute metrics code as well.
-                if pad_classification:
-                    padded_inst = np.zeros((max_length, 1)) - 100
-                    padded_inst[0] = labels[inst_ind][task_ind]
-                    encoded_labels.append(padded_inst)
-                else:
-                    encoded_labels.append(labels[inst_ind][task_ind])
-            labels_out.append(np.array(encoded_labels))
-
-    labels_unshaped = list(zip(*labels_out))
-    labels_shaped = []
-
-    for ind in range(len(labels_unshaped)):
-        if max_dims == 2:
-            ## relations or tagging and possibly classification too
-            labels_shaped.append(np.concatenate(labels_unshaped[ind], axis=1))
-        elif max_dims == 1:
-            ## classification only
             labels_shaped.append(labels_unshaped[ind])
         else:
             raise Exception("This should not be possible that max_dims > 2.")
