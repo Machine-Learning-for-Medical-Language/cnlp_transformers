@@ -446,6 +446,7 @@ def main(
                     model.best_score = one_score
                     model.best_eval_results = metrics
 
+            metrics["eval_one_score"] = one_score
             return metrics
 
         return compute_metrics_fn
