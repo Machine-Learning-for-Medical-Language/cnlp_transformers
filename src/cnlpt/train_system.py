@@ -39,7 +39,6 @@ from transformers import (
     Trainer,
     TrainerCallback,
     set_seed,
-    TrainerCallback,
 )
 from transformers.file_utils import CONFIG_NAME
 from transformers.training_args import IntervalStrategy
