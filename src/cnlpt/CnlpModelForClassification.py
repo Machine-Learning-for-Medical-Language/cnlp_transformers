@@ -340,10 +340,8 @@ class CnlpModelForClassification(PreTrainedModel):
 
         if class_weights is None:
             self.class_weights = {x: None for x in config.label_dictionary.keys()}
-            self.class_weights = {"0": 1.0, "1": 3.0}  # TODO REMOVE!!!!!!!
         else:
             self.class_weights = class_weights
-        self.class_weights = {"0": 1.0, "1": 3.0}  # TODO REMOVE
 
         self.label_dictionary = config.label_dictionary
         self.final_task_weight = final_task_weight
