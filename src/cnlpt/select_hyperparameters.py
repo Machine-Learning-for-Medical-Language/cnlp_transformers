@@ -1,10 +1,10 @@
 #!/usr/bin/env python
+import itertools
 import json
 from pathlib import Path
 from typing import Optional, Tuple
 
 import click
-import itertools
 
 
 def get_job_from_hyperparameters(hyperparameters, indices):
