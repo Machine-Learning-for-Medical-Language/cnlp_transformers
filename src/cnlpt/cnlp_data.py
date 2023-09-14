@@ -1,3 +1,4 @@
+from collections import defaultdict
 import functools
 import json
 import logging
@@ -6,7 +7,7 @@ import time
 from dataclasses import asdict, astuple, dataclass, field
 from enum import Enum
 from os.path import basename, dirname
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union, Set
 
 import datasets
 import numpy as np
@@ -320,6 +321,8 @@ def cnlp_preprocess_data(
                 padding="max_length",
                 truncation=True,
             )
+            # TODO remove this when debugged since no one
+            # should have to worry about this
 
         except Exception as e:
             print(f"Issue {e} given input: \n\n{sentences}")
@@ -332,6 +335,21 @@ def cnlp_preprocess_data(
             truncation=True,
             is_split_into_words=True,
         )
+
+    special_token_ids = {
+        *filter(
+            None,
+            [
+                tokenizer.bos_token_id,
+                tokenizer.eos_token_id,
+                tokenizer.sep_token_id,
+                tokenizer.cls_token_id,
+                tokenizer.pad_token_id,
+                tokenizer.mask_token_id,
+                tokenizer.unk_token_id,
+            ],
+        )
+    }
     # Now that we have the labels for each instances, and we've tokenized the input sentences,
     # we need to solve the problem of aligning labels with word piece indexes for the tasks of tagging
     # (which has one label per pre-wordpiece token) and relations (which are defined as tuples which
@@ -406,6 +424,7 @@ def cnlp_preprocess_data(
             max_length,
             label_lists,
             character_level,
+            special_token_ids,
         )
     # elif not [x for x in (tasks, output_modes, max_length, label_lists) if x is None]:
     #     result["label"] = _build_pytorch_representations(
@@ -446,11 +465,144 @@ def cnlp_preprocess_data(
     return result
 
 
+def _build_pytorch_labels(
+    result: BatchEncoding,
+    tasks: List[str],
+    labels: Union[List, None],
+    output_modes: Dict[str, str],
+    num_instances: int,
+    max_length: int,
+    label_lists: List[List[str]],
+    character_level: bool,
+    special_token_ids: Set[int],
+):
+    # labels_out = []
+    # TODO -- also adapt to character level
+    pad_classification = False
+    if relex in output_modes.values() or tagging in output_modes.values():
+        # we have tagging as the highest dimensional output
+        max_dims = 2
+        if classification in output_modes.values():
+            pad_classification = True
+    else:
+        # classification only
+        max_dims = 1
+
+    def build_labels_for_task(task_ind, task):
+        return _build_labels_for_task(
+            task,
+            task_ind,
+            output_modes,
+            result,
+            labels,
+            num_instances,
+            max_length,
+            label_lists,
+            pad_classification,
+            character_level,
+            special_token_ids,
+        )
+
+    labels_out = [
+        build_labels_for_task(task_ind, task) for task_ind, task in enumerate(tasks)
+    ]
+
+    labels_unshaped = list(zip(*labels_out))
+    labels_shaped = []
+    for ind in range(len(labels_unshaped)):
+        if max_dims == 2:
+            ## relations or tagging and possibly classification too
+            labels_shaped.append(np.concatenate(labels_unshaped[ind], axis=1))
+        elif max_dims == 1:
+            ## classification only
+            labels_shaped.append(labels_unshaped[ind])
+        else:
+            raise Exception("This should not be possible that max_dims > 2.")
+
+    return labels_shaped
+
+
+def _build_labels_for_task(
+    task: str,
+    task_ind: int,
+    output_mode: Dict[str, str],
+    result: BatchEncoding,
+    labels: Union[List, None],
+    num_instances: int,
+    max_length: int,
+    label_lists: List[List[str]],
+    pad_classification: bool,
+    character_level: bool,
+    special_token_ids: Set[int],
+) -> Union[List[np.ndarray], np.ndarray]:
+    if output_mode[task] == tagging:
+        return get_tagging_labels(
+            task_ind, result, labels, num_instances, character_level, special_token_ids
+        )
+    elif output_mode[task] == relex:
+        return get_relex_labels(
+            task_ind,
+            result,
+            labels,
+            num_instances,
+            max_length,
+            label_lists,
+            character_level,
+            special_token_ids,
+        )
+    elif output_mode[task] == classification:
+        return get_classification_labels(
+            task_ind,
+            labels,
+            num_instances,
+            max_length,
+            pad_classification,
+        )
+
+
+def get_tagging_labels(
+    task_ind: int,
+    result: BatchEncoding,
+    labels: Union[List, None],
+    num_instances: int,
+    character_level: bool,
+    special_token_ids: Set[int],
+) -> List[np.ndarray]:
+    encoded_labels = []
+    for sent_ind in range(num_instances):
+        if result.is_fast and not character_level:
+            word_ids = result.word_ids(batch_index=sent_ind)
+            encoded_labels.append(
+                _build_word_id_tag_labels(word_ids, labels, sent_ind, task_ind)
+            )
+        elif character_level:
+            encoded_labels.append(
+                _build_char_level_tag_labels(
+                    result, labels, sent_ind, task_ind, special_token_ids
+                )
+            )
+        else:
+            # TODO for models for which this is the tokenization setup
+            # we can probably just use the same approach as for character level
+            raise NotImplementedError(
+                "Tagging label generation for non-fast wordpiece based tokenization not yet implemented"
+            )
+    return encoded_labels
+
+
 def _build_word_id_tag_labels(
-    word_ids: List[Optional[int]], labels: List, sent_ind: int, task_ind: int
+    word_ids: List[Optional[int]],
+    labels: Union[List, None],
+    sent_ind: int,
+    task_ind: int,
 ):
     previous_word_idx = None
     label_ids = []
+    _labels = (
+        defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: 0)))
+        if labels is None
+        else labels
+    )
     for word_idx in word_ids:
         # Special tokens have a word id that is None. We set the label to -100 so they are automatically
         # ignored in the loss function.
@@ -458,7 +610,7 @@ def _build_word_id_tag_labels(
             label_ids.append(-100)
             # We set the label for the first token of each word.
         elif word_idx != previous_word_idx:
-            label_ids.append(labels[sent_ind][task_ind][word_idx])
+            label_ids.append(_labels[sent_ind][task_ind][word_idx])
             # For the other tokens in a word, we set the label to either the current label or -100, depending on
             # the label_all_tokens flag.
         else:
@@ -468,19 +620,117 @@ def _build_word_id_tag_labels(
     return np.expand_dims(np.array(label_ids), 1)
 
 
+# assuming this works, we can collapse it into the other function
+def _build_char_level_tag_labels(
+    result: BatchEncoding,
+    labels: Union[List, None],
+    sent_ind: int,
+    task_ind: int,
+    special_token_ids: Set[int],
+) -> np.ndarray:
+
+    previous_word_idx = None
+    label_ids = []
+    _labels = (
+        defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: 0)))
+        if labels is None
+        else labels
+    )
+
+    input_ids = result["input_ids"][sent_ind]
+
+    for word_idx in input_ids:
+        # Special tokens have a word id that is None. We set the label to -100 so they are automatically
+        # ignored in the loss function.
+        if word_idx in special_token_ids:
+            label_ids.append(-100)
+            # We set the label for the first token of each word.
+        elif word_idx != previous_word_idx:
+            label_ids.append(_labels[sent_ind][task_ind][word_idx])
+            # For the other tokens in a word, we set the label to either the current label or -100, depending on
+            # the label_all_tokens flag.
+        else:
+            # Dongfang's logic for beginning or interior of a word
+            label_ids.append(-100)
+        previous_word_idx = word_idx
+    return np.expand_dims(np.array(label_ids), 1)
+
+
+def get_relex_labels(
+    task_ind: int,
+    result: BatchEncoding,
+    labels: Union[List, None],
+    num_instances: int,
+    max_length: int,
+    label_lists: List[List[str]],
+    character_level: bool,
+    special_token_ids: Set[int],
+) -> List[np.ndarray]:
+    encoded_labels = []
+    # start by building a matrix that's N' x N' (word-piece length) with "None" as the default
+    # for word pairs, and -100 (mask) as the default if one of word pair is a suffix token
+    out_of_bounds = 0
+    num_relations = 0
+    for sent_ind in range(num_instances):
+        if result.is_fast and not character_level:
+            word_ids = result.word_ids(batch_index=sent_ind)
+            (
+                sent_labels,
+                sent_num_relations,
+                sent_out_of_bounds,
+            ) = _build_word_id_relex_labels(
+                word_ids,
+                labels,
+                sent_ind,
+                task_ind,
+                max_length,
+                label_lists,
+            )
+            out_of_bounds += sent_out_of_bounds
+            num_relations += sent_num_relations
+            encoded_labels.append(sent_labels)
+        elif character_level:
+            # raise NotImplementedError(
+            #     "End to end relation label generation for non-fast character based tokenization not yet implemented"
+            # )
+            encoded_labels.append(
+                _build_char_level_relex_labels(
+                    result,
+                    labels,
+                    sent_ind,
+                    task_ind,
+                    max_length,
+                    label_lists,
+                    special_token_ids
+                )
+            )
+        else:
+            raise NotImplementedError(
+                "End to end relation label generation for non-fast wordpiece based tokenization not yet implemented"
+            )
+    if out_of_bounds > 0:
+        logging.warn(
+            "During relation processing, there were %d relations (out of %d total relations) where at least one argument was truncated so the relation could not be trained/predicted."
+            % (out_of_bounds, num_relations)
+        )
+    return encoded_labels
+
+
 def _build_word_id_relex_labels(
     word_ids: List[Optional[int]],
-    labels: List,
+    labels: Union[List, None],
     sent_ind: int,
     task_ind: int,
     max_length: int,
     label_lists: List[List[str]],
-):
+) -> Tuple[np.ndarray, int, int]:
     out_of_bounds = 0
-    num_relations = len(labels[sent_ind][task_ind])
+    num_relations = len(labels[sent_ind][task_ind]) if labels is not None else -1
     wpi_to_tokeni = {}
     tokeni_to_wpi = {}
     sent_labels = np.zeros((max_length, max_length)) - 100
+
+    _labels = defaultdict(lambda: defaultdict(lambda: [])) if labels is None else labels
 
     ## align word-piece tokens to the tokenization we got as input and only assign labels to input tokens
     previous_word_idx = None
@@ -501,7 +751,7 @@ def _build_word_id_relex_labels(
             if wpi != wpi2:
                 sent_labels[wpi, wpi2] = label_lists[task_ind].index("None")
 
-    for label in labels[sent_ind][task_ind]:
+    for label in _labels[sent_ind][task_ind]:
         if label == "None":
             continue
 
@@ -516,230 +766,80 @@ def _build_word_id_relex_labels(
     return sent_labels, num_relations, out_of_bounds
 
 
-def _build_char_level_tag_labels(labels: List, sent_ind: int, task_ind: int):
-    return np.expand_dims(np.array(labels[sent_ind][task_ind]), 1)
-
-
-def get_tagging_labels(
-    task_ind: int,
+def _build_char_level_relex_labels(
     result: BatchEncoding,
-    labels: List,
-    num_instances: int,
-    character_level: bool,
-) -> List[np.ndarray]:
-    encoded_labels = []
-    for sent_ind in range(num_instances):
-        if result.is_fast and not character_level:
-            word_ids = result.word_ids(batch_index=sent_ind)
-            encoded_labels.append(
-                _build_word_id_tag_labels(word_ids, labels, sent_ind, task_ind)
-            )
-        elif character_level:
-            encoded_labels.append(
-                _build_char_level_tag_labels(result, labels, sent_ind, task_ind)
-            )
-        else:
-            raise NotImplementedError(
-                "Tagging label generation for non-fast wordpiece based tokenization not yet implemented"
-            )
-    return encoded_labels
-
-
-def get_relex_labels(
+    labels: Union[List, None],
+    sent_ind: int,
     task_ind: int,
-    result: BatchEncoding,
-    labels: List,
-    num_instances: int,
-    character_level: bool,
-) -> List[np.ndarray]:
-    encoded_labels = []
-    # start by building a matrix that's N' x N' (word-piece length) with "None" as the default
-    # for word pairs, and -100 (mask) as the default if one of word pair is a suffix token
+    max_length: int,
+    label_lists: List[List[int]],
+        special_token_ids: Set[int],
+) -> Tuple[np.ndarray, int, int]:
     out_of_bounds = 0
-    num_relations = 0
-    for sent_ind in range(num_instances):
-        if result.is_fast and not character_level:
-            word_ids = result.word_ids(batch_index=sent_ind)
-            (
-                sent_labels,
-                sent_num_relations,
-                sent_out_of_bounds,
-            ) = _build_word_id_relex_labels(
-                word_ids,
-                labels,
-                sent_ind,
-                task_ind,
-            )
-            out_of_bounds += sent_out_of_bounds
-            num_relations += sent_num_relations
-            encoded_labels.append(sent_labels)
-        elif character_level:
-            raise NotImplementedError(
-                "End to end relation label generation for non-fast character based tokenization not yet implemented"
-            )
-        else:
-            raise NotImplementedError(
-                "End to end relation label generation for non-fast wordpiece based tokenization not yet implemented"
-            )
-    if out_of_bounds > 0:
-        logging.warn(
-            "During relation processing, there were %d relations (out of %d total relations) where at least one argument was truncated so the relation could not be trained/predicted."
-            % (out_of_bounds, num_relations)
-        )
-    return encoded_labels
+    num_relations = len(labels[sent_ind][task_ind]) if labels is not None else -1
+    wpi_to_tokeni = {}
+    tokeni_to_wpi = {}
+    sent_labels = np.zeros((max_length, max_length)) - 100
+
+    _labels = defaultdict(lambda: defaultdict(lambda: [])) if labels is None else labels
+
+    input_ids = result["input_ids"][sent_ind]
+    ## align word-piece tokens to the tokenization we got as input and only assign labels to input tokens
+    previous_word_idx = None
+    for word_pos_idx, word_idx in enumerate(input_ids):
+        if word_idx != previous_word_idx and word_idx not in special_token_ids:
+            key = word_pos_idx
+            val = len(wpi_to_tokeni)
+
+            wpi_to_tokeni[key] = val
+            tokeni_to_wpi[val] = key
+        previous_word_idx = word_idx
+        # make every label beween pairs a 0 to start:
+    for wpi in wpi_to_tokeni.keys():
+        for wpi2 in wpi_to_tokeni.keys():
+            # leave the diagonals at -100 because you can't have a relation with itself and we
+            # don't want to consider it because it may screw up the learning to have 2 such similar
+            # tokens not involved in a relation.
+            if wpi != wpi2:
+                sent_labels[wpi, wpi2] = label_lists[task_ind].index("None")
+
+    for label in _labels[sent_ind][task_ind]:
+        if label == "None":
+            continue
+
+        if not label[0] in tokeni_to_wpi or not label[1] in tokeni_to_wpi:
+            out_of_bounds += 1
+            continue
+
+        wpi1 = tokeni_to_wpi[label[0]]
+        wpi2 = tokeni_to_wpi[label[1]]
+
+        sent_labels[wpi1][wpi2] = label[2]
+    return sent_labels, num_relations, out_of_bounds
 
 
 def get_classification_labels(
     task_ind: int,
-    result: BatchEncoding,
-    labels: List,
+    labels: Union[List, None],
     num_instances: int,
     max_length: int,
-    label_lists: List[List[str]],
-    character_level: bool,
+    pad_classification: bool,
 ) -> np.ndarray:
     encoded_labels = []
-    for sent_ind in range(num_instances):
-        encoded_labels.append((labels[sent_ind][task_ind],))
-    return np.array(encoded_labels)
-
-
-def _build_labels_for_task(
-    task: str,
-    task_ind: int,
-    output_mode: Dict[str, str],
-    result: BatchEncoding,
-    labels: List,
-    num_instances: int,
-    max_length: int,
-    label_lists: List[List[str]],
-    character_level: bool,
-) -> Union[List[np.ndarray], np.ndarray]:
-    if output_mode[task] == tagging:
-        pass
-    elif output_mode[task] == relex:
-        pass
-    elif output_mode[task] == classification:
-        pass
-
-
-def _build_pytorch_labels(
-    result: BatchEncoding,
-    tasks: List[str],
-    labels: List,
-    output_mode: Dict[str, str],
-    num_instances: int,
-    max_length: int,
-    label_lists: List[List[str]],
-    character_level: bool,
-):
-    # labels_out = []
-    # TODO -- also adapt to character level
-
-    def build_labels_for_task(task_ind, task):
-        return _build_labels_for_task(
-            task,
-            task_ind,
-            output_mode,
-            result,
-            labels,
-            num_instances,
-            max_length,
-            label_lists,
-            character_level,
-        )
-
-    labels_out = [
-        build_labels_for_task(task_ind, task) for task_ind, task in enumerate(tasks)
-    ]
-
-    labels_unshaped = list(zip(*labels_out))
-    labels_shaped = []
-    for ind in range(len(labels_unshaped)):
-        if labels_unshaped[ind][0].ndim == 2:
-            labels_shaped.append(np.concatenate(labels_unshaped[ind], axis=1))
-        elif labels_unshaped[ind][0].ndim == 1:
-            labels_shaped.append(np.concatenate(labels_unshaped[ind], axis=0))
-    return labels_shaped
-
-
-def _build_pytorch_representations(
-    result: BatchEncoding,
-    tasks: List[str],
-    labels: List,
-    output_modes: Dict[str, str],
-    num_instances: int,
-    max_length: int,
-    label_lists: List[List[str]],
-    character_level: bool,
-):
-    labels_out = []
-    # TODO -- also adapt to character level
-    for task_ind, task in enumerate(tasks):
-        encoded_labels = []
-        if output_modes[task] == tagging:
-            for sent_ind in range(num_instances):
-                sent_labels = []
-
-                word_ids = result.word_ids(batch_index=sent_ind)
-                previous_word_idx = None
-                label_ids = []
-                for word_idx in word_ids:
-                    if word_idx is None:
-                        label_ids.append(-100)
-                    elif word_idx != previous_word_idx:
-                        label_ids.append(0)
-                    else:
-                        label_ids.append(-100)
-                    previous_word_idx = word_idx
-
-                encoded_labels.append(np.expand_dims(np.array(label_ids), 1))
-
-            labels_out.append(encoded_labels)
-        elif output_modes[task] == relex:
-            for sent_ind in range(num_instances):
-                word_ids = result.word_ids(batch_index=sent_ind)
-                wpi_to_tokeni = {}
-                tokeni_to_wpi = {}
-                sent_labels = np.zeros((max_length, max_length)) - 100
-
-                previous_word_idx = None
-                for word_pos_idx, word_idx in enumerate(word_ids):
-                    if word_idx != previous_word_idx and word_idx is not None:
-                        key = word_pos_idx
-                        val = len(wpi_to_tokeni)
-
-                        wpi_to_tokeni[key] = val
-                        tokeni_to_wpi[val] = key
-                    previous_word_idx = word_idx
-                for wpi in wpi_to_tokeni.keys():
-                    for wpi2 in wpi_to_tokeni.keys():
-                        if wpi != wpi2:
-                            sent_labels[wpi, wpi2] = label_lists[task].index("None")
-
-            labels_out.append(encoded_labels)
-        elif output_modes[task] == classification:
-            for inst_ind in range(num_instances):
-                if pad_classification:
-                    padded_inst = np.zeros((max_length, 1)) - 100
-                    padded_inst[0] = 0  # labels[inst_ind][task_ind]
-                    encoded_labels.append(padded_inst)
-                else:
-                    encoded_labels.append(0)  # labels[inst_ind][task_ind])
-            labels_out.append(np.array(encoded_labels))
-
-    labels_unshaped = list(zip(*labels_out))
-    labels_shaped = []
-
-    for ind in range(len(labels_unshaped)):
-        if max_dims == 2:
-            labels_shaped.append(np.concatenate(labels_unshaped[ind], axis=1))
-        elif max_dims == 1:
-            labels_shaped.append(labels_unshaped[ind])
+    for inst_ind in range(num_instances):
+        # if we try to combine classification with tagging/relex, we end up with non-rectangular label
+        # arrays. so we need to pad out the classification target to be the length of the sequence
+        # so that we can concatenate it. we'll have to account for this in the forward() and in the
+        # compute metrics code as well.
+        if pad_classification:
+            padded_inst = np.zeros((max_length, 1)) - 100
+            padded_inst[0] = labels[inst_ind][task_ind] if labels is not None else 0
+            encoded_labels.append(padded_inst)
         else:
-            raise Exception("This should not be possible that max_dims > 2.")
-
-    return labels_shaped
+            encoded_labels.append(
+                labels[inst_ind][task_ind] if labels is not None else 0
+            )
+    return np.array(encoded_labels)
 
 
 def _build_event_mask_word_piece(
