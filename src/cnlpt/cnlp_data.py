@@ -534,7 +534,7 @@ def _build_labels_for_task(
     pad_classification: bool,
     character_level: bool,
     special_token_ids: Set[int],
-) -> Union[List[np.ndarray], np.ndarray]:
+):
     if output_mode[task] == tagging:
         return get_tagging_labels(
             task_ind, result, labels, num_instances, character_level, special_token_ids
@@ -568,91 +568,39 @@ def get_tagging_labels(
     character_level: bool,
     special_token_ids: Set[int],
 ) -> List[np.ndarray]:
-    encoded_labels = []
+
+    previous_word_idx = None
+    label_ids = []
+    _labels = (
+        defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: 0)))
+        if labels is None
+        else labels
+    )
+
+    ids_getter = lambda sent_ind: []
+    non_relevant = lambda word_idx: False
+    if result.is_fast and not character_level:
+        ids_getter = lambda sent_ind: result.word_ids(batch_index=sent_ind)
+        non_relevant = lambda word_idx: word_idx is None
+    elif character_level:
+        ids_getter = lambda sent_ind: result["input_ids"][sent_ind]
+        non_relevant = lambda word_idx: word_idx in special_token_ids
+
     for sent_ind in range(num_instances):
-        if result.is_fast and not character_level:
-            word_ids = result.word_ids(batch_index=sent_ind)
-            encoded_labels.append(
-                _build_word_id_tag_labels(word_ids, labels, sent_ind, task_ind)
-            )
-        elif character_level:
-            encoded_labels.append(
-                _build_char_level_tag_labels(
-                    result, labels, sent_ind, task_ind, special_token_ids
-                )
-            )
-        else:
-            # TODO for models for which this is the tokenization setup
-            # we can probably just use the same approach as for character level
-            raise NotImplementedError(
-                "Tagging label generation for non-fast wordpiece based tokenization not yet implemented"
-            )
-    return encoded_labels
-
-
-def _build_word_id_tag_labels(
-    word_ids: List[Optional[int]],
-    labels: Union[List, None],
-    sent_ind: int,
-    task_ind: int,
-):
-    previous_word_idx = None
-    label_ids = []
-    _labels = (
-        defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: 0)))
-        if labels is None
-        else labels
-    )
-    for word_idx in word_ids:
-        # Special tokens have a word id that is None. We set the label to -100 so they are automatically
-        # ignored in the loss function.
-        if word_idx is None:
-            label_ids.append(-100)
-            # We set the label for the first token of each word.
-        elif word_idx != previous_word_idx:
-            label_ids.append(_labels[sent_ind][task_ind][word_idx])
-            # For the other tokens in a word, we set the label to either the current label or -100, depending on
-            # the label_all_tokens flag.
-        else:
-            # Dongfang's logic for beginning or interior of a word
-            label_ids.append(-100)
-        previous_word_idx = word_idx
-    return np.expand_dims(np.array(label_ids), 1)
-
-
-# assuming this works, we can collapse it into the other function
-def _build_char_level_tag_labels(
-    result: BatchEncoding,
-    labels: Union[List, None],
-    sent_ind: int,
-    task_ind: int,
-    special_token_ids: Set[int],
-) -> np.ndarray:
-
-    previous_word_idx = None
-    label_ids = []
-    _labels = (
-        defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: 0)))
-        if labels is None
-        else labels
-    )
-
-    input_ids = result["input_ids"][sent_ind]
-
-    for word_idx in input_ids:
-        # Special tokens have a word id that is None. We set the label to -100 so they are automatically
-        # ignored in the loss function.
-        if word_idx in special_token_ids:
-            label_ids.append(-100)
-            # We set the label for the first token of each word.
-        elif word_idx != previous_word_idx:
-            label_ids.append(_labels[sent_ind][task_ind][word_idx])
-            # For the other tokens in a word, we set the label to either the current label or -100, depending on
-            # the label_all_tokens flag.
-        else:
-            # Dongfang's logic for beginning or interior of a word
-            label_ids.append(-100)
-        previous_word_idx = word_idx
+        for word_idx in ids_getter(sent_ind):
+            # Special tokens have a word id that is None. We set the label to -100 so they are automatically
+            # ignored in the loss function.
+            if non_relevant(word_idx):
+                label_ids.append(-100)
+                # We set the label for the first token of each word.
+            elif word_idx != previous_word_idx:
+                label_ids.append(_labels[sent_ind][task_ind][word_idx])
+                # For the other tokens in a word, we set the label to either the current label or -100, depending on
+                # the label_all_tokens flag.
+            else:
+                # Dongfang's logic for beginning or interior of a word
+                label_ids.append(-100)
+            previous_word_idx = word_idx
     return np.expand_dims(np.array(label_ids), 1)
 
 
@@ -671,151 +619,70 @@ def get_relex_labels(
     # for word pairs, and -100 (mask) as the default if one of word pair is a suffix token
     out_of_bounds = 0
     num_relations = 0
+
+    _labels = (
+        defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: 0)))
+        if labels is None
+        else labels
+    )
+
+    ids_getter = lambda sent_ind: []
+    relevant = lambda word_idx: False
+    if result.is_fast and not character_level:
+        ids_getter = lambda sent_ind: result.word_ids(batch_index=sent_ind)
+        relevant = lambda word_idx: word_idx is not None
+    elif character_level:
+        ids_getter = lambda sent_ind: result["input_ids"][sent_ind]
+        relevant = lambda word_idx: word_idx not in special_token_ids
     for sent_ind in range(num_instances):
-        if result.is_fast and not character_level:
-            word_ids = result.word_ids(batch_index=sent_ind)
-            (
-                sent_labels,
-                sent_num_relations,
-                sent_out_of_bounds,
-            ) = _build_word_id_relex_labels(
-                word_ids,
-                labels,
-                sent_ind,
-                task_ind,
-                max_length,
-                label_lists,
-            )
-            out_of_bounds += sent_out_of_bounds
-            num_relations += sent_num_relations
-            encoded_labels.append(sent_labels)
-        elif character_level:
-            # raise NotImplementedError(
-            #     "End to end relation label generation for non-fast character based tokenization not yet implemented"
-            # )
-            encoded_labels.append(
-                _build_char_level_relex_labels(
-                    result,
-                    labels,
-                    sent_ind,
-                    task_ind,
-                    max_length,
-                    label_lists,
-                    special_token_ids
-                )
-            )
-        else:
-            raise NotImplementedError(
-                "End to end relation label generation for non-fast wordpiece based tokenization not yet implemented"
-            )
+        word_ids = ids_getter(sent_ind)
+        num_relations += len(_labels[sent_ind][task_ind])
+        wpi_to_tokeni = {}
+        tokeni_to_wpi = {}
+        sent_labels = np.zeros((max_length, max_length)) - 100
+
+        ## align word-piece tokens to the tokenization we got as input and only assign labels to input tokens
+        previous_word_idx = None
+        for word_pos_idx, word_idx in enumerate(word_ids):
+            if word_idx != previous_word_idx and relevant(word_idx):
+                key = word_pos_idx
+                val = len(wpi_to_tokeni)
+
+                wpi_to_tokeni[key] = val
+                tokeni_to_wpi[val] = key
+            previous_word_idx = word_idx
+        # make every label beween pairs a 0 to start:
+        for wpi in wpi_to_tokeni.keys():
+            for wpi2 in wpi_to_tokeni.keys():
+                # leave the diagonals at -100 because you can't have a relation with itself and we
+                # don't want to consider it because it may screw up the learning to have 2 such similar
+                # tokens not involved in a relation.
+                if wpi != wpi2:
+                    sent_labels[wpi, wpi2] = label_lists[task_ind].index("None")
+
+        for label in _labels[sent_ind][task_ind]:
+            if label == "None":
+                continue
+
+            if not label[0] in tokeni_to_wpi or not label[1] in tokeni_to_wpi:
+                out_of_bounds += 1
+                continue
+
+            wpi1 = tokeni_to_wpi[label[0]]
+            wpi2 = tokeni_to_wpi[label[1]]
+
+            sent_labels[wpi1][wpi2] = label[2]
+
+        encoded_labels.append(sent_labels)
     if out_of_bounds > 0:
-        logging.warn(
-            "During relation processing, there were %d relations (out of %d total relations) where at least one argument was truncated so the relation could not be trained/predicted."
-            % (out_of_bounds, num_relations)
+        logger.warn(
+            (
+                "During relation processing,"
+                f"there were {out_of_bounds} relations (out of {num_relations} total relations)"
+                "where at least one argument was truncated so the relation could not be trained/predicted."
+            )
         )
     return encoded_labels
-
-
-def _build_word_id_relex_labels(
-    word_ids: List[Optional[int]],
-    labels: Union[List, None],
-    sent_ind: int,
-    task_ind: int,
-    max_length: int,
-    label_lists: List[List[str]],
-) -> Tuple[np.ndarray, int, int]:
-    out_of_bounds = 0
-    num_relations = len(labels[sent_ind][task_ind]) if labels is not None else -1
-    wpi_to_tokeni = {}
-    tokeni_to_wpi = {}
-    sent_labels = np.zeros((max_length, max_length)) - 100
-
-    _labels = defaultdict(lambda: defaultdict(lambda: [])) if labels is None else labels
-
-    ## align word-piece tokens to the tokenization we got as input and only assign labels to input tokens
-    previous_word_idx = None
-    for word_pos_idx, word_idx in enumerate(word_ids):
-        if word_idx != previous_word_idx and word_idx is not None:
-            key = word_pos_idx
-            val = len(wpi_to_tokeni)
-
-            wpi_to_tokeni[key] = val
-            tokeni_to_wpi[val] = key
-        previous_word_idx = word_idx
-        # make every label beween pairs a 0 to start:
-    for wpi in wpi_to_tokeni.keys():
-        for wpi2 in wpi_to_tokeni.keys():
-            # leave the diagonals at -100 because you can't have a relation with itself and we
-            # don't want to consider it because it may screw up the learning to have 2 such similar
-            # tokens not involved in a relation.
-            if wpi != wpi2:
-                sent_labels[wpi, wpi2] = label_lists[task_ind].index("None")
-
-    for label in _labels[sent_ind][task_ind]:
-        if label == "None":
-            continue
-
-        if not label[0] in tokeni_to_wpi or not label[1] in tokeni_to_wpi:
-            out_of_bounds += 1
-            continue
-
-        wpi1 = tokeni_to_wpi[label[0]]
-        wpi2 = tokeni_to_wpi[label[1]]
-
-        sent_labels[wpi1][wpi2] = label[2]
-    return sent_labels, num_relations, out_of_bounds
-
-
-def _build_char_level_relex_labels(
-    result: BatchEncoding,
-    labels: Union[List, None],
-    sent_ind: int,
-    task_ind: int,
-    max_length: int,
-    label_lists: List[List[int]],
-        special_token_ids: Set[int],
-) -> Tuple[np.ndarray, int, int]:
-    out_of_bounds = 0
-    num_relations = len(labels[sent_ind][task_ind]) if labels is not None else -1
-    wpi_to_tokeni = {}
-    tokeni_to_wpi = {}
-    sent_labels = np.zeros((max_length, max_length)) - 100
-
-    _labels = defaultdict(lambda: defaultdict(lambda: [])) if labels is None else labels
-
-    input_ids = result["input_ids"][sent_ind]
-    ## align word-piece tokens to the tokenization we got as input and only assign labels to input tokens
-    previous_word_idx = None
-    for word_pos_idx, word_idx in enumerate(input_ids):
-        if word_idx != previous_word_idx and word_idx not in special_token_ids:
-            key = word_pos_idx
-            val = len(wpi_to_tokeni)
-
-            wpi_to_tokeni[key] = val
-            tokeni_to_wpi[val] = key
-        previous_word_idx = word_idx
-        # make every label beween pairs a 0 to start:
-    for wpi in wpi_to_tokeni.keys():
-        for wpi2 in wpi_to_tokeni.keys():
-            # leave the diagonals at -100 because you can't have a relation with itself and we
-            # don't want to consider it because it may screw up the learning to have 2 such similar
-            # tokens not involved in a relation.
-            if wpi != wpi2:
-                sent_labels[wpi, wpi2] = label_lists[task_ind].index("None")
-
-    for label in _labels[sent_ind][task_ind]:
-        if label == "None":
-            continue
-
-        if not label[0] in tokeni_to_wpi or not label[1] in tokeni_to_wpi:
-            out_of_bounds += 1
-            continue
-
-        wpi1 = tokeni_to_wpi[label[0]]
-        wpi2 = tokeni_to_wpi[label[1]]
-
-        sent_labels[wpi1][wpi2] = label[2]
-    return sent_labels, num_relations, out_of_bounds
 
 
 def get_classification_labels(
