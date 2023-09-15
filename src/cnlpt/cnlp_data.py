@@ -426,16 +426,6 @@ def cnlp_preprocess_data(
             character_level,
             special_token_ids,
         )
-    # elif not [x for x in (tasks, output_modes, max_length, label_lists) if x is None]:
-    #     result["label"] = _build_pytorch_representations(
-    #         result,
-    #         tasks,
-    #         output_modes,
-    #         num_instances,
-    #         max_length,
-    #         label_lists,
-    #         character_level,
-    #     )
     if not character_level:
         result["event_mask"] = _build_event_mask_word_piece(
             result,
@@ -472,7 +462,7 @@ def _build_pytorch_labels(
     output_modes: Dict[str, str],
     num_instances: int,
     max_length: int,
-    label_lists: List[List[str]],
+    label_lists: Dict[str, List[str]],
     character_level: bool,
     special_token_ids: Set[int],
 ):
@@ -530,7 +520,7 @@ def _build_labels_for_task(
     labels: Union[List, None],
     num_instances: int,
     max_length: int,
-    label_lists: List[List[str]],
+    label_lists: Dict[str, List[str]],
     pad_classification: bool,
     character_level: bool,
     special_token_ids: Set[int],
@@ -541,6 +531,7 @@ def _build_labels_for_task(
         )
     elif output_mode[task] == relex:
         return get_relex_labels(
+            task,
             task_ind,
             result,
             labels,
@@ -567,10 +558,10 @@ def get_tagging_labels(
     num_instances: int,
     character_level: bool,
     special_token_ids: Set[int],
-) -> List[np.ndarray]:
+) -> np.ndarray:
 
-    previous_word_idx = None
-    label_ids = []
+    encoded_labels = []
+
     _labels = (
         defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: 0)))
         if labels is None
@@ -587,6 +578,9 @@ def get_tagging_labels(
         non_relevant = lambda word_idx: word_idx in special_token_ids
 
     for sent_ind in range(num_instances):
+
+        previous_word_idx = None
+        label_ids = []
         for word_idx in ids_getter(sent_ind):
             # Special tokens have a word id that is None. We set the label to -100 so they are automatically
             # ignored in the loss function.
@@ -601,16 +595,18 @@ def get_tagging_labels(
                 # Dongfang's logic for beginning or interior of a word
                 label_ids.append(-100)
             previous_word_idx = word_idx
-    return np.expand_dims(np.array(label_ids), 1)
+        encoded_labels.append(np.expand_dims(np.array(label_ids), 1))
+    return encoded_labels
 
 
 def get_relex_labels(
+    task: str,
     task_ind: int,
     result: BatchEncoding,
     labels: Union[List, None],
     num_instances: int,
     max_length: int,
-    label_lists: List[List[str]],
+    label_lists: Dict[str, List[str]],
     character_level: bool,
     special_token_ids: Set[int],
 ) -> List[np.ndarray]:
@@ -658,7 +654,7 @@ def get_relex_labels(
                 # don't want to consider it because it may screw up the learning to have 2 such similar
                 # tokens not involved in a relation.
                 if wpi != wpi2:
-                    sent_labels[wpi, wpi2] = label_lists[task_ind].index("None")
+                    sent_labels[wpi, wpi2] = label_lists[task].index("None")
 
         for label in _labels[sent_ind][task_ind]:
             if label == "None":
