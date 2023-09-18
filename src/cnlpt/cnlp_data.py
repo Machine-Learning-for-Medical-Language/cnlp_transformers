@@ -12,6 +12,7 @@ from typing import Callable, Dict, List, Optional, Tuple, Union, Set
 import datasets
 import numpy as np
 import torch
+import line_profiler
 from datasets import DatasetDict, Features, IterableDatasetDict
 from filelock import FileLock
 from torch.utils.data.dataset import Dataset
@@ -27,6 +28,7 @@ none_column = "__None__"
 
 logger = logging.getLogger(__name__)
 
+profiler = line_profiler.LineProfiler()
 
 def list_field(default=None, metadata=None):
     return field(default_factory=lambda: default, metadata=metadata)
@@ -239,7 +241,7 @@ def cnlp_convert_features_to_hierarchical(
 
     return features
 
-
+@profiler
 def cnlp_preprocess_data(
     examples: Dict[str, Union[List[str], List[int], List[float]]],
     tokenizer: PreTrainedTokenizer,
@@ -454,7 +456,7 @@ def cnlp_preprocess_data(
 
     return result
 
-
+@profiler
 def _build_pytorch_labels(
     result: BatchEncoding,
     tasks: List[str],
@@ -511,7 +513,7 @@ def _build_pytorch_labels(
 
     return labels_shaped
 
-
+@profiler
 def _build_labels_for_task(
     task: str,
     task_ind: int,
@@ -550,7 +552,7 @@ def _build_labels_for_task(
             pad_classification,
         )
 
-
+@profiler
 def get_tagging_labels(
     task_ind: int,
     result: BatchEncoding,
@@ -598,7 +600,7 @@ def get_tagging_labels(
         encoded_labels.append(np.expand_dims(np.array(label_ids), 1))
     return encoded_labels
 
-
+@profiler
 def get_relex_labels(
     task: str,
     task_ind: int,
