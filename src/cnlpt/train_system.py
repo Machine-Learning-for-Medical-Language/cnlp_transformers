@@ -404,7 +404,9 @@ def main(
             "</a2>",
             "<cr>",
             "<neg>",
-        ],
+        ]
+        if not data_args.character_level
+        else None,
     )
 
     # Get datasets

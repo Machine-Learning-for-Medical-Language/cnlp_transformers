@@ -12,7 +12,6 @@ from typing import Callable, Dict, List, Optional, Tuple, Union, Set
 import datasets
 import numpy as np
 import torch
-import line_profiler
 from datasets import DatasetDict, Features, IterableDatasetDict
 from filelock import FileLock
 from torch.utils.data.dataset import Dataset
@@ -28,7 +27,6 @@ none_column = "__None__"
 
 logger = logging.getLogger(__name__)
 
-profiler = line_profiler.LineProfiler()
 
 def list_field(default=None, metadata=None):
     return field(default_factory=lambda: default, metadata=metadata)
@@ -241,7 +239,7 @@ def cnlp_convert_features_to_hierarchical(
 
     return features
 
-@profiler
+
 def cnlp_preprocess_data(
     examples: Dict[str, Union[List[str], List[int], List[float]]],
     tokenizer: PreTrainedTokenizer,
@@ -456,7 +454,7 @@ def cnlp_preprocess_data(
 
     return result
 
-@profiler
+
 def _build_pytorch_labels(
     result: BatchEncoding,
     tasks: List[str],
@@ -513,7 +511,7 @@ def _build_pytorch_labels(
 
     return labels_shaped
 
-@profiler
+
 def _build_labels_for_task(
     task: str,
     task_ind: int,
@@ -552,7 +550,7 @@ def _build_labels_for_task(
             pad_classification,
         )
 
-@profiler
+
 def get_tagging_labels(
     task_ind: int,
     result: BatchEncoding,
@@ -569,6 +567,24 @@ def get_tagging_labels(
         if labels is None
         else labels
     )
+    if character_level:
+        instance_length = len(result["input_ids"][sent_ind])
+        raw_label = (
+            np.array(labels[sent_ind][task_ind])
+            if labels is not None
+            else np.zeros(instance_length) - 100
+        )
+        final_label = (
+            np.pad(
+                raw_label,
+                (0, instance_length - len(raw_label)),
+                mode="constant",
+                constant_values=-100,  # same non-loss logic as above
+            )
+            if instance_length >= len(raw_label)
+            else raw_label[:instance_length]
+        )
+        return np.expand_dims(final_label, 1)
 
     ids_getter = lambda sent_ind: []
     non_relevant = lambda word_idx: False
@@ -590,6 +606,8 @@ def get_tagging_labels(
                 label_ids.append(-100)
                 # We set the label for the first token of each word.
             elif word_idx != previous_word_idx:
+                print(f"{_labels[sent_ind][task_ind]}")
+                print(f"{word_idx}  {ids_getter(sent_ind)}")
                 label_ids.append(_labels[sent_ind][task_ind][word_idx])
                 # For the other tokens in a word, we set the label to either the current label or -100, depending on
                 # the label_all_tokens flag.
@@ -600,7 +618,7 @@ def get_tagging_labels(
         encoded_labels.append(np.expand_dims(np.array(label_ids), 1))
     return encoded_labels
 
-@profiler
+
 def get_relex_labels(
     task: str,
     task_ind: int,
