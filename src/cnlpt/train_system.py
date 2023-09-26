@@ -45,9 +45,9 @@ from transformers.training_args import IntervalStrategy
 
 from .BaselineModels import CnnSentenceClassifier, LstmSentenceClassifier
 from .cnlp_args import CnlpTrainingArguments, ModelArguments
-from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
+from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments, get_dataset_segment
 from .cnlp_metrics import cnlp_compute_metrics
-from .cnlp_predict import process_prediction
+from .cnlp_predict import process_prediction, restructure_prediction, structure_labels
 from .cnlp_processors import classification, relex, tagging
 from .CnlpModelForClassification import CnlpConfig, CnlpModelForClassification
 from .HierarchicalTransformer import HierarchicalModel
@@ -106,108 +106,6 @@ def is_hub_model(model_name: str) -> bool:
         pass
 
     return False
-
-
-def get_dataset_segment(
-    split_name: str,
-    dataset_ind: int,
-    dataset: ClinicalNlpDataset,
-):
-    start_ind = end_ind = 0
-    for ind in range(dataset_ind):
-        start_ind += len(dataset.datasets[ind][split_name])
-    end_ind = start_ind + len(dataset.datasets[dataset_ind][split_name])
-
-    return Dataset.from_dict(dataset.processed_dataset[split_name][start_ind:end_ind])
-
-
-def restructure_prediction(
-    task_names: List[str],
-    raw_prediction: EvalPrediction,
-    max_seq_length: int,
-    tagger: Dict[str, bool],
-    relations: Dict[str, bool],
-    output_prob: bool,
-) -> Tuple[
-    Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
-    Dict[str, Tuple[int, int]],
-]:
-    task_label_ind = 0
-
-    # disagreement collection stuff for this scope
-    task_label_to_boundaries: Dict[str, Tuple[int, int]] = {}
-    task_label_to_label_packet: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
-
-    for task_ind, task_name in enumerate(task_names):
-        preds, labels, pad, prob_values = structure_labels(
-            raw_prediction,
-            task_name,
-            task_ind,
-            task_label_ind,
-            max_seq_length,
-            tagger,
-            relations,
-            task_label_to_boundaries,
-            output_prob,
-        )
-        task_label_ind += pad
-
-        task_label_to_label_packet[task_name] = (preds, labels, prob_values)
-    return (
-        task_label_to_label_packet,
-        task_label_to_boundaries,
-    )
-
-
-def structure_labels(
-    p: EvalPrediction,
-    task_name: str,
-    task_ind: int,
-    task_label_ind: int,
-    max_seq_length: int,
-    tagger: Dict[str, bool],
-    relations: Dict[str, bool],
-    task_label_to_boundaries: Dict[str, Tuple[int, int]],
-    output_prob: bool,
-) -> Tuple[np.ndarray, np.ndarray, int, np.ndarray]:
-    # disagreement collection stuff for this scope
-
-    pad = 0
-    prob_values = np.ndarray([])
-    if tagger[task_name]:
-        preds = np.argmax(p.predictions[task_ind], axis=2)
-        # labels will be -100 where we don't need to tag
-    elif relations[task_name]:
-        preds = np.argmax(p.predictions[task_ind], axis=3)
-    else:
-        preds = np.argmax(p.predictions[task_ind], axis=1)
-        if output_prob:
-            prob_values = np.max(p.predictions[task_ind], axis=1)
-
-    # for inference
-    if not hasattr(p, "label_ids") or p.label_ids is None:
-        return preds, np.array([]), pad
-    if relations[task_name]:
-        # relation labels
-        labels = p.label_ids[
-            :, :, task_label_ind : task_label_ind + max_seq_length
-        ].squeeze()
-        task_label_to_boundaries[task_name] = (
-            task_label_ind,
-            task_label_ind + max_seq_length,
-        )
-        pad = max_seq_length
-    elif p.label_ids.ndim == 3:
-        if tagger[task_name]:
-            labels = p.label_ids[:, :, task_label_ind : task_label_ind + 1].squeeze()
-        else:
-            labels = p.label_ids[:, 0, task_label_ind].squeeze()
-        task_label_to_boundaries[task_name] = (task_label_ind, task_label_ind + 1)
-        pad = 1
-    elif p.label_ids.ndim == 2:
-        labels = p.label_ids[:, task_ind].squeeze()
-
-    return preds, labels, pad, prob_values
 
 
 def is_cnlpt_model(model_path: str) -> bool:
