@@ -1085,6 +1085,7 @@ def get_dataset_segment(
 
     return Dataset.from_dict(dataset.processed_dataset[split_name][start_ind:end_ind])
 
+
 class DaptDataset(Dataset):
     def __getitem__(self, index):
         return self.train[index]
