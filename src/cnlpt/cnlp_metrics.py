@@ -117,11 +117,11 @@ def relation_metrics(
     # scorer also ignores them.
     relevant_inds = np.where(labels != -100)
 
+    relevant_labels = [label_set[i] for i in labels[relevant_inds].astype("int")]
+    relevant_preds = [label_set[i] for i in preds[relevant_inds].astype("int")]
     num_correct = (relevant_labels == relevant_preds).sum()
     acc = num_correct / len(relevant_preds)
 
-    relevant_labels = [label_set[i] for i in labels[relevant_inds].astype("int")]
-    relevant_preds = [label_set[i] for i in preds[relevant_inds].astype("int")]
     recall = recall_score(y_pred=relevant_preds, y_true=relevant_labels, average=None)
     precision = precision_score(
         y_pred=relevant_preds, y_true=relevant_labels, average=None, zero_division=0
