@@ -14,9 +14,11 @@ Pass `--help` to see all your options.
 
 ### Local Testing
 Use the `./build.py` script to build the image you care about,
-and then run something like the following, depending on your model:
-```shell
+and then run something like one of the following, depending on your model and processor:
+
+```
 docker run --rm -p 8000:8000 smartonfhir/cnlp-transformers:termexists-latest-cpu
+docker run --rm -p 8000:8000 --gpus all smartonfhir/cnlp-transformers:termexists-latest-gpu
 ```
 
 With that specific example of the `termexists` model, you could smoke test it like so:
