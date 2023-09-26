@@ -26,7 +26,7 @@ import logging
 from time import time
 
 app = FastAPI()
-model_name = "mlml-chip/sharpseed-termexists"
+model_name = "mlml-chip/termexists_pubmedbert_ssm"
 logger = logging.getLogger('TermExists_REST_Processor')
 logger.setLevel(logging.DEBUG)
 

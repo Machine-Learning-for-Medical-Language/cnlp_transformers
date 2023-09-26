@@ -1,18 +1,20 @@
 FROM python:3.9 as base
 
+ARG cnlpt_version
+
 RUN --mount=type=cache,target=/root/.cache \
   pip install cython
 RUN --mount=type=cache,target=/root/.cache \
-  pip install cnlp-transformers
-
-# temporary workaround for transformers/huggingface version issue 
-RUN pip uninstall -y huggingface-hub
-RUN pip install huggingface-hub==0.10.1
+  pip install cnlp-transformers==$cnlpt_version
 
 WORKDIR /home
 # this copy is to support the preload of train models in the downstream images
 COPY .. /home
 ENTRYPOINT ["/bin/bash"]
+
+FROM base as current
+run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.current()"
+ENTRYPOINT ["cnlpt_current_rest", "-p", "8000"]
 
 FROM base as dtr
 run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.dtr()"
@@ -28,7 +30,9 @@ ENTRYPOINT ["cnlpt_negation_rest", "-p", "8000"]
 
 FROM base as termexists
 run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.termexists()"
-ENTRYPOINT ["cnlpt_termexists", "-p", "8000"]
+# Temporary fix, remove once the released pip package has the new model
+run sed -i 's/sharpseed-termexists/termexists_pubmedbert_ssm/g' /usr/local/lib/python3.9/site-packages/cnlpt/api/termexists_rest.py
+ENTRYPOINT ["cnlpt_termexists_rest", "-p", "8000"]
 
 FROM base as temporal
 run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.temporal()"
