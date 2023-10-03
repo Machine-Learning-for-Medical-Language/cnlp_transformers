@@ -562,60 +562,50 @@ def get_tagging_labels(
 
     encoded_labels = []
 
-    _labels = (
-        defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: 0)))
-        if labels is None
-        else labels
-    )
     if character_level:
-        instance_length = len(result["input_ids"][sent_ind])
-        raw_label = (
-            np.array(labels[sent_ind][task_ind])
-            if labels is not None
-            else np.zeros(instance_length) - 100
-        )
-        final_label = (
-            np.pad(
-                raw_label,
-                (0, instance_length - len(raw_label)),
-                mode="constant",
-                constant_values=-100,  # same non-loss logic as above
+        for sent_ind in range(num_instances):
+            instance_length = len(result["input_ids"][sent_ind])
+            raw_label = (
+                np.array(labels[sent_ind][task_ind])
+                if labels is not None
+                else np.zeros(instance_length) - 100
             )
-            if instance_length >= len(raw_label)
-            else raw_label[:instance_length]
+            final_label = (
+                np.pad(
+                    raw_label,
+                    (0, instance_length - len(raw_label)),
+                    mode="constant",
+                    constant_values=-100,  # same non-loss logic as above
+                )
+                if instance_length >= len(raw_label)
+                else raw_label[:instance_length]
+            )
+            encoded_labels.append(np.expand_dims(final_label, 1))
+    else:
+        _labels = (
+            defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: 0)))
+            if labels is None
+            else labels
         )
-        return np.expand_dims(final_label, 1)
+        for sent_ind in range(num_instances):
+            previous_word_idx = None
+            label_ids = []
+            for word_idx in word_ids:
+                # Special tokens have a word id that is None. We set the label to -100 so they are automatically
+                # ignored in the loss function.
+                if word_idx is None:
+                    label_ids.append(-100)
+                    # We set the label for the first token of each word.
+                elif word_idx != previous_word_idx:
+                    label_ids.append(labels[sent_ind][task_ind][word_idx])
+                    # For the other tokens in a word, we set the label to either the current label or -100, depending on
+                    # the label_all_tokens flag.
+                else:
+                    # Dongfang's logic for beginning or interior of a word
+                    label_ids.append(-100)
+                    previous_word_idx = word_idx
+            encoded_labels.append(np.expand_dims(np.array(label_ids), 1))
 
-    ids_getter = lambda sent_ind: []
-    non_relevant = lambda word_idx: False
-    if result.is_fast and not character_level:
-        ids_getter = lambda sent_ind: result.word_ids(batch_index=sent_ind)
-        non_relevant = lambda word_idx: word_idx is None
-    elif character_level:
-        ids_getter = lambda sent_ind: result["input_ids"][sent_ind]
-        non_relevant = lambda word_idx: word_idx in special_token_ids
-
-    for sent_ind in range(num_instances):
-
-        previous_word_idx = None
-        label_ids = []
-        for word_idx in ids_getter(sent_ind):
-            # Special tokens have a word id that is None. We set the label to -100 so they are automatically
-            # ignored in the loss function.
-            if non_relevant(word_idx):
-                label_ids.append(-100)
-                # We set the label for the first token of each word.
-            elif word_idx != previous_word_idx:
-                print(f"{_labels[sent_ind][task_ind]}")
-                print(f"{word_idx}  {ids_getter(sent_ind)}")
-                label_ids.append(_labels[sent_ind][task_ind][word_idx])
-                # For the other tokens in a word, we set the label to either the current label or -100, depending on
-                # the label_all_tokens flag.
-            else:
-                # Dongfang's logic for beginning or interior of a word
-                label_ids.append(-100)
-            previous_word_idx = word_idx
-        encoded_labels.append(np.expand_dims(np.array(label_ids), 1))
     return encoded_labels
 
 
