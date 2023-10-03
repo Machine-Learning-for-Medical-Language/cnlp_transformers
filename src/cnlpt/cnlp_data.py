@@ -1,13 +1,13 @@
-from collections import defaultdict
 import functools
 import json
 import logging
 import os
 import time
+from collections import defaultdict
 from dataclasses import asdict, astuple, dataclass, field
 from enum import Enum
 from os.path import basename, dirname
-from typing import Callable, Dict, List, Optional, Tuple, Union, Set
+from typing import Callable, Dict, List, Optional, Set, Tuple, Union
 
 import datasets
 import numpy as np
@@ -434,9 +434,9 @@ def cnlp_preprocess_data(
             tokenizer.convert_tokens_to_ids("</e>"),
         )
     else:
-        logging.warn(
-            "No real implementation for character level event masking yet, using a placeholder"
-        )
+        # logging.warn(
+        #     "No real implementation for character level event masking yet, using a placeholder"
+        # )
         result["event_mask"] = _build_event_mask_character(
             result,
             num_instances,
@@ -501,6 +501,9 @@ def _build_pytorch_labels(
     labels_shaped = []
     for ind in range(len(labels_unshaped)):
         if max_dims == 2:
+            logger.warn(
+                f"character_level: {character_level} , label_shape : {labels_unshaped[ind].shape}"
+            )
             ## relations or tagging and possibly classification too
             labels_shaped.append(np.concatenate(labels_unshaped[ind], axis=1))
         elif max_dims == 1:
@@ -524,7 +527,7 @@ def _build_labels_for_task(
     pad_classification: bool,
     character_level: bool,
     special_token_ids: Set[int],
-):
+) -> Union[np.ndarray, List[np.ndarray]]:
     if output_mode[task] == tagging:
         return get_tagging_labels(
             task_ind, result, labels, num_instances, character_level, special_token_ids
@@ -558,18 +561,32 @@ def get_tagging_labels(
     num_instances: int,
     character_level: bool,
     special_token_ids: Set[int],
-) -> np.ndarray:
-
+) -> List[np.ndarray]:
     encoded_labels = []
 
     if character_level:
+        # since np.isin as of 2023-10-03
+        # has issues with sets
+        special_ids_ls = [*special_token_ids]
+
+        def filter_special_ids(_labels, sent_ind):
+            raw_label = np.array(_labels[sent_ind][task_ind])
+            raw_label[np.isin(raw_label, special_ids_ls)] = -100
+            return raw_label
+
+        def blank_instance(sent_ind):
+            instance_length = len(result["input_ids"][sent_ind])
+            return np.zeros(instance_length) - 100
+
+        label_getter = lambda sent_ind: []
+        if labels is None:
+            label_getter = lambda sent_ind: blank_instance(sent_ind)
+        else:
+            label_getter = lambda sent_ind: filter_special_ids(labels, sent_ind)
+
         for sent_ind in range(num_instances):
             instance_length = len(result["input_ids"][sent_ind])
-            raw_label = (
-                np.array(labels[sent_ind][task_ind])
-                if labels is not None
-                else np.zeros(instance_length) - 100
-            )
+            raw_label = label_getter(sent_ind)
             final_label = (
                 np.pad(
                     raw_label,
@@ -582,12 +599,8 @@ def get_tagging_labels(
             )
             encoded_labels.append(np.expand_dims(final_label, 1))
     else:
-        _labels = (
-            defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: 0)))
-            if labels is None
-            else labels
-        )
         for sent_ind in range(num_instances):
+            word_ids = result.word_ids(batch_index=sent_ind)
             previous_word_idx = None
             label_ids = []
             for word_idx in word_ids:
