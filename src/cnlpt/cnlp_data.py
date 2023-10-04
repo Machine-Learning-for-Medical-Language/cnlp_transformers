@@ -11,6 +11,7 @@ from typing import Callable, Dict, List, Optional, Tuple, Union
 import datasets
 import numpy as np
 import torch
+from datasets import Dataset as HFDataset
 from datasets import DatasetDict, Features, IterableDatasetDict
 from filelock import FileLock
 from torch.utils.data.dataset import Dataset
@@ -1083,7 +1084,7 @@ def get_dataset_segment(
         start_ind += len(dataset.datasets[ind][split_name])
     end_ind = start_ind + len(dataset.datasets[dataset_ind][split_name])
 
-    return Dataset.from_dict(dataset.processed_dataset[split_name][start_ind:end_ind])
+    return HFDataset.from_dict(dataset.processed_dataset[split_name][start_ind:end_ind])
 
 
 class DaptDataset(Dataset):
