@@ -12,6 +12,7 @@ from typing import Callable, Dict, List, Optional, Set, Tuple, Union
 import datasets
 import numpy as np
 import torch
+from datasets import Dataset as HFDataset
 from datasets import DatasetDict, Features, IterableDatasetDict
 from filelock import FileLock
 from torch.utils.data.dataset import Dataset
@@ -501,17 +502,12 @@ def _build_pytorch_labels(
     labels_shaped = []
     for ind in range(len(labels_unshaped)):
         if max_dims == 2:
-            logger.warn(
-                f"character_level: {character_level} , label_shape : {labels_unshaped[ind].shape}"
-            )
-            ## relations or tagging and possibly classification too
             labels_shaped.append(np.concatenate(labels_unshaped[ind], axis=1))
         elif max_dims == 1:
             ## classification only
             labels_shaped.append(labels_unshaped[ind])
         else:
             raise Exception("This should not be possible that max_dims > 2.")
-
     return labels_shaped
 
 
@@ -1185,7 +1181,7 @@ def get_dataset_segment(
         start_ind += len(dataset.datasets[ind][split_name])
     end_ind = start_ind + len(dataset.datasets[dataset_ind][split_name])
 
-    return Dataset.from_dict(dataset.processed_dataset[split_name][start_ind:end_ind])
+    return HFDataset.from_dict(dataset.processed_dataset[split_name][start_ind:end_ind])
 
 
 class DaptDataset(Dataset):

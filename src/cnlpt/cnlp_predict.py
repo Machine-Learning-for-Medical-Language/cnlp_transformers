@@ -263,7 +263,7 @@ def get_output_list(
     if len(error_inds) > 0 and error_analysis:
         relevant_prob_values = (
             prob_values[error_inds]
-            if output_mode[pred_task] == tagging
+            if output_mode[pred_task] == classification and len(prob_values) > 0
             else prob_values
         )
         ground_truth = labels[error_inds].astype(int)
@@ -320,7 +320,7 @@ def get_classification_prints(
         ground, predicted = gp
         if ground == predicted:
             return f"_no_{task_name}_error_"
-        return f"Ground: {ground} , Predicted {predicted}"
+        return f"Ground: {ground} , Predicted: {predicted}"
 
     pred_list = predicted_labels
     if ground_truths is not None:
@@ -439,7 +439,7 @@ def get_tagging_prints(
         if len(ground_string) == 0 == len(predicted_string):
             return f"_no_{task_name.lower()}_errors_"
 
-        return f"Ground : {ground_string} Predicted : {predicted_string}"
+        return f"Ground: {ground_string} Predicted: {predicted_string}"
 
     def get_pred_out_string(
         type2spans: Dict[str, List[Tuple[int, int]]], instance: str
@@ -588,7 +588,7 @@ def get_relex_prints(
             if len(bad_cells_str) > 0
             else ""
         )
-        return f"{bad_out}Ground: {ground_cells_str} , Predicted : {pred_cells_str}"
+        return f"{bad_out}Ground: {ground_cells_str} , Predicted: {pred_cells_str}"
 
     def to_pred_string(reduced_matrix: np.ndarray) -> str:
         non_none_inds = np.where(reduced_matrix != none_index)
