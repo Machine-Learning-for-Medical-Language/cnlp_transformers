@@ -167,6 +167,7 @@ def process_prediction(
     output_fn: str,
     error_analysis: bool,
     output_prob: bool,
+    character_level: bool,
     task_to_label_packet: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
     task_to_label_boundaries: Dict[str, Tuple[int, int]],
     eval_dataset,
@@ -224,6 +225,7 @@ def process_prediction(
         target_inds = error_inds if len(error_inds) > 0 else relevant_indices
         out_table[task_name][target_inds] = get_output_list(
             error_analysis,
+            character_level,
             prob_values,
             task_name,
             task_labels,
@@ -249,6 +251,7 @@ def process_prediction(
 # assignment and populate it via a generator but for now just use a list
 def get_output_list(
     error_analysis: bool,
+    character_level: bool,
     prob_values: np.ndarray,
     pred_task: str,
     task_labels: List[str],
@@ -288,6 +291,7 @@ def get_output_list(
             labels_start, labels_end = task2boundaries[pred_task]
             task_torch_labels = all_torch_labels[:, :, labels_start:labels_end]
         return get_tagging_prints(
+            character_level,
             pred_task,
             task_labels,
             ground_truth,
@@ -337,6 +341,7 @@ def get_classification_prints(
 
 
 def get_tagging_prints(
+    character_level: bool,
     task_name: str,
     tagging_labels: List[str],
     ground_truths: Union[None, np.ndarray],
@@ -345,6 +350,14 @@ def get_tagging_prints(
     text_samples: pd.Series,
 ) -> List[str]:
     resolved_predictions = task_predictions
+
+    # to save ourselves the branch instructions
+    # in all the nested functions
+    get_tokens = lambda: None
+    if character_level:
+        get_tokens = lambda inst: [*inst]
+    else:
+        get_tokens = lambda inst: [*filter(None, inst.split())]
 
     def flatten_dict(d):
         def tups(k, ls):
@@ -422,8 +435,7 @@ def get_tagging_prints(
     def get_error_out_string(
         disagreements: Dict[str, Dict[str, List[Tuple[int, int]]]], instance: str
     ) -> str:
-        instance_tokens = [*filter(None, instance.split())]
-
+        instance_tokens = get_tokens(instance)
         ground_string = (
             dict_to_str(disagreements["ground"], instance_tokens)
             if "ground" in disagreements.keys()
@@ -444,8 +456,7 @@ def get_tagging_prints(
     def get_pred_out_string(
         type2spans: Dict[str, List[Tuple[int, int]]], instance: str
     ):
-        instance_tokens = [*filter(None, instance.split())]
-
+        instance_tokens = get_tokens(instance)
         return dict_to_str(type2spans, instance_tokens)
 
     pred_span_dictionaries = (
