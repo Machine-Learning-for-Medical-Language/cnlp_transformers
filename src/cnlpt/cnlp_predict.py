@@ -354,10 +354,13 @@ def get_tagging_prints(
     # to save ourselves the branch instructions
     # in all the nested functions
     get_tokens = lambda: None
+    token_sep = ""  # default since typesystem doesn't like the None
     if character_level:
         get_tokens = lambda inst: [*inst]
+        token_sep = ""
     else:
         get_tokens = lambda inst: [*filter(None, inst.split())]
+        token_sep = " "
 
     def flatten_dict(d):
         def tups(k, ls):
@@ -369,7 +372,8 @@ def get_tagging_prints(
 
     def dict_to_str(d, tokens):
         return " , ".join(
-            f'{key}: "{tokens[span[0]:span[1]]}"' for key, span in flatten_dict(d)
+            f'{key}: "{token_sep.join(tokens[span[0]:span[1]])}"'
+            for key, span in flatten_dict(d)
         )
 
     # since sometimes it's just
