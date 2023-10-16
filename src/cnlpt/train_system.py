@@ -190,12 +190,17 @@ def main(
         )
 
     # Load tokenizer: Need this first for loading the datasets
+    if training_args.truncation_side_left and not hierarchical:
+        truncation_side = 'left'
+    else:
+        truncation_side = 'right'
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name
         if model_args.tokenizer_name
         else model_args.encoder_name,
         cache_dir=model_args.cache_dir,
         add_prefix_space=True,
+        truncation_side = truncation_side,
         additional_special_tokens=[
             "<e>",
             "</e>",
