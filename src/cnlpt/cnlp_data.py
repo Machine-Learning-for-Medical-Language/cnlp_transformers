@@ -20,7 +20,7 @@ from transformers.tokenization_utils import PreTrainedTokenizer
 from .cnlp_args import DaptArguments
 from .cnlp_processors import AutoProcessor, classification, mtl, relex, tagging
 
-special_tokens = ["<e>", "</e>", "<a1>", "</a1>", "<a2>", "</a2>", "<cr>", "<neg>"]
+special_tokens = ["<e>", "</e>", "<a1>", "</a1>", "<a2>", "</a2>", "<cr>", "<neg>"] # Not used. TODO: [CLSCHUNK]
 text_columns = ["text", "text_a", "text_b"]
 none_column = "__None__"
 
@@ -102,6 +102,7 @@ def cnlp_convert_features_to_hierarchical(
     cls_id: int,
     sep_id: int,
     pad_id: int,
+    cls_chunk_token: int,
     insert_empty_chunk_at_beginning: bool = False,
 ) -> BatchEncoding:
     """
@@ -197,7 +198,7 @@ def cnlp_convert_features_to_hierarchical(
 
         # Insert an empty chunk at the beginning.
         if insert_empty_chunk_at_beginning:
-            chunks.insert(0, create_pad_chunk())
+            chunks.insert(0, create_pad_chunk(cls_type=cls_chunk_token, sep_type=sep_id, pad_type=pad_id))
             if chunks_attention_mask is not None:
                 chunks_attention_mask.insert(0, create_pad_chunk(1, 1, 0))
             if chunks_token_type_ids is not None:
@@ -218,13 +219,16 @@ def cnlp_convert_features_to_hierarchical(
 
         # Add empty lists to list of chunks, if the number of chunks less than max number.
         while len(chunks) < num_chunks:
-            chunks.append(create_pad_chunk())
+            #chunks.append(create_pad_chunk())
+            chunks.append(create_pad_chunk(0, 0, 0))
             if chunks_attention_mask is not None:
-                chunks_attention_mask.append(create_pad_chunk(1, 1, 0))
+                #chunks_attention_mask.append(create_pad_chunk(1, 1, 0))
+                chunks_attention_mask.append(create_pad_chunk(0, 0, 0))
             if chunks_token_type_ids is not None:
                 chunks_token_type_ids.append(create_pad_chunk(0, 0, 0))
             if chunks_event_tokens is not None:
-                chunks_event_tokens.append(create_pad_chunk(1, 1, 0))
+                #chunks_event_tokens.append(create_pad_chunk(1, 1, 0))
+                chunks_event_tokens.append(create_pad_chunk(0, 0, 0))
 
         features["input_ids"][ind] = chunks
         features["attention_mask"][ind] = chunks_attention_mask
@@ -246,6 +250,7 @@ def cnlp_preprocess_data(
     hierarchical: bool = False,
     chunk_len: int = -1,
     num_chunks: int = -1,
+    cls_chunk_token: int = -1,
     insert_empty_chunk_at_beginning: bool = False,
     truncate_examples: bool = False,
 ) -> Union[List[InputFeatures], List[HierarchicalInputFeatures]]:
@@ -398,6 +403,7 @@ def cnlp_preprocess_data(
             cls_id=tokenizer.cls_token_id,
             sep_id=tokenizer.sep_token_id,
             pad_id=tokenizer.pad_token_id,
+            cls_chunk_token=cls_chunk_token,
             insert_empty_chunk_at_beginning=insert_empty_chunk_at_beginning,
         )
 
@@ -714,6 +720,13 @@ class DataTrainingArguments:
         },
     )
 
+    add_cls_chunk_token: bool = field(
+        default=False,
+        metadata={
+            "help": "Add special CLS CHUNK token."
+        },
+    )
+
 
 class ClinicalNlpDataset(Dataset):
     """
@@ -754,11 +767,16 @@ class ClinicalNlpDataset(Dataset):
         self.label_lists = []
         self.num_train_instances = 0
 
+        if self.args.add_cls_chunk_token:
+            self.cls_chunk_token = tokenizer.convert_tokens_to_ids("[CLSCHUNK]")
+        else:
+            self.cls_chunk_token = tokenizer.cls_id
+
         if self.hierarchical:
             implicit_max_len = self.args.chunk_len * self.args.num_chunks
             if self.args.max_seq_length < implicit_max_len:
                 raise ValueError(
-                    "For the hierarchical model, the max seq length should be equal to the chunk length * num_chunks, otherwise what is the point?"
+                    "For the hierarchical model, the max seq length should be equal to the chunk length * num_chunks."
                 )
 
         # if cli supplies no tasks, the processor will assume we want all the tasks, but we do need to have a conventional order
@@ -814,6 +832,7 @@ class ClinicalNlpDataset(Dataset):
                 "hierarchical": self.hierarchical,
                 "chunk_len": self.args.chunk_len,
                 "num_chunks": self.args.num_chunks,
+                "cls_chunk_token": self.cls_chunk_token,
                 "insert_empty_chunk_at_beginning": self.args.insert_empty_chunk_at_beginning,
                 "truncate_examples": self.args.truncate_examples,
                 "tasks": tasks,

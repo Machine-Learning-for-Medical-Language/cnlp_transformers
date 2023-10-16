@@ -189,14 +189,7 @@ def main(
             f"It is not recommended to use ints as model selection labels: {tuple([item for item in training_args.model_selection_label if isinstance(item, int)])}. Labels should be input in string form."
         )
 
-    # Load tokenizer: Need this first for loading the datasets
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_args.tokenizer_name
-        if model_args.tokenizer_name
-        else model_args.encoder_name,
-        cache_dir=model_args.cache_dir,
-        add_prefix_space=True,
-        additional_special_tokens=[
+    additional_special_tokens = [
             "<e>",
             "</e>",
             "<a1>",
@@ -205,7 +198,18 @@ def main(
             "</a2>",
             "<cr>",
             "<neg>",
-        ],
+    ]
+    if data_args.add_cls_chunk_token:
+        additional_special_tokens.append("[CLSCHUNK]")
+
+    # Load tokenizer: Need this first for loading the datasets
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_args.tokenizer_name
+        if model_args.tokenizer_name
+        else model_args.encoder_name,
+        cache_dir=model_args.cache_dir,
+        add_prefix_space=True,
+        additional_special_tokens=additional_special_tokens,
     )
 
     # Get datasets
