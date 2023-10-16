@@ -65,8 +65,9 @@ class CnlpTrainingArguments(TrainingArguments):
         default=False,
         metadata={
             "help": "Truncate samples from left. Note that hier model do not support this setting."
-        },  
-    )   
+        },
+    )
+
 
 cnlpt_models = ["cnn", "lstm", "hier", "cnlpt"]
 
