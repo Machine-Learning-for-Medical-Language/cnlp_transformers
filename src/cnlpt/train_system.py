@@ -745,7 +745,11 @@ def main(
             (
                 task_to_label_packet,
                 task_to_label_boundaries,
-            ) = current_prediction_packet.pop()
+            ) = (
+                current_prediction_packet.pop()
+                if len(current_prediction_packet) > 0
+                else (None, None)
+            )
 
             for dataset_ind, dataset_path in enumerate(data_args.data_dir):
                 subdir = os.path.split(dataset_path.rstrip("/"))[1]
