@@ -770,7 +770,7 @@ class ClinicalNlpDataset(Dataset):
         if self.args.add_cls_chunk_token:
             self.cls_chunk_token = tokenizer.convert_tokens_to_ids("[CLSCHUNK]")
         else:
-            self.cls_chunk_token = tokenizer.cls_id
+            self.cls_chunk_token = tokenizer.cls_token_id
 
         if self.hierarchical:
             implicit_max_len = self.args.chunk_len * self.args.num_chunks
