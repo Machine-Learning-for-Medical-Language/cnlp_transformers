@@ -117,8 +117,8 @@ def relation_metrics(
     # scorer also ignores them.
     relevant_inds = np.where(labels != -100)
 
-    relevant_labels = [label_set[i] for i in labels[relevant_inds].astype("int")]
-    relevant_preds = [label_set[i] for i in preds[relevant_inds].astype("int")]
+    relevant_labels = labels[relevant_inds].astype("int")
+    relevant_preds = preds[relevant_inds]    
     num_correct = (relevant_labels == relevant_preds).sum()
     acc = num_correct / len(relevant_preds)
 
@@ -131,10 +131,14 @@ def relation_metrics(
             y_true=relevant_labels, y_pred=relevant_preds, average=None, zero_division=0
         )
     )
+
+    string_labels = [label_set[i] for i in labels[relevant_inds].astype("int")]
+    string_preds = [label_set[i] for i in preds[relevant_inds].astype("int")]
+
     report_dict = classification_report(
-        y_true=relevant_labels, y_pred=relevant_preds, output_dict=True
+        y_true=string_labels, y_pred=string_preds, output_dict=True
     )
-    report_str = classification_report(y_true=relevant_labels, y_pred=relevant_preds)
+    report_str = classification_report(y_true=string_labels, y_pred=string_preds)
 
     return {
         "f1": f1_scores,
