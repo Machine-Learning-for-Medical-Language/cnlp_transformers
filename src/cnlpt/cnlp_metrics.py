@@ -118,7 +118,7 @@ def relation_metrics(
     relevant_inds = np.where(labels != -100)
 
     relevant_labels = labels[relevant_inds].astype("int")
-    relevant_preds = preds[relevant_inds]    
+    relevant_preds = preds[relevant_inds]
     num_correct = (relevant_labels == relevant_preds).sum()
     acc = num_correct / len(relevant_preds)
 
