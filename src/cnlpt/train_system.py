@@ -190,30 +190,30 @@ def main(
         )
 
     additional_special_tokens = [
-            "<e>",
-            "</e>",
-            "<a1>",
-            "</a1>",
-            "<a2>",
-            "</a2>",
-            "<cr>",
-            "<neg>",
+        "<e>",
+        "</e>",
+        "<a1>",
+        "</a1>",
+        "<a2>",
+        "</a2>",
+        "<cr>",
+        "<neg>",
     ]
     if data_args.add_cls_chunk_token:
         additional_special_tokens.append("[CLSCHUNK]")
 
     # Load tokenizer: Need this first for loading the datasets
     if training_args.truncation_side_left and not hierarchical:
-        truncation_side = 'left'
+        truncation_side = "left"
     else:
-        truncation_side = 'right'
+        truncation_side = "right"
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name
         if model_args.tokenizer_name
         else model_args.encoder_name,
         cache_dir=model_args.cache_dir,
         add_prefix_space=True,
-        truncation_side = truncation_side,
+        truncation_side=truncation_side,
         additional_special_tokens=additional_special_tokens,
     )
 
@@ -354,7 +354,7 @@ def main(
             config = AutoConfig.from_pretrained(
                 encoder_name, cache_dir=model_args.cache_dir, layer=model_args.layer
             )
-            if model_args.ignore_existing_classifers:
+            if model_args.ignore_existing_classifiers:
                 config.finetuning_task = (
                     data_args.task_name
                     if data_args.task_name is not None
@@ -381,7 +381,7 @@ def main(
             logger.info("Loading pre-trained hierarchical model...")
             model = AutoModel.from_pretrained(encoder_name, config=config)
 
-            if model_args.ignore_existing_classifers:
+            if model_args.ignore_existing_classifiers:
                 model.remove_task_classifiers()
                 for task in data_args.task_name:
                     model.add_task_classifier(task, dataset.get_labels()[task])
@@ -718,6 +718,7 @@ def main(
                     dataset_ind,
                     output_mode,
                     tokenizer,
+                    output_prob=training_args.output_prob,
                 )
 
         eval_results.update(eval_result)

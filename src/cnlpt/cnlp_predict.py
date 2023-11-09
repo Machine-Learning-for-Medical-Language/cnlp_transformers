@@ -9,6 +9,11 @@ from .cnlp_data import ClinicalNlpDataset
 from .cnlp_processors import classification, relex, tagging
 
 
+def simple_softmax(x: list):
+    """Softmax values for 1-D score array"""
+    return np.exp(x) / np.sum(np.exp(x), axis=0)
+
+
 def write_predictions_for_dataset(
     output_fn: str,
     trainer: Trainer,
@@ -39,13 +44,16 @@ def write_predictions_for_dataset(
             if output_mode[task_name] == classification:
                 task_predictions = predictions[task_ind]
                 for index, logits in enumerate(task_predictions):
-                    task_prediction_idx = np.argmax(logits, axis=1)
+                    task_prediction_idx = np.argmax(
+                        logits, axis=(len(logits.shape) - 1)
+                    )
                     item = task_labels[task_name][task_prediction_idx]
-                    prob_value = logits[task_prediction_idx]
+                    prob_values = simple_softmax(logits)
+                    prob_string = "|".join(["%.6f" % prob for prob in prob_values])
                     if output_prob:
                         writer.write(
-                            "Task %d (%s) - Index %d - %s - %.6f\n"
-                            % (task_ind, task_name, index, item, prob_value)
+                            "Task %d (%s) - Index %d - %s - %s\n"
+                            % (task_ind, task_name, index, item, prob_string)
                         )
                     else:
                         writer.write(
