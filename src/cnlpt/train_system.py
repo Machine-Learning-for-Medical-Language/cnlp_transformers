@@ -8,61 +8,87 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 #
-# Unless required by applicable law or agreed to in writing, software
+# Unless require wdd by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """ Finetuning the library models for sequence classification on clinical NLP tasks"""
+import json
 import logging
 import math
 import os
+import pdb
 import sys
 import tempfile
-from enum import Enum
-from os.path import basename, dirname, exists, join
-from typing import Any, Callable, Dict, List, Optional, Union
+from collections import defaultdict, deque
+from os.path import exists, join
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
+import requests
 import torch
-from filelock import FileLock
+from datasets import Dataset
 from huggingface_hub import hf_hub_url
-from torch.optim import AdamW
-from torch.utils.data.dataset import Dataset
 from transformers import (
-    ALL_PRETRAINED_CONFIG_ARCHIVE_MAP,
     AutoConfig,
     AutoModel,
     AutoTokenizer,
     EvalPrediction,
-)
-from transformers.data.processors.utils import (
-    DataProcessor,
-    InputExample,
-    InputFeatures,
+    HfArgumentParser,
+    Trainer,
+    TrainerCallback,
+    set_seed,
 )
 from transformers.file_utils import CONFIG_NAME
-from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.training_args import IntervalStrategy
-
-sys.path.append(os.path.join(os.getcwd()))
-import json
-
-import requests
-from transformers import HfArgumentParser, Trainer, set_seed
 
 from .BaselineModels import CnnSentenceClassifier, LstmSentenceClassifier
 from .cnlp_args import CnlpTrainingArguments, ModelArguments
-from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments
+from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments, get_dataset_segment
 from .cnlp_metrics import cnlp_compute_metrics
-from .cnlp_predict import write_predictions_for_dataset
+from .cnlp_predict import process_prediction, restructure_prediction, structure_labels
 from .cnlp_processors import classification, relex, tagging
 from .CnlpModelForClassification import CnlpConfig, CnlpModelForClassification
 from .HierarchicalTransformer import HierarchicalModel
 
+sys.path.append(os.path.join(os.getcwd()))
+
+
+from collections import defaultdict
+
 AutoConfig.register("cnlpt", CnlpConfig)
 
 logger = logging.getLogger(__name__)
+
+
+eval_state = defaultdict(lambda: -1)
+
+
+# For debugging early stopping logging
+class EvalCallback(TrainerCallback):
+    def on_evaluate(self, args, state, control, **kwargs):
+        if state.is_world_process_zero:
+            model_dict = {}
+            if "model" in kwargs:
+                model = kwargs["model"]
+                if (
+                    hasattr(model, "best_score")
+                    and model.best_score > eval_state["best_score"]
+                ):
+                    model_dict = {
+                        "best_score": model.best_score,
+                        "best_step": state.global_step,
+                        "best_epoch": state.epoch,
+                    }
+            state_dict = {
+                "curr_epoch": state.epoch,
+                "max_epochs": state.num_train_epochs,
+                "curr_step": state.global_step,
+                "max_steps": state.max_steps,
+            }
+            state_dict.update(model_dict)
+            eval_state.update(state_dict)
 
 
 def is_hub_model(model_name: str) -> bool:
@@ -182,7 +208,7 @@ def main(
     # Set seed
     set_seed(training_args.seed)
 
-    if not training_args.model_selection_label is None and any(
+    if training_args.model_selection_label is not None and any(
         isinstance(item, int) for item in training_args.model_selection_label
     ):
         logger.warning(
@@ -366,7 +392,7 @@ def main(
                         "previous training run."
                     )
 
-            ## TODO: check if user overwrote parameters in command line that could change behavior of the model and warn
+            # TODO: check if user overwrote parameters in command line that could change behavior of the model and warn
             # if data_args.chunk_len is not None:
 
             logger.info("Loading pre-trained hierarchical model...")
@@ -479,9 +505,7 @@ def main(
                 bias_fit=training_args.bias_fit,
             )
 
-    best_eval_results = None
-    output_eval_file = os.path.join(training_args.output_dir, f"eval_results.txt")
-
+    output_eval_file = os.path.join(training_args.output_dir, "eval_results.txt")
     if training_args.do_train:
         # TODO: This assumes that if there are multiple training sets, they all have the same length, but
         # in the future it would be nice to be able to have multiple heterogeneous datasets
@@ -508,6 +532,8 @@ def main(
             logger.info("Evaluation strategy not specified so evaluating every epoch")
             training_args.evaluation_strategy = IntervalStrategy.EPOCH
 
+    current_prediction_packet = deque()
+
     def build_compute_metrics_fn(
         task_names: List[str], model, dataset: ClinicalNlpDataset
     ) -> Callable[[EvalPrediction], Dict]:
@@ -516,31 +542,25 @@ def main(
             task_scores = []
             task_label_ind = 0
 
-            for task_ind, task_name in enumerate(task_names):
-                if tagger[task_name]:
-                    preds = np.argmax(p.predictions[task_ind], axis=2)
-                    # labels will be -100 where we don't need to tag
-                elif relations[task_name]:
-                    preds = np.argmax(p.predictions[task_ind], axis=3)
-                else:
-                    preds = np.argmax(p.predictions[task_ind], axis=1)
+            # disagreement collection stuff for this scope
+            task_label_to_boundaries = {}
+            task_label_to_label_packet = {}
 
-                if relations[task_name]:
-                    # relation labels
-                    labels = p.label_ids[
-                        :, :, task_label_ind : task_label_ind + data_args.max_seq_length
-                    ].squeeze()
-                    task_label_ind += data_args.max_seq_length
-                elif p.label_ids.ndim == 3:
-                    if tagger[task_name]:
-                        labels = p.label_ids[
-                            :, :, task_label_ind : task_label_ind + 1
-                        ].squeeze()
-                    else:
-                        labels = p.label_ids[:, 0, task_label_ind].squeeze()
-                    task_label_ind += 1
-                elif p.label_ids.ndim == 2:
-                    labels = p.label_ids[:, task_ind].squeeze()
+            for task_ind, task_name in enumerate(dataset.tasks):
+                preds, labels, pad, prob_values = structure_labels(
+                    p,
+                    task_name,
+                    task_ind,
+                    task_label_ind,
+                    data_args.max_seq_length,
+                    tagger,
+                    relations,
+                    task_label_to_boundaries,
+                    training_args.output_prob,
+                )
+                task_label_ind += pad
+
+                task_label_to_label_packet[task_name] = (preds, labels, prob_values)
 
                 metrics[task_name] = cnlp_compute_metrics(
                     task_name,
@@ -599,10 +619,13 @@ def main(
 
             one_score = sum(task_scores) / len(task_scores)
 
-            if not model is None:
+            if model is not None:
                 if not hasattr(model, "best_score") or one_score > model.best_score:
                     # For convenience, we also re-save the tokenizer to the same directory,
                     # so that you can share your model easily on huggingface.co/models =)
+
+                    model.best_score = one_score
+                    model.best_eval_results = metrics
                     if trainer.is_world_process_zero():
                         if training_args.do_train:
                             trainer.save_model()
@@ -621,8 +644,19 @@ def main(
                                 for key, value in metrics[task_name].items():
                                     # logger.info("  %s = %s", key, value)
                                     writer.write("%s = %s\n" % (key, value))
-                    model.best_score = one_score
-                    model.best_eval_results = metrics
+
+                    if training_args.error_analysis:
+                        if len(current_prediction_packet) > 0:
+                            current_prediction_packet.pop()
+                        # in theory if we can consolidate this into
+                        # cnlp_compute_metrics but that's maybe more of a
+                        # commitment than is a good idea right now
+                        current_prediction_packet.append(
+                            (
+                                task_label_to_label_packet,
+                                task_label_to_boundaries,
+                            )
+                        )
 
             return metrics
 
@@ -637,6 +671,7 @@ def main(
         train_dataset=dataset.processed_dataset.get("train", None),
         eval_dataset=dataset.processed_dataset.get("validation", None),
         compute_metrics=build_compute_metrics_fn(task_names, model, dataset),
+        callbacks=[EvalCallback],
     )
 
     # Training
@@ -661,6 +696,9 @@ def main(
 
     # Evaluation
     eval_results = {}
+
+    task_to_label_space = dataset.get_labels()
+
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
         eval_dataset = dataset.processed_dataset["validation"]
@@ -672,14 +710,22 @@ def main(
 
         # if there is a stored model, restore it so writing outputs uses a good model
 
+        curr_step = 0
         trainer.compute_metrics = None
         if trainer.is_world_process_zero():
-            with open(output_eval_file, "w") as writer:
+            # with open(output_eval_file, "w") as writer:
+            with open(output_eval_file, "a") as writer:
                 logger.info("***** Eval results on combined dataset *****")
                 for key, value in eval_result.items():
                     logger.info("  %s = %s", key, value)
                     writer.write("%s = %s\n" % (key, value))
-
+                if any(eval_state):
+                    curr_step = eval_state["curr_step"]
+                    writer.write(
+                        "\n\n Current state (In Compute Metrics Function) \n\n"
+                    )
+                    for key, value in eval_state.items():
+                        writer.write(f"{key} : {value} \n")
             # here we probably want separate predictions for each dataset:
             if training_args.load_best_model_at_end:
                 model.load_state_dict(
@@ -695,21 +741,38 @@ def main(
                     ),
                 )
                 # use trainer to predict
+
+            (
+                task_to_label_packet,
+                task_to_label_boundaries,
+            ) = (
+                current_prediction_packet.pop()
+                if len(current_prediction_packet) > 0
+                else (None, None)
+            )
+
             for dataset_ind, dataset_path in enumerate(data_args.data_dir):
                 subdir = os.path.split(dataset_path.rstrip("/"))[1]
                 output_eval_predictions_file = os.path.join(
                     training_args.output_dir,
-                    f"eval_predictions_%s_%d.txt" % (subdir, dataset_ind),
+                    f"eval_predictions_{subdir}_{dataset_ind}_{curr_step}.tsv",
                 )
-                write_predictions_for_dataset(
-                    output_eval_predictions_file,
-                    trainer,
-                    dataset,
-                    "validation",
-                    dataset_ind,
-                    output_mode,
-                    tokenizer,
+
+                dataset_dev_segment = get_dataset_segment(
+                    "validation", dataset_ind, dataset
                 )
+                if training_args.error_analysis:
+                    process_prediction(
+                        dataset.tasks,
+                        output_eval_predictions_file,
+                        True,
+                        training_args.output_prob,
+                        task_to_label_packet,
+                        task_to_label_boundaries,
+                        dataset_dev_segment,
+                        task_to_label_space,
+                        output_mode,
+                    )
 
         eval_results.update(eval_result)
 
@@ -725,19 +788,37 @@ def main(
                 subdir = os.path.split(dataset_path.rstrip("/"))[1]
                 output_test_predictions_file = os.path.join(
                     training_args.output_dir,
-                    f"test_predictions_%s_%d.txt" % (subdir, dataset_ind),
-                )
-                write_predictions_for_dataset(
-                    output_test_predictions_file,
-                    trainer,
-                    dataset,
-                    "test",
-                    dataset_ind,
-                    output_mode,
-                    tokenizer,
-                    output_prob=training_args.output_prob,
+                    f"test_predictions_{subdir}_{dataset_ind}.tsv",
                 )
 
+                dataset_test_segment = get_dataset_segment("test", dataset_ind, dataset)
+                raw_test_predictions = trainer.predict(
+                    test_dataset=dataset_test_segment
+                )
+
+                (
+                    task_to_label_packet,
+                    task_to_label_boundaries,
+                ) = restructure_prediction(
+                    dataset.tasks,
+                    raw_test_predictions,
+                    data_args.max_seq_length,
+                    tagger,
+                    relations,
+                    training_args.output_prob,
+                )
+
+                process_prediction(
+                    dataset.tasks,
+                    output_test_predictions_file,
+                    False,
+                    training_args.output_prob,
+                    task_to_label_packet,
+                    task_to_label_boundaries,
+                    dataset_test_segment,
+                    task_to_label_space,
+                    output_mode,
+                )
     return eval_results
 
 

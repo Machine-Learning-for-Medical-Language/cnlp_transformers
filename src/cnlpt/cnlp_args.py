@@ -62,6 +62,13 @@ class CnlpTrainingArguments(TrainingArguments):
         },
     )
 
+    error_analysis: bool = field(
+        default=False,
+        metadata={
+            "help": "Pretty printing for instances where (any) ground label disagrees with a prediction"
+        },
+    )
+
 
 cnlpt_models = ["cnn", "lstm", "hier", "cnlpt"]
 

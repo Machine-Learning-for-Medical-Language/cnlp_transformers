@@ -11,6 +11,7 @@ from typing import Callable, Dict, List, Optional, Tuple, Union
 import datasets
 import numpy as np
 import torch
+from datasets import Dataset as HFDataset
 from datasets import DatasetDict, Features, IterableDatasetDict
 from filelock import FileLock
 from torch.utils.data.dataset import Dataset
@@ -25,6 +26,10 @@ text_columns = ["text", "text_a", "text_b"]
 none_column = "__None__"
 
 logger = logging.getLogger(__name__)
+
+
+def list_field(default=None, metadata=None):
+    return field(default_factory=lambda: default, metadata=metadata)
 
 
 class Split(Enum):
@@ -380,9 +385,10 @@ def cnlp_preprocess_data(
         result["label"] = _build_pytorch_labels(
             result, tasks, labels, output_modes, num_instances, max_length, label_lists
         )
-    # else:
-    # result['label'] =  [ (0,) for i in range(num_instances)]
-
+    elif not [x for x in (tasks, output_modes, max_length, label_lists) if x is None]:
+        result["label"] = _build_pytorch_representations(
+            result, tasks, output_modes, num_instances, max_length, label_lists
+        )
     result["event_mask"] = _build_event_mask(
         result,
         num_instances,
@@ -404,15 +410,114 @@ def cnlp_preprocess_data(
     return result
 
 
-def _build_pytorch_labels(
+# essentially non-gold-label dependent version of
+# _build_pytorch_labels, so that we can recover in
+# a tokenizer independent way what's a wordpiece or what isn't,
+# thought to split it off here to avoid decorating
+# _build...labels with a ton of conditionals
+def _build_pytorch_representations(
     result: BatchEncoding,
     tasks: List[str],
-    labels: list,
     output_modes: Dict[str, str],
     num_instances: int,
     max_length: int,
     label_lists: List[List[str]],
-) -> list:
+):
+    """
+    _build_pytorch_representations: Logic taken straight from _build_pytorch_labels for storing representations of
+    the text instances in ways coordinated with their associated tasks so we can recover their original structure in
+    inference mode
+    """
+    labels_out = []
+
+    pad_classification = False
+    if (
+        output_modes is not None
+        and relex in output_modes.values()
+        or tagging in output_modes.values()
+    ):
+        max_dims = 2
+        if classification in output_modes.values():
+            pad_classification = True
+    else:
+        max_dims = 1
+
+    for task_ind, task in enumerate(tasks):
+        encoded_labels = []
+        if output_modes[task] == tagging:
+            for sent_ind in range(num_instances):
+                sent_labels = []
+
+                word_ids = result.word_ids(batch_index=sent_ind)
+                previous_word_idx = None
+                label_ids = []
+                for word_idx in word_ids:
+                    if word_idx is None:
+                        label_ids.append(-100)
+                    elif word_idx != previous_word_idx:
+                        label_ids.append(0)
+                    else:
+                        label_ids.append(-100)
+                    previous_word_idx = word_idx
+
+                encoded_labels.append(np.expand_dims(np.array(label_ids), 1))
+
+            labels_out.append(encoded_labels)
+        elif output_modes[task] == relex:
+            for sent_ind in range(num_instances):
+                word_ids = result.word_ids(batch_index=sent_ind)
+                wpi_to_tokeni = {}
+                tokeni_to_wpi = {}
+                sent_labels = np.zeros((max_length, max_length)) - 100
+
+                previous_word_idx = None
+                for word_pos_idx, word_idx in enumerate(word_ids):
+                    if word_idx != previous_word_idx and word_idx is not None:
+                        key = word_pos_idx
+                        val = len(wpi_to_tokeni)
+
+                        wpi_to_tokeni[key] = val
+                        tokeni_to_wpi[val] = key
+                    previous_word_idx = word_idx
+                for wpi in wpi_to_tokeni.keys():
+                    for wpi2 in wpi_to_tokeni.keys():
+                        if wpi != wpi2:
+                            sent_labels[wpi, wpi2] = label_lists[task].index("None")
+
+            labels_out.append(encoded_labels)
+        elif output_modes[task] == classification:
+            for inst_ind in range(num_instances):
+                if pad_classification:
+                    padded_inst = np.zeros((max_length, 1)) - 100
+                    padded_inst[0] = 0  # labels[inst_ind][task_ind]
+                    encoded_labels.append(padded_inst)
+                else:
+                    encoded_labels.append(0)  # labels[inst_ind][task_ind])
+            labels_out.append(np.array(encoded_labels))
+
+    labels_unshaped = list(zip(*labels_out))
+    labels_shaped = []
+
+    for ind in range(len(labels_unshaped)):
+        if max_dims == 2:
+            labels_shaped.append(np.concatenate(labels_unshaped[ind], axis=1))
+        elif max_dims == 1:
+            labels_shaped.append(labels_unshaped[ind])
+        else:
+            raise Exception("This should not be possible that max_dims > 2.")
+
+    return labels_shaped
+
+
+def _build_pytorch_labels(
+    result: BatchEncoding,
+    tasks: List[str],
+    labels: List,
+    output_modes: Dict[str, str],
+    num_instances: int,
+    max_length: int,
+    label_lists: List[List[str]],
+):
     """
     _build_pytorch_labels: we do two things here: map from labels in input space to ints in a softmax, and in a data
     structure that can contain multiple task types such that the Trainer class will be happy with, and then that
@@ -967,6 +1072,19 @@ def tokenize_fn(tokenizer, examples):
             result.word_ids(i) for i in range(len(result["input_ids"]))
         ]
     return result
+
+
+def get_dataset_segment(
+    split_name: str,
+    dataset_ind: int,
+    dataset: ClinicalNlpDataset,
+):
+    start_ind = end_ind = 0
+    for ind in range(dataset_ind):
+        start_ind += len(dataset.datasets[ind][split_name])
+    end_ind = start_ind + len(dataset.datasets[dataset_ind][split_name])
+
+    return HFDataset.from_dict(dataset.processed_dataset[split_name][start_ind:end_ind])
 
 
 class DaptDataset(Dataset):
