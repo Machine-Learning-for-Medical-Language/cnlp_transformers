@@ -192,8 +192,10 @@ def main(
     # Load tokenizer: Need this first for loading the datasets
     if training_args.truncation_side_left:
         if hierarchical:
-            logger.warning(f"truncation_side_left flag is not available for the hierarchical model -- setting to right")
-            truncation_side="right"
+            logger.warning(
+                f"truncation_side_left flag is not available for the hierarchical model -- setting to right"
+            )
+            truncation_side = "right"
         else:
             truncation_side = "left"
     else:
