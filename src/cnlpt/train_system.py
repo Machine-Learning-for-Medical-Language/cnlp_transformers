@@ -216,12 +216,23 @@ def main(
         )
 
     # Load tokenizer: Need this first for loading the datasets
+    if training_args.truncation_side_left:
+        if hierarchical:
+            logger.warning(
+                f"truncation_side_left flag is not available for the hierarchical model -- setting to right"
+            )
+            truncation_side = "right"
+        else:
+            truncation_side = "left"
+    else:
+        truncation_side = "right"
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name
         if model_args.tokenizer_name
         else model_args.encoder_name,
         cache_dir=model_args.cache_dir,
         add_prefix_space=True,
+        truncation_side=truncation_side,
         additional_special_tokens=[
             "<e>",
             "</e>",
