@@ -83,7 +83,7 @@ if __name__ == "__main__":
             continue
         
         # send off to rest
-        r = requests.post(args.rest_url, json={"sent_tokens": sent_tokens, "metadata": f"FNAME={filename}"})  # NOTE extract_mimic_temporal puts metadata in json; what does it do?
+        r = requests.post(args.rest_url, json={"sent_tokens": sent_tokens, "metadata": f"FNAME={filename}"})
         if r.status_code != 200:
             raise Exception(f"Problem processing {filename}: status code {r.status_code}")
         out_json = r.json()
