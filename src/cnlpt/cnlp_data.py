@@ -337,6 +337,10 @@ def cnlp_preprocess_data(
             is_split_into_words=True,
         )
 
+        if tokenizer.is_fast:
+            result["word_ids"] = [
+                result.word_ids(i) for i in range(len(result["input_ids"]))
+            ]
     special_token_ids = {
         *filter(
             None,

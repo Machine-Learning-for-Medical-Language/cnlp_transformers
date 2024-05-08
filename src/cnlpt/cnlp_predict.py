@@ -357,10 +357,10 @@ def get_tagging_prints(
     get_tokens = lambda: None
     token_sep = ""  # default since typesystem doesn't like the None
     if character_level:
-        get_tokens = lambda inst: [*inst]
+        get_tokens = lambda inst: list(filter(None, inst))
         token_sep = ""
     else:
-        get_tokens = lambda inst: [*filter(None, inst.split())]
+        get_tokens = lambda inst: list(filter(None, inst.split()))
         token_sep = " "
 
     def flatten_dict(d):
@@ -391,13 +391,18 @@ def get_tagging_prints(
     ) -> Dict[str, List[Tuple[int, int]]]:
         type2inds = defaultdict(list)
 
+        print(token_ids.reshape(-1))
+
         # courtesy of https://stackoverflow.com/a/2154437
         def group_and_span(inds: List[int]) -> List[Tuple[int, int]]:
             ranges = []
             for k, g in groupby(enumerate(inds), lambda x: x[0] - x[1]):
                 group = [*map(itemgetter(1), g)]
                 # adjusted for python list slicing
-                ranges.append((group[0], group[-1] + 1))
+                if not character_level:
+                    ranges.append((group[0], group[-1] + 1))
+                else:
+                    ranges.append((group[0] - 1, group[-1]))
             return ranges
 
         raw_labels = [
@@ -505,10 +510,11 @@ def get_relex_prints(
     none_index = relex_labels.index("None") if "None" in relex_labels else -1
 
     # thought we'd filtered them out but apparently not
-    def tuples_to_str(label_tuples: Iterable[Cell]):
-        return [
-            (row, col, relex_labels[label]) for row, col, label in sorted(label_tuples)
-        ]
+    def tuples_to_str(label_tuples: Iterable[Cell]) -> str:
+        return " ".join(
+            f"( {row}, {col}, {relex_labels[label]} )"
+            for row, col, label in sorted(label_tuples)
+        )
 
     def normalize_cells(
         raw_cells: np.ndarray, token_ids: np.ndarray
