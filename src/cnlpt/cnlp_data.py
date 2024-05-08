@@ -593,7 +593,7 @@ def get_tagging_labels(
                 if instance_length >= len(raw_label)
                 else raw_label[:instance_length]
             )
-            encoded_labels.append(np.expand_dims(final_label, 1))
+            encoded_labels.append(np.expand_dims(final_label, 1).astype(int))
     else:
         for sent_ind in range(num_instances):
             word_ids = result.word_ids(batch_index=sent_ind)
@@ -613,7 +613,7 @@ def get_tagging_labels(
                     # Dongfang's logic for beginning or interior of a word
                     label_ids.append(-100)
                     previous_word_idx = word_idx
-            encoded_labels.append(np.expand_dims(np.array(label_ids), 1))
+            encoded_labels.append(np.expand_dims(np.array(label_ids), 1).astype(int))
 
     return encoded_labels
 

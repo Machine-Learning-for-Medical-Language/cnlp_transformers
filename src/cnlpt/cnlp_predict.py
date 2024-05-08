@@ -68,6 +68,7 @@ def structure_labels(
 
     pad = 0
     prob_values = np.ndarray([])
+    labels = np.ndarray([])
     if tagger[task_name]:
         preds = np.argmax(p.predictions[task_ind], axis=2)
         # labels will be -100 where we don't need to tag
@@ -80,7 +81,7 @@ def structure_labels(
 
     # for inference
     if not hasattr(p, "label_ids") or p.label_ids is None:
-        return preds, np.array([]), pad
+        return preds, np.array([]), pad, np.array([])
     if relations[task_name]:
         # relation labels
         labels = p.label_ids[
@@ -164,7 +165,6 @@ def relation_disagreements(preds: np.ndarray, labels: np.ndarray) -> np.ndarray:
 
 def process_prediction(
     task_names: List[str],
-    output_fn: str,
     error_analysis: bool,
     output_prob: bool,
     character_level: bool,
@@ -173,7 +173,7 @@ def process_prediction(
     eval_dataset,
     task2labels: Dict[str, List[str]],
     output_mode: Dict[str, str],
-):
+) -> pd.DataFrame:
     task_to_error_inds: Dict[str, np.ndarray] = defaultdict(lambda: np.array([]))
     if error_analysis:
         for task, label_packet in tqdm.tqdm(
@@ -237,14 +237,15 @@ def process_prediction(
             torch_labels,
             out_table["text"],
         )
-    out_table.to_csv(
-        output_fn,
-        sep="\t",
-        index=True,
-        header=True,
-        quoting=csv.QUOTE_NONE,
-        escapechar="\\",
-    )
+    # out_table.to_csv(
+    #     output_fn,
+    #     sep="\t",
+    #     index=True,
+    #     header=True,
+    #     quoting=csv.QUOTE_NONE,
+    #     escapechar="\\",
+    # )
+    return out_table
 
 
 # might be more efficient to return a pd.Series or something for the

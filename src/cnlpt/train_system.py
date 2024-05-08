@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """ Finetuning the library models for sequence classification on clinical NLP tasks"""
+import csv
 import json
 import logging
 import math
@@ -885,9 +886,8 @@ def main(
                     training_args.output_prob,
                 )
 
-                process_prediction(
+                out_table = process_prediction(
                     dataset.tasks,
-                    output_test_predictions_file,
                     False,
                     training_args.output_prob,
                     data_args.character_level,
@@ -896,6 +896,15 @@ def main(
                     dataset_test_segment,
                     task_to_label_space,
                     output_mode,
+                )
+
+                out_table.to_csv(
+                    output_test_predictions_file,
+                    sep="\t",
+                    index=True,
+                    header=True,
+                    quoting=csv.QUOTE_NONE,
+                    escapechar="\\",
                 )
     return eval_results
 
