@@ -212,6 +212,7 @@ def process_prediction(
     out_table["text"] = out_table["text"].str.replace("//", "")
     out_table["text"] = out_table["text"].str.replace("\\", "")
     torch_labels = np.array(eval_dataset["label"])
+    word_ids = eval_dataset["word_ids"]
     # task2labels = dataset.get_labels()
     # for task_label, error_inds in task_to_error_inds.items():
     for task_name, packet in tqdm.tqdm(
@@ -235,6 +236,7 @@ def process_prediction(
             output_mode,
             error_inds,
             torch_labels,
+            word_ids,
             out_table["text"],
         )
     # out_table.to_csv(
@@ -262,6 +264,7 @@ def get_output_list(
     output_mode: Dict[str, str],
     error_inds: np.ndarray,
     torch_labels: np.ndarray,
+    word_ids,
     text_column: pd.Series,
 ) -> List[str]:
     if len(error_inds) > 0 and error_analysis:
@@ -299,6 +302,7 @@ def get_output_list(
             task_prediction,
             task_torch_labels,
             text_samples,
+            word_ids,
         )
     elif task_type == relex:
         task_torch_labels = all_torch_labels
@@ -349,6 +353,7 @@ def get_tagging_prints(
     task_predictions: np.ndarray,
     torch_labels: np.ndarray,
     text_samples: pd.Series,
+    word_ids,
 ) -> List[str]:
     resolved_predictions = task_predictions
 
@@ -372,10 +377,25 @@ def get_tagging_prints(
         )
 
     def dict_to_str(d, tokens):
-        return " , ".join(
+        result = " , ".join(
             f'{key}: "{token_sep.join(tokens[span[0]:span[1]])}"'
             for key, span in flatten_dict(d)
         )
+        if len(d) > 0:
+            print(d)
+            print(token_sep.join(tokens))
+            print(len(tokens))
+            print(result)
+        return result
+
+    # courtesy of https://stackoverflow.com/a/2154437
+    def group_and_span(inds: List[int]) -> List[Tuple[int, int]]:
+        ranges = []
+        for k, g in groupby(enumerate(inds), lambda x: x[0] - x[1]):
+            group = [*map(itemgetter(1), g)]
+            # adjusted for python list slicing
+            ranges.append((group[0], group[-1] + 1))
+        return ranges
 
     # since sometimes it's just
     # BIO with no suffixes and
@@ -386,24 +406,31 @@ def get_tagging_prints(
             return elems[-1].lower()
         return task_name.lower()
 
+    def wordtypes2spans(raw_tag_inds: np.ndarray, word_id_ls):
+        type2inds = defaultdict(list)
+        relevant_token_ids_and_tags = [
+            (token_id, tag)
+            for token_id, tag in zip(word_id_ls, raw_tag_inds)
+            if token_id is not None
+        ]
+        relevant_token_ids_and_tags = [
+            list(g)[0]
+            for k, g in groupby(relevant_token_ids_and_tags, key=lambda s: s[0])
+        ]
+
+        # print(raw_tag_inds)
+        # print(word_id_ls)
+        raw_labels = [tagging_labels[tag] for _, tag in relevant_token_ids_and_tags]
+        for index, raw_label in enumerate(raw_labels):
+            if raw_label != "O":
+                type2inds[get_ner_type(raw_label)].append(index)
+
+        return {ner_type: group_and_span(inds) for ner_type, inds in type2inds.items()}
+
     def types2spans(
         raw_tag_inds: np.ndarray, token_ids: np.ndarray
     ) -> Dict[str, List[Tuple[int, int]]]:
         type2inds = defaultdict(list)
-
-        print(token_ids.reshape(-1))
-
-        # courtesy of https://stackoverflow.com/a/2154437
-        def group_and_span(inds: List[int]) -> List[Tuple[int, int]]:
-            ranges = []
-            for k, g in groupby(enumerate(inds), lambda x: x[0] - x[1]):
-                group = [*map(itemgetter(1), g)]
-                # adjusted for python list slicing
-                if not character_level:
-                    ranges.append((group[0], group[-1] + 1))
-                else:
-                    ranges.append((group[0] - 1, group[-1]))
-            return ranges
 
         raw_labels = [
             tagging_labels[label_idx]
@@ -469,9 +496,13 @@ def get_tagging_prints(
         instance_tokens = get_tokens(instance)
         return dict_to_str(type2spans, instance_tokens)
 
+    # pred_span_dictionaries = (
+    #     types2spans(pred, torch_label)
+    #     for pred, torch_label in zip(resolved_predictions, torch_labels)
+    # )
     pred_span_dictionaries = (
-        types2spans(pred, torch_label)
-        for pred, torch_label in zip(resolved_predictions, torch_labels)
+        wordtypes2spans(pred, word_id_ls)
+        for pred, word_id_ls in zip(resolved_predictions, word_ids)
     )
     if ground_truths is not None:
         ground_span_dictionaries = (
