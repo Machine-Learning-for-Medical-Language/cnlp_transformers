@@ -19,12 +19,11 @@ import json
 import logging
 import math
 import os
-import pdb
 import sys
 import tempfile
 from collections import defaultdict, deque
 from os.path import exists, join
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 import requests
@@ -48,62 +47,21 @@ from .cnlp_args import CnlpTrainingArguments, ModelArguments
 from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments, get_dataset_segment
 from .cnlp_metrics import cnlp_compute_metrics
 from .cnlp_predict import process_prediction, restructure_prediction, structure_labels
-from .cnlp_processors import classification, relex, tagging
+from .cnlp_processors import relex, tagging
 from .CnlpModelForClassification import CnlpConfig, CnlpModelForClassification
 from .HierarchicalTransformer import HierarchicalModel
 
 sys.path.append(os.path.join(os.getcwd()))
 
 
-from collections import defaultdict
 
 AutoConfig.register("cnlpt", CnlpConfig)
 
 logger = logging.getLogger(__name__)
 
 
-from collections import defaultdict
 
 eval_state = defaultdict(lambda: -1)
-
-
-# For debugging early stopping logging
-class EvalCallback(TrainerCallback):
-    """ """
-
-    def on_evaluate(self, args, state, control, **kwargs):
-        """
-
-        Args:
-          args:
-          state:
-          control:
-          **kwargs:
-
-        Returns:
-
-        """
-        if state.is_world_process_zero:
-            model_dict = {}
-            if "model" in kwargs:
-                model = kwargs["model"]
-                if (
-                    hasattr(model, "best_score")
-                    and model.best_score > eval_state["best_score"]
-                ):
-                    model_dict = {
-                        "best_score": model.best_score,
-                        "best_step": state.global_step,
-                        "best_epoch": state.epoch,
-                    }
-            state_dict = {
-                "curr_epoch": state.epoch,
-                "max_epochs": state.num_train_epochs,
-                "curr_step": state.global_step,
-                "max_steps": state.max_steps,
-            }
-            state_dict.update(model_dict)
-            eval_state.update(state_dict)
 
 
 # For stopping with actual_epochs while
@@ -173,7 +131,7 @@ def is_hub_model(model_name: str) -> bool:
         r = requests.head(url)
         if r.status_code == 200:
             return True
-    except:
+    except Exception:
         pass
 
     return False
@@ -825,7 +783,7 @@ def main(
 
             (
                 task_to_label_packet,
-                task_to_label_boundaries,
+                _,
             ) = current_prediction_packet.pop()
 
             for dataset_ind, dataset_path in enumerate(data_args.data_dir):
@@ -839,17 +797,24 @@ def main(
                     "validation", dataset_ind, dataset
                 )
                 if training_args.error_analysis:
-                    process_prediction(
-                        dataset.tasks,
+                    out_table = process_prediction(
+                        task_names=dataset.tasks,
+                        error_analysis=True,
+                        output_prob=training_args.output_prob,
+                        character_level=data_args.character_level,
+                        task_to_label_packet=task_to_label_packet,
+                        eval_dataset=dataset_dev_segment,
+                        task_to_label_space=task_to_label_space,
+                        output_mode=output_mode,
+                    )
+
+                    out_table.to_csv(
                         output_eval_predictions_file,
-                        True,
-                        training_args.output_prob,
-                        data_args.character_level,
-                        task_to_label_packet,
-                        task_to_label_boundaries,
-                        dataset_dev_segment,
-                        task_to_label_space,
-                        output_mode,
+                        sep="\t",
+                        index=True,
+                        header=True,
+                        quoting=csv.QUOTE_NONE,
+                        escapechar="\\",
                     )
 
         eval_results.update(eval_result)
@@ -876,26 +841,25 @@ def main(
 
                 (
                     task_to_label_packet,
-                    task_to_label_boundaries,
+                    _,
                 ) = restructure_prediction(
-                    dataset.tasks,
-                    raw_test_predictions,
-                    data_args.max_seq_length,
-                    tagger,
-                    relations,
-                    training_args.output_prob,
+                    task_names=dataset.tasks,
+                    raw_prediction=raw_test_predictions,
+                    max_seq_length=data_args.max_seq_length,
+                    tagger=tagger,
+                    relations=relations,
+                    output_prob=training_args.output_prob,
                 )
 
                 out_table = process_prediction(
-                    dataset.tasks,
-                    False,
-                    training_args.output_prob,
-                    data_args.character_level,
-                    task_to_label_packet,
-                    task_to_label_boundaries,
-                    dataset_test_segment,
-                    task_to_label_space,
-                    output_mode,
+                    task_names=dataset.tasks,
+                    error_analysis=False,
+                    output_prob=training_args.output_prob,
+                    character_level=data_args.character_level,
+                    task_to_label_packet=task_to_label_packet,
+                    eval_dataset=dataset_test_segment,
+                    task_to_label_space=task_to_label_space,
+                    output_mode=output_mode,
                 )
 
                 out_table.to_csv(
