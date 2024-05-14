@@ -1,26 +1,21 @@
 import functools
 import json
 import logging
-import os
-import time
-from collections import defaultdict, deque
-from dataclasses import asdict, astuple, dataclass, field
+from collections import deque
+from dataclasses import asdict, dataclass, field
 from enum import Enum
-from os.path import basename, dirname
-from typing import Callable, Deque, Dict, Iterable, List, Optional, Set, Tuple, Union
+from typing import Deque, Dict, Iterable, List, Optional, Set, Tuple, Union
 
 import datasets
 import numpy as np
-import torch
 from datasets import Dataset as HFDataset
-from datasets import DatasetDict, Features, IterableDatasetDict
-from filelock import FileLock
+from datasets import DatasetDict, IterableDatasetDict
 from torch.utils.data.dataset import Dataset
-from transformers import BatchEncoding, DataCollatorForLanguageModeling, InputExample
+from transformers import BatchEncoding, DataCollatorForLanguageModeling
 from transformers.tokenization_utils import PreTrainedTokenizer
 
 from .cnlp_args import DaptArguments
-from .cnlp_processors import AutoProcessor, classification, mtl, relex, tagging
+from .cnlp_processors import AutoProcessor, classification, relex, tagging
 
 special_tokens = ["<e>", "</e>", "<a1>", "</a1>", "<a2>", "</a2>", "<cr>", "<neg>"]
 text_columns = ["text", "text_a", "text_b"]
@@ -131,7 +126,7 @@ def cnlp_convert_features_to_hierarchical(
         input_ids_ = features["input_ids"][ind]
         attention_mask_ = features["attention_mask"][ind]
         token_type_ids_ = features.get("token_type_ids", None)
-        if not token_type_ids_ is None:
+        if token_type_ids_ is not None:
             token_type_ids_ = token_type_ids_[ind]
         event_tokens_ = features["event_mask"][ind]
 
@@ -234,7 +229,7 @@ def cnlp_convert_features_to_hierarchical(
 
         features["input_ids"][ind] = chunks
         features["attention_mask"][ind] = chunks_attention_mask
-        if not token_type_ids_ is None:
+        if token_type_ids_ is not None:
             features["token_type_ids"][ind] = chunks_token_type_ids
         features["event_mask"][ind] = chunks_event_tokens
 
@@ -296,7 +291,7 @@ def cnlp_preprocess_data(
         if character_level:
             sentences = list(examples["text"])
         else:
-            sentences = [example.split(" ") for example in examples["text"]]
+            sentences = [str(example).split(" ") for example in examples["text"]]
         num_instances = len(examples["text"])
     elif "text_b" in examples.keys():
         # FIXME - not sure if this is right but doesn't get used much in our data
@@ -569,55 +564,27 @@ def get_tagging_labels(
     result: BatchEncoding,
     labels: List,
     num_instances: int,
-    character_level: bool,
-    special_token_ids: Set[int],
 ) -> List[np.ndarray]:
     encoded_labels = []
-
-    if character_level:
-        # since np.isin as of 2023-10-03
-        # has issues with sets
-        special_ids_ls = [*special_token_ids]
-
-        def filter_special_ids(_labels, sent_ind):
-            raw_label = np.array(_labels[sent_ind][task_ind])
-            raw_label[np.isin(raw_label, special_ids_ls)] = -100
-            return raw_label
-
-        for sent_ind in range(num_instances):
-            instance_length = len(result["input_ids"][sent_ind])
-            raw_label = filter_special_ids(labels, sent_ind)
-            final_label = (
-                np.pad(
-                    raw_label,
-                    (0, instance_length - len(raw_label)),
-                    mode="constant",
-                    constant_values=-100,  # same non-loss logic as above
-                )
-                if instance_length >= len(raw_label)
-                else raw_label[:instance_length]
-            )
-            encoded_labels.append(np.expand_dims(final_label, 1).astype(int))
-    else:
-        for sent_ind in range(num_instances):
-            word_ids = result.word_ids(batch_index=sent_ind)
-            previous_word_idx = None
-            label_ids = []
-            for word_idx in word_ids:
-                # Special tokens have a word id that is None. We set the label to -100 so they are automatically
-                # ignored in the loss function.
-                if word_idx is None:
-                    label_ids.append(-100)
-                    # We set the label for the first token of each word.
-                elif word_idx != previous_word_idx:
-                    label_ids.append(labels[sent_ind][task_ind][word_idx])
-                    # For the other tokens in a word, we set the label to either the current label or -100, depending on
-                    # the label_all_tokens flag.
-                else:
-                    # Dongfang's logic for beginning or interior of a word
-                    label_ids.append(-100)
-                    previous_word_idx = word_idx
-            encoded_labels.append(np.expand_dims(np.array(label_ids), 1).astype(int))
+    for sent_ind in range(num_instances):
+        word_ids = result["word_ids"][sent_ind]
+        previous_word_idx = None
+        label_ids = []
+        for word_idx in word_ids:
+            # Special tokens have a word id that is None. We set the label to -100 so they are automatically
+            # ignored in the loss function.
+            if word_idx is None:
+                label_ids.append(-100)
+                # We set the label for the first token of each word.
+            elif word_idx != previous_word_idx:
+                label_ids.append(labels[sent_ind][task_ind][word_idx])
+                # For the other tokens in a word, we set the label to either the current label or -100, depending on
+                # the label_all_tokens flag.
+            else:
+                # Dongfang's logic for beginning or interior of a word
+                label_ids.append(-100)
+                previous_word_idx = word_idx
+        encoded_labels.append(np.expand_dims(np.array(label_ids), 1).astype(int))
 
     return encoded_labels
 
@@ -630,8 +597,6 @@ def get_relex_labels(
     num_instances: int,
     max_length: int,
     label_lists: Dict[str, List[str]],
-    character_level: bool,
-    special_token_ids: Set[int],
 ) -> List[np.ndarray]:
     encoded_labels = []
     # start by building a matrix that's N' x N' (word-piece length) with "None" as the default
@@ -639,14 +604,11 @@ def get_relex_labels(
     out_of_bounds = 0
     num_relations = 0
 
-    ids_getter = lambda sent_ind: []
-    relevant = lambda word_idx: False
-    if result.is_fast and not character_level:
-        ids_getter = lambda sent_ind: result.word_ids(batch_index=sent_ind)
-        relevant = lambda word_idx: word_idx is not None
-    elif character_level:
-        ids_getter = lambda sent_ind: result["input_ids"][sent_ind]
-        relevant = lambda word_idx: word_idx not in special_token_ids
+    def ids_getter(sent_ind: int) -> List[int]:
+        return result["word_ids"][sent_ind]
+    def relevant(word_idx: Union[None, int]) -> bool:
+        return word_idx is not None
+
     for sent_ind in range(num_instances):
         word_ids = ids_getter(sent_ind)
         num_relations += len(labels[sent_ind][task_ind])
@@ -677,7 +639,7 @@ def get_relex_labels(
             if label == "None":
                 continue
 
-            if not label[0] in tokeni_to_wpi or not label[1] in tokeni_to_wpi:
+            if label[0] not in tokeni_to_wpi or label[1] not in tokeni_to_wpi:
                 out_of_bounds += 1
                 continue
 
@@ -739,12 +701,12 @@ def _build_event_mask_word_piece(
         input_ids = result["input_ids"][i]
         try:
             event_start = input_ids.index(event_start_token_id)
-        except:
+        except Exception:
             event_start = -1
 
         try:
             event_end = input_ids.index(event_end_token_id)
-        except:
+        except Exception:
             event_end = len(input_ids) - 1
 
         if event_start >= 0:
@@ -1009,7 +971,7 @@ class ClinicalNlpDataset(Dataset):
                 "max_length": args.max_seq_length,
                 "label_lists": self.tasks_to_labels,
                 "output_modes": self.output_modes,
-                "inference": not "train" in combined_dataset,
+                "inference": "train" not in combined_dataset,
                 "hierarchical": self.hierarchical,
                 "chunk_len": self.args.chunk_len,
                 "num_chunks": self.args.num_chunks,
