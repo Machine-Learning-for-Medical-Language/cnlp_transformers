@@ -3,11 +3,11 @@ import json
 import logging
 import os
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import asdict, astuple, dataclass, field
 from enum import Enum
 from os.path import basename, dirname
-from typing import Callable, Dict, List, Optional, Set, Tuple, Union
+from typing import Callable, Deque, Dict, Iterable, List, Optional, Set, Tuple, Union
 
 import datasets
 import numpy as np
@@ -245,7 +245,7 @@ def cnlp_preprocess_data(
     examples: Dict[str, Union[List[str], List[int], List[float]]],
     tokenizer: PreTrainedTokenizer,
     max_length: Optional[int] = None,
-    tasks: List[str] = None,
+    tasks: List[str] = [],
     label_lists: Optional[Dict[str, List[str]]] = None,
     output_modes: Optional[Dict[str, str]] = None,
     inference: bool = False,
@@ -314,33 +314,14 @@ def cnlp_preprocess_data(
     else:
         padding = "max_length"
 
-    if character_level:
-        try:
-            result = tokenizer(
-                examples["text"],
-                max_length=max_length,
-                padding="max_length",
-                truncation=True,
-            )
-            # TODO remove this when debugged since no one
-            # should have to worry about this
-
-        except Exception as e:
-            print(f"Issue {e} given input: \n\n{sentences}")
-
-    else:
         result = tokenizer(
             sentences,
             max_length=max_length,
             padding=padding,
             truncation=True,
-            is_split_into_words=True,
+            is_split_into_words=not character_level,
         )
 
-        if tokenizer.is_fast:
-            result["word_ids"] = [
-                result.word_ids(i) for i in range(len(result["input_ids"]))
-            ]
     special_token_ids = {
         *filter(
             None,
@@ -355,6 +336,35 @@ def cnlp_preprocess_data(
             ],
         )
     }
+    if tokenizer.is_fast:
+        result["word_ids"] = [
+            result.word_ids(i) for i in range(len(result["input_ids"]))
+        ]
+    else:
+        if type(tokenizer).__name__ == "CanineTokenizer":
+
+            def get_word_ids(indices: Iterable[int]) -> List[Union[None, int]]:
+                current = 1
+                raw: Deque[Union[None, int]] = deque()
+                for index in indices:
+                    if index in special_token_ids:
+                        raw.append(None)
+                    else:
+                        raw.append(current)
+                        current += 1
+                return list(raw)
+
+            result["word_ids"] = [
+                get_word_ids(indices) for indices in result["input_ids"]
+            ]
+        else:
+            ValueError(
+                f"{type(tokenizer).__name__}"
+                "is a slow ( non-Rust ) tokenizer and thus word_ids is not implemented by default, "
+                "you can provide your own implementation for extracting word_ids "
+                "( see  https://huggingface.co/docs/tokenizers/main/en/api/encoding#tokenizers.Encoding.word_ids) for "
+                "your model in this file"
+            )
     # Now that we have the labels for each instances, and we've tokenized the input sentences,
     # we need to solve the problem of aligning labels with word piece indexes for the tasks of tagging
     # (which has one label per pre-wordpiece token) and relations (which are defined as tuples which
@@ -463,7 +473,7 @@ def cnlp_preprocess_data(
 def _build_pytorch_labels(
     result: BatchEncoding,
     tasks: List[str],
-    labels: Union[List, None],
+    labels: List,
     output_modes: Dict[str, str],
     num_instances: int,
     max_length: int,
@@ -520,7 +530,7 @@ def _build_labels_for_task(
     task_ind: int,
     output_mode: Dict[str, str],
     result: BatchEncoding,
-    labels: Union[List, None],
+    labels: List,
     num_instances: int,
     max_length: int,
     label_lists: Dict[str, List[str]],
@@ -557,7 +567,7 @@ def _build_labels_for_task(
 def get_tagging_labels(
     task_ind: int,
     result: BatchEncoding,
-    labels: Union[List, None],
+    labels: List,
     num_instances: int,
     character_level: bool,
     special_token_ids: Set[int],
@@ -574,19 +584,9 @@ def get_tagging_labels(
             raw_label[np.isin(raw_label, special_ids_ls)] = -100
             return raw_label
 
-        def blank_instance(sent_ind):
-            instance_length = len(result["input_ids"][sent_ind])
-            return np.zeros(instance_length) - 100
-
-        label_getter = lambda sent_ind: []
-        if labels is None:
-            label_getter = lambda sent_ind: blank_instance(sent_ind)
-        else:
-            label_getter = lambda sent_ind: filter_special_ids(labels, sent_ind)
-
         for sent_ind in range(num_instances):
             instance_length = len(result["input_ids"][sent_ind])
-            raw_label = label_getter(sent_ind)
+            raw_label = filter_special_ids(labels, sent_ind)
             final_label = (
                 np.pad(
                     raw_label,
@@ -626,7 +626,7 @@ def get_relex_labels(
     task: str,
     task_ind: int,
     result: BatchEncoding,
-    labels: Union[List, None],
+    labels: List,
     num_instances: int,
     max_length: int,
     label_lists: Dict[str, List[str]],
@@ -639,12 +639,6 @@ def get_relex_labels(
     out_of_bounds = 0
     num_relations = 0
 
-    _labels = (
-        defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: 0)))
-        if labels is None
-        else labels
-    )
-
     ids_getter = lambda sent_ind: []
     relevant = lambda word_idx: False
     if result.is_fast and not character_level:
@@ -655,7 +649,7 @@ def get_relex_labels(
         relevant = lambda word_idx: word_idx not in special_token_ids
     for sent_ind in range(num_instances):
         word_ids = ids_getter(sent_ind)
-        num_relations += len(_labels[sent_ind][task_ind])
+        num_relations += len(labels[sent_ind][task_ind])
         wpi_to_tokeni = {}
         tokeni_to_wpi = {}
         sent_labels = np.zeros((max_length, max_length)) - 100
@@ -679,7 +673,7 @@ def get_relex_labels(
                 if wpi != wpi2:
                     sent_labels[wpi, wpi2] = label_lists[task].index("None")
 
-        for label in _labels[sent_ind][task_ind]:
+        for label in labels[sent_ind][task_ind]:
             if label == "None":
                 continue
 
@@ -706,7 +700,7 @@ def get_relex_labels(
 
 def get_classification_labels(
     task_ind: int,
-    labels: Union[List, None],
+    labels: List,
     num_instances: int,
     max_length: int,
     pad_classification: bool,
