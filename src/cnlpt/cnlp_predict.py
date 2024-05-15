@@ -486,49 +486,49 @@ def get_relex_prints(
     none_index = relex_labels.index("None") if "None" in relex_labels else -1
 
     def relevant_elements(
-        mat_row: np.ndarray, word_id_ls: List[Union[None, int]]
-    ) -> np.ndarray:
+        mat_row: np.ndarray, word_id_ls: List[Union[None, int]], word_id: int
+    ) -> List[int]:
         relevant_token_ids_and_tags = [
             (word_id, cell_value)
             for word_id, cell_value in zip(word_id_ls, mat_row)
             if word_id is not None
         ]
 
-        relevant_token_ids_and_tags = [
-            next(group)
+        relevant_token_ids_and_tags = (
+            list(group)[0]
             for _, group in groupby(relevant_token_ids_and_tags, key=lambda s: s[0])
-        ]
-        return np.ndarray([cell_value for _, cell_value in relevant_token_ids_and_tags])
+        )
+        relevant_token_ids, relevant_tags = zip(*relevant_token_ids_and_tags)
+        if word_id in {*relevant_token_ids}:
+            return list(relevant_tags)
+        return []
 
     # thought we'd filtered them out but apparently not
     def tuples_to_str(label_tuples: Iterable[Cell]) -> str:
+        print(label_tuples)
         return " ".join(
             f"( {row}, {col}, {relex_labels[label]} )"
             for row, col, label in sorted(label_tuples)
         )
 
     def normalize_cells(
-        raw_cells: np.ndarray, token_ids: List[List[Union[None, int]]]
+        raw_cells: np.ndarray, token_ids: List[Union[None, int]]
     ) -> Tuple[np.ndarray, np.ndarray]:
         (invalid_inds,) = np.where(np.diag(raw_cells) != -100)
         # just in case
         reduced_matrix = np.array(
             [
-                *filter(
-                    len,
-                    [
-                        relevant_elements(mat_row, token_row)
-                        for mat_row, token_row in zip(raw_cells, token_ids)
-                    ],
-                )
+                relevant_elements(mat_row, token_ids, word_id)
+                for word_id, mat_row in enumerate(raw_cells)
+                if len(relevant_elements(mat_row, token_ids, word_id)) > 0
             ]
         )
 
         np.fill_diagonal(reduced_matrix, none_index)
 
-
-
-        assert reduced_matrix.shape[0] == reduced_matrix.shape[1]
+        assert (
+            reduced_matrix.shape[0] == reduced_matrix.shape[1]
+        ), f"reduced matrix shape: {reduced_matrix.shape}"
         return invalid_inds, reduced_matrix
 
     def find_disagreements(
