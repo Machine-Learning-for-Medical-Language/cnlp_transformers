@@ -1,8 +1,6 @@
-import csv
 import logging
 from collections import defaultdict
 from itertools import chain, groupby
-from operator import itemgetter
 from typing import Dict, Iterable, List, Tuple, Union
 
 import numpy as np
@@ -13,6 +11,8 @@ from transformers import EvalPrediction
 from .cnlp_processors import classification, relex, tagging
 
 logger = logging.getLogger(__name__)
+
+Cell = Tuple[int, int, int]
 
 
 def restructure_prediction(
@@ -30,7 +30,9 @@ def restructure_prediction(
 
     # disagreement collection stuff for this scope
     task_label_to_boundaries: Dict[str, Tuple[int, int]] = {}
-    task_label_to_label_packet: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
+    task_label_to_label_packet: Dict[
+        str, Tuple[np.ndarray, np.ndarray, np.ndarray]
+    ] = {}
 
     for task_ind, task_name in enumerate(task_names):
         preds, labels, pad, prob_values = structure_labels(
@@ -154,12 +156,12 @@ def classification_disagreements(preds: np.ndarray, labels: np.ndarray) -> np.nd
 
 
 def tagging_disagreements(preds: np.ndarray, labels: np.ndarray) -> np.ndarray:
-    (indices,) = np.where([*map(any, np.not_equal(preds, labels))])
+    (indices,) = np.where([any(neqs) for neqs in np.not_equal(preds, labels)])
     return indices
 
 
 def relation_disagreements(preds: np.ndarray, labels: np.ndarray) -> np.ndarray:
-    (indices,) = np.where([*map(lambda s: s.any(), np.not_equal(preds, labels))])
+    (indices,) = np.where([neqs.any() for neqs in np.not_equal(preds, labels)])
     return indices
 
 
@@ -169,15 +171,14 @@ def process_prediction(
     output_prob: bool,
     character_level: bool,
     task_to_label_packet: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
-    task_to_label_boundaries: Dict[str, Tuple[int, int]],
     eval_dataset,
-    task2labels: Dict[str, List[str]],
+    task_to_label_space: Dict[str, List[str]],
     output_mode: Dict[str, str],
 ) -> pd.DataFrame:
     task_to_error_inds: Dict[str, np.ndarray] = defaultdict(lambda: np.array([]))
     if error_analysis:
         for task, label_packet in tqdm.tqdm(
-            task_to_label_packet.items(), desc=f"computing disagreements"
+            task_to_label_packet.items(), desc="computing disagreements"
         ):
             preds, labels, prob_values = label_packet
             task_to_error_inds[task] = compute_disagreements(
@@ -211,42 +212,29 @@ def process_prediction(
     out_table["text"] = out_table["text"].str.replace('"', "")
     out_table["text"] = out_table["text"].str.replace("//", "")
     out_table["text"] = out_table["text"].str.replace("\\", "")
-    torch_labels = np.array(eval_dataset["label"])
     word_ids = eval_dataset["word_ids"]
-    # task2labels = dataset.get_labels()
-    # for task_label, error_inds in task_to_error_inds.items():
     for task_name, packet in tqdm.tqdm(
         task_to_label_packet.items(), desc="getting human readable labels"
     ):
         preds, labels, prob_values = packet
         if not output_prob:
             prob_values = np.array([])
-        task_labels = task2labels[task_name]
+        task_labels = task_to_label_space[task_name]
         error_inds = task_to_error_inds[task_name]
         target_inds = error_inds if len(error_inds) > 0 else relevant_indices
         out_table[task_name][target_inds] = get_output_list(
-            error_analysis,
-            character_level,
-            prob_values,
-            task_name,
-            task_labels,
-            task_to_label_boundaries,
-            preds,
-            labels,
-            output_mode,
-            error_inds,
-            torch_labels,
-            word_ids,
-            out_table["text"],
+            error_analysis=error_analysis,
+            character_level=character_level,
+            prob_values=prob_values,
+            pred_task=task_name,
+            task_labels=task_labels,
+            prediction=preds,
+            labels=labels,
+            output_mode=output_mode,
+            error_inds=error_inds,
+            word_ids=word_ids,
+            text_column=out_table["text"],
         )
-    # out_table.to_csv(
-    #     output_fn,
-    #     sep="\t",
-    #     index=True,
-    #     header=True,
-    #     quoting=csv.QUOTE_NONE,
-    #     escapechar="\\",
-    # )
     return out_table
 
 
@@ -258,13 +246,11 @@ def get_output_list(
     prob_values: np.ndarray,
     pred_task: str,
     task_labels: List[str],
-    task2boundaries: Dict[str, Tuple[int, int]],
     prediction: np.ndarray,
     labels: Union[None, np.ndarray],
     output_mode: Dict[str, str],
     error_inds: np.ndarray,
-    torch_labels: np.ndarray,
-    word_ids,
+    word_ids: List[List[int]],
     text_column: pd.Series,
 ) -> List[str]:
     if len(error_inds) > 0 and error_analysis:
@@ -275,13 +261,11 @@ def get_output_list(
         )
         ground_truth = labels[error_inds].astype(int)
         task_prediction = prediction[error_inds].astype(int)
-        all_torch_labels = torch_labels[error_inds].astype(int)
         text_samples = pd.Series(text_column[error_inds])
     else:
         relevant_prob_values = prob_values
         ground_truth = labels.astype(int) if error_analysis else None
         task_prediction = prediction.astype(int)
-        all_torch_labels = torch_labels.astype(int)
         text_samples = text_column
     task_type = output_mode[pred_task]
     if task_type == classification:
@@ -290,27 +274,18 @@ def get_output_list(
         )
 
     elif task_type == tagging:
-        task_torch_labels = all_torch_labels
-        if pred_task in task2boundaries.keys():
-            labels_start, labels_end = task2boundaries[pred_task]
-            task_torch_labels = all_torch_labels[:, :, labels_start:labels_end]
         return get_tagging_prints(
             character_level,
             pred_task,
             task_labels,
             ground_truth,
             task_prediction,
-            task_torch_labels,
             text_samples,
             word_ids,
         )
     elif task_type == relex:
-        task_torch_labels = all_torch_labels
-        if pred_task in task2boundaries.keys():
-            labels_start, labels_end = task2boundaries[pred_task]
-            task_torch_labels = all_torch_labels[:, :, labels_start:labels_end]
         return get_relex_prints(
-            pred_task, task_labels, ground_truth, task_prediction, task_torch_labels
+            pred_task, task_labels, ground_truth, task_prediction, word_ids
         )
     else:
         return len(error_inds) * ["UNSUPPORTED TASK TYPE"]
@@ -351,9 +326,8 @@ def get_tagging_prints(
     tagging_labels: List[str],
     ground_truths: Union[None, np.ndarray],
     task_predictions: np.ndarray,
-    torch_labels: np.ndarray,
     text_samples: pd.Series,
-    word_ids,
+    word_ids: List[List[Union[None, int]]],
 ) -> List[str]:
     resolved_predictions = task_predictions
 
@@ -362,10 +336,10 @@ def get_tagging_prints(
     get_tokens = lambda: None
     token_sep = ""  # default since typesystem doesn't like the None
     if character_level:
-        get_tokens = lambda inst: list(filter(None, inst))
+        get_tokens = lambda inst: [token for token in inst if token is not None]
         token_sep = ""
     else:
-        get_tokens = lambda inst: list(filter(None, inst.split()))
+        get_tokens = lambda inst: [char for char in inst.split() if char is not None]
         token_sep = " "
 
     def flatten_dict(d):
@@ -381,19 +355,13 @@ def get_tagging_prints(
             f'{key}: "{token_sep.join(tokens[span[0]:span[1]])}"'
             for key, span in flatten_dict(d)
         )
-        if len(d) > 0:
-            print(d)
-            print(token_sep.join(tokens))
-            print(len(tokens))
-            print(result)
         return result
 
-    # courtesy of https://stackoverflow.com/a/2154437
     def group_and_span(inds: List[int]) -> List[Tuple[int, int]]:
         ranges = []
-        for k, g in groupby(enumerate(inds), lambda x: x[0] - x[1]):
-            group = [*map(itemgetter(1), g)]
-            # adjusted for python list slicing
+        for _, group in groupby(enumerate(inds), lambda x: x[0] - x[1]):
+            group = [g[1] for g in group]
+            # adjusted for python list conventions
             ranges.append((group[0], group[-1] + 1))
         return ranges
 
@@ -406,37 +374,19 @@ def get_tagging_prints(
             return elems[-1].lower()
         return task_name.lower()
 
-    def wordtypes2spans(raw_tag_inds: np.ndarray, word_id_ls):
+    def types2spans(raw_tag_inds: np.ndarray, word_ids: List[Union[None, int]]):
         type2inds = defaultdict(list)
         relevant_token_ids_and_tags = [
-            (token_id, tag)
-            for token_id, tag in zip(word_id_ls, raw_tag_inds)
-            if token_id is not None
+            (word_id, tag)
+            for word_id, tag in zip(word_ids, raw_tag_inds)
+            if word_id is not None
         ]
         relevant_token_ids_and_tags = [
-            list(g)[0]
-            for k, g in groupby(relevant_token_ids_and_tags, key=lambda s: s[0])
+            next(group)
+            for _, group in groupby(relevant_token_ids_and_tags, key=lambda s: s[0])
         ]
 
-        # print(raw_tag_inds)
-        # print(word_id_ls)
         raw_labels = [tagging_labels[tag] for _, tag in relevant_token_ids_and_tags]
-        for index, raw_label in enumerate(raw_labels):
-            if raw_label != "O":
-                type2inds[get_ner_type(raw_label)].append(index)
-
-        return {ner_type: group_and_span(inds) for ner_type, inds in type2inds.items()}
-
-    def types2spans(
-        raw_tag_inds: np.ndarray, token_ids: np.ndarray
-    ) -> Dict[str, List[Tuple[int, int]]]:
-        type2inds = defaultdict(list)
-
-        raw_labels = [
-            tagging_labels[label_idx]
-            for label_idx in raw_tag_inds[np.where(token_ids.reshape(-1) != -100)]
-        ]
-
         for index, raw_label in enumerate(raw_labels):
             if raw_label != "O":
                 type2inds[get_ner_type(raw_label)].append(index)
@@ -457,12 +407,13 @@ def get_tagging_prints(
             pred_spans = pred_dict[key] if key in pred_dict.keys() else []
 
             ground_not_in_pred = [
-                *filter(lambda span: span not in pred_spans, ground_spans)
+                span for span in ground_spans if span not in pred_spans
             ]
 
             pred_not_in_ground = [
-                *filter(lambda span: span not in ground_spans, pred_spans)
+                span for span in pred_spans if span not in ground_spans
             ]
+
             disagreements["ground"][key].extend(ground_not_in_pred)
 
             disagreements["predicted"][key].extend(pred_not_in_ground)
@@ -496,18 +447,14 @@ def get_tagging_prints(
         instance_tokens = get_tokens(instance)
         return dict_to_str(type2spans, instance_tokens)
 
-    # pred_span_dictionaries = (
-    #     types2spans(pred, torch_label)
-    #     for pred, torch_label in zip(resolved_predictions, torch_labels)
-    # )
     pred_span_dictionaries = (
-        wordtypes2spans(pred, word_id_ls)
+        types2spans(pred, word_id_ls)
         for pred, word_id_ls in zip(resolved_predictions, word_ids)
     )
     if ground_truths is not None:
         ground_span_dictionaries = (
-            types2spans(ground_truth, torch_label)
-            for ground_truth, torch_label in zip(ground_truths, torch_labels)
+            types2spans(ground_truth, word_id_ls)
+            for ground_truth, word_id_ls in zip(ground_truths, word_ids)
         )
         disagreement_dicts = (
             dictmerge(ground_dictionary, pred_dictionary)
@@ -533,12 +480,25 @@ def get_relex_prints(
     relex_labels: List[str],
     ground_truths: Union[None, np.ndarray],
     task_predictions: np.ndarray,
-    torch_labels: np.ndarray,
+    word_ids: List[List[Union[None, int]]],
 ) -> List[str]:
-    Cell = Tuple[int, int, int]
-
     resolved_predictions = task_predictions
     none_index = relex_labels.index("None") if "None" in relex_labels else -1
+
+    def relevant_elements(
+        mat_row: np.ndarray, word_id_ls: List[Union[None, int]]
+    ) -> np.ndarray:
+        relevant_token_ids_and_tags = [
+            (word_id, cell_value)
+            for word_id, cell_value in zip(word_id_ls, mat_row)
+            if word_id is not None
+        ]
+
+        relevant_token_ids_and_tags = [
+            next(group)
+            for _, group in groupby(relevant_token_ids_and_tags, key=lambda s: s[0])
+        ]
+        return np.ndarray([cell_value for _, cell_value in relevant_token_ids_and_tags])
 
     # thought we'd filtered them out but apparently not
     def tuples_to_str(label_tuples: Iterable[Cell]) -> str:
@@ -548,39 +508,28 @@ def get_relex_prints(
         )
 
     def normalize_cells(
-        raw_cells: np.ndarray, token_ids: np.ndarray
+        raw_cells: np.ndarray, token_ids: List[List[Union[None, int]]]
     ) -> Tuple[np.ndarray, np.ndarray]:
         (invalid_inds,) = np.where(np.diag(raw_cells) != -100)
         # just in case
-        np.fill_diagonal(raw_cells, -100)
-
-        np.fill_diagonal(token_ids, -100)
         reduced_matrix = np.array(
             [
                 *filter(
                     len,
                     [
-                        mat_row[np.where(token_row != -100)]
+                        relevant_elements(mat_row, token_row)
                         for mat_row, token_row in zip(raw_cells, token_ids)
                     ],
                 )
             ]
         )
 
-        # adding the diagonal back in...
-        final_reduced_matrix = (
-            np.array(
-                [
-                    np.insert(row, row_idx, none_index, axis=0)
-                    for row_idx, row in enumerate(reduced_matrix)
-                ]
-            )
-            if len(reduced_matrix) > 0
-            else np.zeros((1, 1)) + none_index
-        )
+        np.fill_diagonal(reduced_matrix, none_index)
 
-        assert final_reduced_matrix.shape[0] == final_reduced_matrix.shape[1]
-        return invalid_inds, final_reduced_matrix
+
+
+        assert reduced_matrix.shape[0] == reduced_matrix.shape[1]
+        return invalid_inds, reduced_matrix
 
     def find_disagreements(
         ground_pair: Tuple[np.ndarray, np.ndarray],
@@ -651,13 +600,13 @@ def get_relex_prints(
         return tuples_to_str(non_none_cell_tuples)
 
     normalized_pred_pairs = (
-        normalize_cells(pred, torch_label)
-        for pred, torch_label in zip(resolved_predictions, torch_labels)
+        normalize_cells(pred, word_id_ls)
+        for pred, word_id_ls in zip(resolved_predictions, word_ids)
     )
     if ground_truths is not None:
         normalized_ground_pairs = (
-            normalize_cells(ground_truth, torch_label)
-            for ground_truth, torch_label in zip(ground_truths, torch_labels)
+            normalize_cells(ground_truth, word_id_ls)
+            for ground_truth, word_id_ls in zip(ground_truths, word_ids)
         )
         disagreements = (
             find_disagreements(ground_pair, pred_pair)

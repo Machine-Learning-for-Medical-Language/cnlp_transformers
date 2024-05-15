@@ -499,8 +499,6 @@ def _build_pytorch_labels(
             max_length,
             label_lists,
             pad_classification,
-            character_level,
-            special_token_ids,
         )
 
     labels_out = [
@@ -530,13 +528,9 @@ def _build_labels_for_task(
     max_length: int,
     label_lists: Dict[str, List[str]],
     pad_classification: bool,
-    character_level: bool,
-    special_token_ids: Set[int],
 ) -> Union[np.ndarray, List[np.ndarray]]:
     if output_mode[task] == tagging:
-        return get_tagging_labels(
-            task_ind, result, labels, num_instances, character_level, special_token_ids
-        )
+        return get_tagging_labels(task_ind, result, labels, num_instances)
     elif output_mode[task] == relex:
         return get_relex_labels(
             task,
@@ -546,8 +540,6 @@ def _build_labels_for_task(
             num_instances,
             max_length,
             label_lists,
-            character_level,
-            special_token_ids,
         )
     elif output_mode[task] == classification:
         return get_classification_labels(
@@ -606,6 +598,7 @@ def get_relex_labels(
 
     def ids_getter(sent_ind: int) -> List[int]:
         return result["word_ids"][sent_ind]
+
     def relevant(word_idx: Union[None, int]) -> bool:
         return word_idx is not None
 
