@@ -519,7 +519,6 @@ def get_relex_prints(
 
     # thought we'd filtered them out but apparently not
     def tuples_to_str(label_tuples: Iterable[Cell]) -> str:
-        print(label_tuples)
         return " ".join(
             f"( {row}, {col}, {relex_labels[label]} )"
             for row, col, label in sorted(label_tuples)
@@ -530,11 +529,28 @@ def get_relex_prints(
     ) -> Tuple[np.ndarray, np.ndarray]:
         (invalid_inds,) = np.where(np.diag(raw_cells) != -100)
         # just in case
+
+        word_ids_and_indices = [
+            (index, word_id)
+            for index, word_id in enumerate(token_ids)
+            if word_id is not None
+        ]
+
+        wordpeice_collapsed = (
+            next(group)
+            for _, group in groupby(word_ids_and_indices, key=lambda s: s[1])
+        )
+
+        _relevant_indices, _ = zip(*wordpeice_collapsed)
+
+        relevant_indices_ls = list(_relevant_indices)
+        relevant_indices_set = set(relevant_indices_ls)
+
         reduced_matrix = np.array(
             [
-                relevant_elements(mat_row, token_ids, word_id)
-                for word_id, mat_row in enumerate(raw_cells)
-                if len(relevant_elements(mat_row, token_ids, word_id)) > 0
+                mat_row[relevant_indices_ls]
+                for index, mat_row in enumerate(raw_cells)
+                if index in relevant_indices_set
             ]
         )
 
@@ -543,6 +559,9 @@ def get_relex_prints(
         assert (
             reduced_matrix.shape[0] == reduced_matrix.shape[1]
         ), f"reduced matrix shape: {reduced_matrix.shape}"
+
+        assert -100 not in reduced_matrix, f"final matrix contents: {reduced_matrix}"
+
         return invalid_inds, reduced_matrix
 
     def find_disagreements(
