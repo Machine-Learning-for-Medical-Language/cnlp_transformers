@@ -185,20 +185,26 @@ def process_prediction(
                 preds, labels, output_mode[task]
             )
 
-        relevant_indices: Iterable[int] = set(
+        relevant_indices: Iterable[int] = {
             int(i) for i in chain.from_iterable(task_to_error_inds.values())
-        )
+        }
 
     else:
         relevant_indices = range(len(eval_dataset["text"]))
 
-    classification_tasks = filter(
-        lambda t: output_mode[t] == classification, task_names
+    classification_tasks = (
+        task_name
+        for task_name in task_names
+        if output_mode[task_name] == classification
     )
 
-    tagging_tasks = filter(lambda t: output_mode[t] == tagging, task_names)
+    tagging_tasks = (
+        task_name for task_name in task_names if output_mode[task_name] == tagging
+    )
 
-    relex_tasks = filter(lambda t: output_mode[t] == relex, task_names)
+    relex_tasks = (
+        task_name for task_name in task_names if output_mode[task_name] == relex
+    )
 
     # ordering in terms of ease of reading
     out_table = pd.DataFrame(
@@ -206,7 +212,10 @@ def process_prediction(
         index=relevant_indices,
     )
 
-    out_table["text"] = [eval_dataset["text"][index] for index in relevant_indices]
+    if len(relevant_indices) < len(eval_dataset["text"]):
+        out_table["text"] = [eval_dataset["text"][index] for index in relevant_indices]
+    else:
+        out_table["text"] = list(eval_dataset["text"])
     out_table["text"] = out_table["text"].apply(remove_newline)
 
     out_table["text"] = out_table["text"].str.replace('"', "")
@@ -265,9 +274,13 @@ def get_output_list(
             text_samples = pd.Series(text_column[error_inds])
         else:
             relevant_prob_values = prob_values
-            ground_truth = labels.astype(int) if error_analysis else None
+            ground_truth = labels.astype(int)
             task_prediction = prediction.astype(int)
-            text_samples = text_column
+    else:
+        relevant_prob_values = np.ndarray([])
+        ground_truth = None
+        task_prediction = prediction.astype(int)
+    text_samples = text_column
     task_type = output_mode[pred_task]
     if task_type == classification:
         return get_classification_prints(
@@ -334,7 +347,7 @@ def get_tagging_prints(
 
     # to save ourselves the branch instructions
     # in all the nested functions
-    get_tokens = lambda: None
+    get_tokens = lambda _: None
     token_sep = ""  # default since typesystem doesn't like the None
     if character_level:
         get_tokens = lambda inst: [token for token in inst if token is not None]
@@ -361,9 +374,9 @@ def get_tagging_prints(
     def group_and_span(inds: List[int]) -> List[Tuple[int, int]]:
         ranges = []
         for _, group in groupby(enumerate(inds), lambda x: x[0] - x[1]):
-            group = [g[1] for g in group]
+            index_group = [g[1] for g in group]
             # adjusted for python list conventions
-            ranges.append((group[0], group[-1] + 1))
+            ranges.append((index_group[0], index_group[-1] + 1))
         return ranges
 
     # since sometimes it's just
@@ -495,11 +508,11 @@ def get_relex_prints(
             if word_id is not None
         ]
 
-        relevant_token_ids_and_tags = (
+        wordpeice_collapsed = (
             list(group)[0]
             for _, group in groupby(relevant_token_ids_and_tags, key=lambda s: s[0])
         )
-        relevant_token_ids, relevant_tags = zip(*relevant_token_ids_and_tags)
+        relevant_token_ids, relevant_tags = zip(*wordpeice_collapsed)
         if word_id in {*relevant_token_ids}:
             return list(relevant_tags)
         return []
@@ -559,14 +572,16 @@ def get_relex_prints(
         # nones will just clutter things up
         # and we will be able to infer disagreements on nones
         # from each other
-        ground_cells = filter(
-            lambda t: t[-1] != none_index,
-            zip(*disagreements, ground_matrix[disagreements]),
+        ground_cells = (
+            cell
+            for cell in zip(*disagreements, ground_matrix[disagreements])
+            if cell[-1] != none_index
         )
 
-        pred_cells = filter(
-            lambda t: t[-1] != none_index,
-            zip(*disagreements, pred_matrix[disagreements]),
+        pred_cells = (
+            cell
+            for cell in zip(*disagreements, pred_matrix[disagreements])
+            if cell[-1] != none_index
         )
 
         return bad_cells, ground_cells, pred_cells
