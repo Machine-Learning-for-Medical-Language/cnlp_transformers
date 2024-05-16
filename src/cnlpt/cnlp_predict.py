@@ -186,7 +186,7 @@ def process_prediction(
             )
 
         relevant_indices: Iterable[int] = set(
-            map(int, chain.from_iterable(task_to_error_inds.values()))
+            int(i) for i in chain.from_iterable(task_to_error_inds.values())
         )
 
     else:
@@ -250,23 +250,24 @@ def get_output_list(
     labels: Union[None, np.ndarray],
     output_mode: Dict[str, str],
     error_inds: np.ndarray,
-    word_ids: List[List[int]],
+    word_ids: List[List[Union[None, int]]],
     text_column: pd.Series,
 ) -> List[str]:
-    if len(error_inds) > 0 and error_analysis:
-        relevant_prob_values = (
-            prob_values[error_inds]
-            if output_mode[pred_task] == classification and len(prob_values) > 0
-            else prob_values
-        )
-        ground_truth = labels[error_inds].astype(int)
-        task_prediction = prediction[error_inds].astype(int)
-        text_samples = pd.Series(text_column[error_inds])
-    else:
-        relevant_prob_values = prob_values
-        ground_truth = labels.astype(int) if error_analysis else None
-        task_prediction = prediction.astype(int)
-        text_samples = text_column
+    if labels is not None:
+        if len(error_inds) > 0 and error_analysis:
+            relevant_prob_values = (
+                prob_values[error_inds]
+                if output_mode[pred_task] == classification and len(prob_values) > 0
+                else prob_values
+            )
+            ground_truth = labels[error_inds].astype(int)
+            task_prediction = prediction[error_inds].astype(int)
+            text_samples = pd.Series(text_column[error_inds])
+        else:
+            relevant_prob_values = prob_values
+            ground_truth = labels.astype(int) if error_analysis else None
+            task_prediction = prediction.astype(int)
+            text_samples = text_column
     task_type = output_mode[pred_task]
     if task_type == classification:
         return get_classification_prints(
@@ -310,7 +311,7 @@ def get_classification_prints(
     if ground_truths is not None:
         ground_strings = [classification_labels[index] for index in ground_truths]
 
-        pred_list = [*map(clean_string, zip(ground_strings, predicted_labels))]
+        pred_list = [clean_string(gp) for gp in zip(ground_strings, predicted_labels)]
 
     if len(prob_values) == len(predicted_labels):
         return [
