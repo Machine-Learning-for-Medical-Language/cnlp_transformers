@@ -499,24 +499,6 @@ def get_relex_prints(
     resolved_predictions = task_predictions
     none_index = relex_labels.index("None") if "None" in relex_labels else -1
 
-    def relevant_elements(
-        mat_row: np.ndarray, word_id_ls: List[Union[None, int]], word_id: int
-    ) -> List[int]:
-        relevant_token_ids_and_tags = [
-            (word_id, cell_value)
-            for word_id, cell_value in zip(word_id_ls, mat_row)
-            if word_id is not None
-        ]
-
-        wordpeice_collapsed = (
-            list(group)[0]
-            for _, group in groupby(relevant_token_ids_and_tags, key=lambda s: s[0])
-        )
-        relevant_token_ids, relevant_tags = zip(*wordpeice_collapsed)
-        if word_id in {*relevant_token_ids}:
-            return list(relevant_tags)
-        return []
-
     # thought we'd filtered them out but apparently not
     def tuples_to_str(label_tuples: Iterable[Cell]) -> str:
         return " ".join(
@@ -541,16 +523,14 @@ def get_relex_prints(
             for _, group in groupby(word_ids_and_indices, key=lambda s: s[1])
         )
 
-        _relevant_indices, _ = zip(*wordpeice_collapsed)
+        relevant_indices_iter, _ = zip(*wordpeice_collapsed)
 
-        relevant_indices_ls = list(_relevant_indices)
-        relevant_indices_set = set(relevant_indices_ls)
+        relevant_indices_ls = list(relevant_indices_iter)
 
         reduced_matrix = np.array(
             [
-                mat_row[relevant_indices_ls]
-                for index, mat_row in enumerate(raw_cells)
-                if index in relevant_indices_set
+                raw_cells[index][relevant_indices_ls]
+                for index in relevant_indices_ls
             ]
         )
 
