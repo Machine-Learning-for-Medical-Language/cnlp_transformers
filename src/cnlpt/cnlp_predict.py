@@ -30,9 +30,9 @@ def restructure_prediction(
 
     # disagreement collection stuff for this scope
     task_label_to_boundaries: Dict[str, Tuple[int, int]] = {}
-    task_label_to_label_packet: Dict[
-        str, Tuple[np.ndarray, np.ndarray, np.ndarray]
-    ] = {}
+    task_label_to_label_packet: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]] = (
+        {}
+    )
 
     for task_ind, task_name in enumerate(task_names):
         preds, labels, pad, prob_values = structure_labels(
@@ -346,11 +346,6 @@ def get_tagging_prints(
     text_samples: pd.Series,
     word_ids: List[List[Union[None, int]]],
 ) -> pd.Series:
-    print("FUNCTION PARAMETERS:")
-    print(f"character_level {character_level}")
-    print(f"task_name {task_name}")
-    print(f"tagging_labels {tagging_labels}")
-    print(f"ground_truths {ground_truths}")
     resolved_predictions = task_predictions
 
     # to save ourselves the branch instructions
@@ -467,14 +462,12 @@ def get_tagging_prints(
     ):
         instance_tokens = get_tokens(instance)
         result = dict_to_str(type2spans, instance_tokens)
-        if len(result) > 0:
-            print(f"in get_pred_out_string {result}")
         return result
 
-    pred_span_dictionaries = [
+    pred_span_dictionaries = (
         types2spans(pred, word_id_ls)
         for pred, word_id_ls in zip(resolved_predictions, word_ids)
-    ]
+    )
     if ground_truths is not None:
         ground_span_dictionaries = (
             types2spans(ground_truth, word_id_ls)
@@ -492,14 +485,10 @@ def get_tagging_prints(
             for disagreements, instance in zip(disagreement_dicts, text_samples)
         )
 
-    final = [
+    return pd.Series(
         get_pred_out_string(type_2_pred_spans, instance)
         for type_2_pred_spans, instance in zip(pred_span_dictionaries, text_samples)
-    ]
-    print(final)
-    final_series = pd.Series(final)
-    print(final_series)
-    return final_series
+    )
 
 
 def get_relex_prints(

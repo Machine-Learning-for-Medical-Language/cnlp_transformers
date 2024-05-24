@@ -54,11 +54,9 @@ from .HierarchicalTransformer import HierarchicalModel
 sys.path.append(os.path.join(os.getcwd()))
 
 
-
 AutoConfig.register("cnlpt", CnlpConfig)
 
 logger = logging.getLogger(__name__)
-
 
 
 eval_state = defaultdict(lambda: -1)
@@ -246,23 +244,27 @@ def main(
 
     # Load tokenizer: Need this first for loading the datasets
     tokenizer = AutoTokenizer.from_pretrained(
-        model_args.tokenizer_name
-        if model_args.tokenizer_name
-        else model_args.encoder_name,
+        (
+            model_args.tokenizer_name
+            if model_args.tokenizer_name
+            else model_args.encoder_name
+        ),
         cache_dir=model_args.cache_dir,
         add_prefix_space=True,
-        additional_special_tokens=[
-            "<e>",
-            "</e>",
-            "<a1>",
-            "</a1>",
-            "<a2>",
-            "</a2>",
-            "<cr>",
-            "<neg>",
-        ]
-        if not data_args.character_level
-        else None,
+        additional_special_tokens=(
+            [
+                "<e>",
+                "</e>",
+                "<a1>",
+                "</a1>",
+                "<a2>",
+                "</a2>",
+                "<cr>",
+                "<neg>",
+            ]
+            if not data_args.character_level
+            else None
+        ),
     )
 
     # Get datasets
@@ -361,9 +363,11 @@ def main(
         if is_external_encoder(encoder_name):
             config = CnlpConfig(
                 encoder_name=encoder_name,
-                finetuning_task=data_args.task_name
-                if data_args.task_name is not None
-                else dataset.tasks,
+                finetuning_task=(
+                    data_args.task_name
+                    if data_args.task_name is not None
+                    else dataset.tasks
+                ),
                 layer=model_args.layer,
                 tokens=model_args.token,
                 num_rel_attention_heads=model_args.num_rel_feats,
@@ -465,9 +469,11 @@ def main(
             # the arguments from trained cnlp models. While using CnlpConfig will override
             # the model_type and model_name of the encoder.
             config = AutoConfig.from_pretrained(
-                model_args.config_name
-                if model_args.config_name
-                else model_args.encoder_name,
+                (
+                    model_args.config_name
+                    if model_args.config_name
+                    else model_args.encoder_name
+                ),
                 cache_dir=model_args.cache_dir,
                 # in this case we're looking at a fine-tuned model (?)
                 character_level=data_args.character_level,
@@ -517,9 +523,11 @@ def main(
             )
             config = CnlpConfig(
                 encoder_name=encoder_name,
-                finetuning_task=data_args.task_name
-                if data_args.task_name is not None
-                else dataset.tasks,
+                finetuning_task=(
+                    data_args.task_name
+                    if data_args.task_name is not None
+                    else dataset.tasks
+                ),
                 layer=model_args.layer,
                 tokens=model_args.token,
                 num_rel_attention_heads=model_args.num_rel_feats,

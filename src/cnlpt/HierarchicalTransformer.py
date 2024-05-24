@@ -1,6 +1,7 @@
 """
 Module containing the Hierarchical Transformer module, adapted from Xin Su.
 """
+
 import copy
 import logging
 import random
@@ -355,19 +356,25 @@ class HierarchicalModel(PreTrainedModel):
 
         kwargs = generalize_encoder_forward_kwargs(
             self.encoder,
-            attention_mask=attention_mask.reshape(flat_shape[:3])
-            if attention_mask is not None
-            else None,
-            token_type_ids=token_type_ids.reshape(flat_shape[:3])
-            if token_type_ids is not None
-            else None,
-            position_ids=position_ids.reshape(flat_shape[:3])
-            if position_ids is not None
-            else None,
+            attention_mask=(
+                attention_mask.reshape(flat_shape[:3])
+                if attention_mask is not None
+                else None
+            ),
+            token_type_ids=(
+                token_type_ids.reshape(flat_shape[:3])
+                if token_type_ids is not None
+                else None
+            ),
+            position_ids=(
+                position_ids.reshape(flat_shape[:3])
+                if position_ids is not None
+                else None
+            ),
             head_mask=head_mask,
-            inputs_embeds=inputs_embeds.reshape(flat_shape)
-            if inputs_embeds is not None
-            else None,
+            inputs_embeds=(
+                inputs_embeds.reshape(flat_shape) if inputs_embeds is not None else None
+            ),
             output_attentions=output_attentions,
             output_hidden_states=True,
             return_dict=True,

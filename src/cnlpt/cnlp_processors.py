@@ -3,6 +3,7 @@ Module containing auto processor class, which infers labels, task type, and outp
 modes for tasks and datasets that use a few conventional formats.
 
 """
+
 import json
 import logging
 import os

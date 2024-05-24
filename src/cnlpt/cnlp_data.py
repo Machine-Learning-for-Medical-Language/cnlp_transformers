@@ -319,18 +319,13 @@ def cnlp_preprocess_data(
         )
 
     special_token_ids = {
-        *filter(
-            None,
-            [
-                tokenizer.bos_token_id,
-                tokenizer.eos_token_id,
-                tokenizer.sep_token_id,
-                tokenizer.cls_token_id,
-                tokenizer.pad_token_id,
-                tokenizer.mask_token_id,
-                tokenizer.unk_token_id,
-            ],
-        )
+        tokenizer.bos_token_id,
+        tokenizer.eos_token_id,
+        tokenizer.sep_token_id,
+        tokenizer.cls_token_id,
+        tokenizer.pad_token_id,
+        tokenizer.mask_token_id,
+        tokenizer.unk_token_id,
     }
     if tokenizer.is_fast:
         result["word_ids"] = [
@@ -439,8 +434,6 @@ def cnlp_preprocess_data(
             num_instances,
             max_length,
             label_lists,
-            character_level,
-            special_token_ids,
         )
     if not character_level:
         result["event_mask"] = _build_event_mask_word_piece(

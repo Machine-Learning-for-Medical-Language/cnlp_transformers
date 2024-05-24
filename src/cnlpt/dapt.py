@@ -89,9 +89,11 @@ def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = N
 
     # Load tokenizer: Need this first for loading the datasets
     tokenizer = AutoTokenizer.from_pretrained(
-        dapt_args.tokenizer_name
-        if dapt_args.tokenizer_name
-        else dapt_args.encoder_name,
+        (
+            dapt_args.tokenizer_name
+            if dapt_args.tokenizer_name
+            else dapt_args.encoder_name
+        ),
         cache_dir=dapt_args.cache_dir,
         add_prefix_space=True,
         # additional_special_tokens=['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>', '<neg>']

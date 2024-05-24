@@ -1,6 +1,7 @@
 """
 Module containing the CNLP transformer model.
 """
+
 # from transformers.models.auto import  AutoModel, AutoConfig
 import copy
 import inspect
