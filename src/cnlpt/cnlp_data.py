@@ -282,6 +282,7 @@ def cnlp_preprocess_data(
         of the example instances printed to the log
     :return: the list of converted input features
     """
+    character_level = type(tokenizer).__name__ == "CanineTokenizer"
 
     if max_length is None:
         max_length = tokenizer.max_len
@@ -335,8 +336,10 @@ def cnlp_preprocess_data(
         result["word_ids"] = [
             result.word_ids(i) for i in range(len(result["input_ids"]))
         ]
+    # slow tokenizers -> build your own word ids
+
     else:
-        if type(tokenizer).__name__ == "CanineTokenizer":
+        if character_level:
 
             def get_word_ids(indices: Iterable[int]) -> List[Union[None, int]]:
                 current = 1
@@ -365,6 +368,9 @@ def cnlp_preprocess_data(
     # (which has one label per pre-wordpiece token) and relations (which are defined as tuples which
     # contain pre-wordpiece token indices)
     if not inference:
+        assert (
+            label_lists is not None and output_modes is not None
+        ), f"label_lists {label_lists} output_modes {output_modes} must both be non-None"
         # Create a label map for each task in this dataset: { task1 => {label_0: 0, label_1: 1, label_2:, 2}, task2 => {label_0: 0, label_1:1} }
         label_map = {
             task: {label: i for i, label in enumerate(label_lists[task])}
@@ -473,8 +479,6 @@ def _build_pytorch_labels(
     num_instances: int,
     max_length: int,
     label_lists: Dict[str, List[str]],
-    character_level: bool,
-    special_token_ids: Set[int],
 ):
     # labels_out = []
     # TODO -- also adapt to character level

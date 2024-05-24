@@ -1,7 +1,7 @@
 import logging
 from collections import defaultdict
 from itertools import chain, groupby
-from typing import Dict, Iterable, List, Tuple, Union
+from typing import Dict, Generator, Iterable, List, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -230,8 +230,7 @@ def process_prediction(
             prob_values = np.array([])
         task_labels = task_to_label_space[task_name]
         error_inds = task_to_error_inds[task_name]
-        target_inds = error_inds if len(error_inds) > 0 else relevant_indices
-        out_table[task_name][target_inds] = get_output_list(
+        result_series = get_outputs(
             error_analysis=error_analysis,
             character_level=character_level,
             prob_values=prob_values,
@@ -244,25 +243,29 @@ def process_prediction(
             word_ids=word_ids,
             text_column=out_table["text"],
         )
-    return out_table
+        if len(error_inds) > 0:
+            out_table[task_name][error_inds] = result_series
+        else:
+            out_table[task_name] = result_series
+        return out_table
 
 
 # might be more efficient to return a pd.Series or something for the
 # assignment and populate it via a generator but for now just use a list
-def get_output_list(
+def get_outputs(
     error_analysis: bool,
     character_level: bool,
     prob_values: np.ndarray,
     pred_task: str,
     task_labels: List[str],
     prediction: np.ndarray,
-    labels: Union[None, np.ndarray],
+    labels: np.ndarray,
     output_mode: Dict[str, str],
     error_inds: np.ndarray,
     word_ids: List[List[Union[None, int]]],
     text_column: pd.Series,
-) -> List[str]:
-    if labels is not None:
+) -> pd.Series:
+    if len(labels) > 0:
         if len(error_inds) > 0 and error_analysis:
             relevant_prob_values = (
                 prob_values[error_inds]
@@ -302,7 +305,7 @@ def get_output_list(
             pred_task, task_labels, ground_truth, task_prediction, word_ids
         )
     else:
-        return len(error_inds) * ["UNSUPPORTED TASK TYPE"]
+        pd.Series("UNSUPPORTED TASK TYPE" for _ in error_inds)
 
 
 def get_classification_prints(
@@ -311,8 +314,8 @@ def get_classification_prints(
     ground_truths: Union[None, np.ndarray],
     task_predictions: np.ndarray,
     prob_values: np.ndarray,
-) -> List[str]:
-    predicted_labels = [classification_labels[index] for index in task_predictions]
+) -> pd.Series:
+    predicted_labels = (classification_labels[index] for index in task_predictions)
 
     def clean_string(gp: Tuple[str, str]) -> str:
         ground, predicted = gp
@@ -324,14 +327,14 @@ def get_classification_prints(
     if ground_truths is not None:
         ground_strings = [classification_labels[index] for index in ground_truths]
 
-        pred_list = [clean_string(gp) for gp in zip(ground_strings, predicted_labels)]
+        pred_list = (clean_string(gp) for gp in zip(ground_strings, predicted_labels))
 
-    if len(prob_values) == len(predicted_labels):
-        return [
+    if len(prob_values) > 0:
+        return pd.Series(
             f"{pred} , Probability {prob:.6f}"
             for pred, prob in zip(pred_list, prob_values)
-        ]
-    return pred_list
+        )
+    return pd.Series(pred_list)
 
 
 def get_tagging_prints(
@@ -342,16 +345,20 @@ def get_tagging_prints(
     task_predictions: np.ndarray,
     text_samples: pd.Series,
     word_ids: List[List[Union[None, int]]],
-) -> List[str]:
+) -> pd.Series:
+    print("FUNCTION PARAMETERS:")
+    print(f"character_level {character_level}")
+    print(f"task_name {task_name}")
+    print(f"tagging_labels {tagging_labels}")
+    print(f"ground_truths {ground_truths}")
     resolved_predictions = task_predictions
 
     # to save ourselves the branch instructions
     # in all the nested functions
-    get_tokens = lambda _: None
+    get_tokens = lambda _: []
     token_sep = ""  # default since typesystem doesn't like the None
     if character_level:
         get_tokens = lambda inst: [token for token in inst if token is not None]
-        token_sep = ""
     else:
         get_tokens = lambda inst: [char for char in inst.split() if char is not None]
         token_sep = " "
@@ -459,12 +466,15 @@ def get_tagging_prints(
         type2spans: Dict[str, List[Tuple[int, int]]], instance: str
     ):
         instance_tokens = get_tokens(instance)
-        return dict_to_str(type2spans, instance_tokens)
+        result = dict_to_str(type2spans, instance_tokens)
+        if len(result) > 0:
+            print(f"in get_pred_out_string {result}")
+        return result
 
-    pred_span_dictionaries = (
+    pred_span_dictionaries = [
         types2spans(pred, word_id_ls)
         for pred, word_id_ls in zip(resolved_predictions, word_ids)
-    )
+    ]
     if ground_truths is not None:
         ground_span_dictionaries = (
             types2spans(ground_truth, word_id_ls)
@@ -477,16 +487,19 @@ def get_tagging_prints(
             )
         )
 
-        # returning list instead of generator since pandas needs that
-        return [
+        return pd.Series(
             get_error_out_string(disagreements, instance)
             for disagreements, instance in zip(disagreement_dicts, text_samples)
-        ]
+        )
 
-    return [
+    final = [
         get_pred_out_string(type_2_pred_spans, instance)
         for type_2_pred_spans, instance in zip(pred_span_dictionaries, text_samples)
     ]
+    print(final)
+    final_series = pd.Series(final)
+    print(final_series)
+    return final_series
 
 
 def get_relex_prints(
@@ -495,7 +508,7 @@ def get_relex_prints(
     ground_truths: Union[None, np.ndarray],
     task_predictions: np.ndarray,
     word_ids: List[List[Union[None, int]]],
-) -> List[str]:
+) -> pd.Series:
     resolved_predictions = task_predictions
     none_index = relex_labels.index("None") if "None" in relex_labels else -1
 
@@ -528,10 +541,7 @@ def get_relex_prints(
         relevant_indices_ls = list(relevant_indices_iter)
 
         reduced_matrix = np.array(
-            [
-                raw_cells[index][relevant_indices_ls]
-                for index in relevant_indices_ls
-            ]
+            [raw_cells[index][relevant_indices_ls] for index in relevant_indices_ls]
         )
 
         np.fill_diagonal(reduced_matrix, none_index)
@@ -630,11 +640,11 @@ def get_relex_prints(
             )
         )
 
-        return [
+        return pd.Series(
             to_error_string(bad_cells, ground_cells, pred_cells)
             for bad_cells, ground_cells, pred_cells in disagreements
-        ]
-    return [
+        )
+    return pd.Series(
         to_pred_string(reduced_pred_matrix)
         for _, reduced_pred_matrix in normalized_pred_pairs
-    ]
+    )
