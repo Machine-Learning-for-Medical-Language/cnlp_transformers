@@ -35,7 +35,6 @@ from transformers.training_args import IntervalStrategy
 from transformers.data.processors.utils import InputFeatures
 from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.data.processors.utils import DataProcessor, InputExample, InputFeatures
-from transformers import ALL_PRETRAINED_CONFIG_ARCHIVE_MAP
 from torch.optim import AdamW
 from transformers.file_utils import CONFIG_NAME
 from huggingface_hub import hf_hub_url
