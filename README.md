@@ -11,9 +11,7 @@ This library is _not_ intended to serve as a place for clinical NLP applications
 ## Install
 
 **Note: due to some dependency issues, this package does not officially
-support macOS on Apple Silicon. If you want to install it on Apple Silicon,
-you are on your own; we unofficially recommend trying it with Python 3.10, or using
-the docker CPU image**
+support macOS on Apple Silicon. For experimental support, run `pip install -r macos-requirements.txt` between steps 3 and 4 of the [editable installation](#editable-installation) instructions below.**
 
 **Note:** When installing the library's dependencies, `pip` will probably install 
 PyTorch with CUDA 10.2 support by default. If you would like to run the 
