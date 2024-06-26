@@ -71,7 +71,7 @@ To use the library for fine-tuning, you'll need to take the following steps:
 1. Write your dataset to one of the following formats in a folder with train, dev, and test files:
   1. csv or tsv: The first row should have column names separated by comma or tab. The name ```text``` has special meaning as the input string. Likewise if there are columns named ```text_a``` and ```text_b``` it will be interpreted as two parts of a transformer input string separated by a <sep>-token equivalent. All other columns are treated as potential targets -- their names can be passed to the ```train_system.py``` script as ```--task_name``` arguments. For tagging targets, the field must consist of space-delimited labels, one per space-delimited token in the ```text``` field. For relation extraction targets, the field must be a ``` , ``` delimited list of relation tuples, where each relation tuple is (<offset 1>, <offset 2>,label), where offset 1 and 2 are token indices into the space-delimited tokens in the ```text``` field.
   2. json: The file format must be the following:
-  ```json
+  ```
     { 'data': [
         { 'text': <text of instance>,
           'id': <instance id>
