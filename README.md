@@ -9,11 +9,15 @@ Primary use cases include
 This library is _not_ intended to serve as a place for clinical NLP applications to live. If you build something cool that uses transformer models that take advantage of our model definitions, the best practice is probably to rely on it as a library rather than treating it as your workspace. This library is also not intended as a deployment-ready tool for _scalable_ clinical NLP. There is a lot of interest in developing methods and tools that are smaller and can process millions of records, and this library can potentially be used for research along those line. But it will probably never be extremely optimized or shrink-wrapped for applications. However, there should be plenty of examples and useful code for people who are interested in that type of deployment.
 
 ## Install
+> [!WARNING]
+**Due to some dependency issues, this package does not officially
+support macOS on Apple Silicon.**
+For experimental support, use python 3.10 and run 
+`pip install -r macos-requirements.txt` between steps 3 and 4 
+of the [editable installation](#editable-installation) instructions below.
 
-**Note: due to some dependency issues, this package does not officially
-support macOS on Apple Silicon. For experimental support, run `pip install -r macos-requirements.txt` between steps 3 and 4 of the [editable installation](#editable-installation) instructions below.**
-
-**Note:** When installing the library's dependencies, `pip` will probably install 
+> [!NOTE] 
+When installing the library's dependencies, `pip` will probably install 
 PyTorch with CUDA 10.2 support by default. If you would like to run the 
 library in CPU-only mode or with a newer version of CUDA, [install PyTorch 
 to your desired specifications](https://pytorch.org/get-started/locally/) 
@@ -67,7 +71,7 @@ To use the library for fine-tuning, you'll need to take the following steps:
 1. Write your dataset to one of the following formats in a folder with train, dev, and test files:
   1. csv or tsv: The first row should have column names separated by comma or tab. The name ```text``` has special meaning as the input string. Likewise if there are columns named ```text_a``` and ```text_b``` it will be interpreted as two parts of a transformer input string separated by a <sep>-token equivalent. All other columns are treated as potential targets -- their names can be passed to the ```train_system.py``` script as ```--task_name``` arguments. For tagging targets, the field must consist of space-delimited labels, one per space-delimited token in the ```text``` field. For relation extraction targets, the field must be a ``` , ``` delimited list of relation tuples, where each relation tuple is (<offset 1>, <offset 2>,label), where offset 1 and 2 are token indices into the space-delimited tokens in the ```text``` field.
   2. json: The file format must be the following:
-  ```
+  ```json
     { 'data': [
         { 'text': <text of instance>,
           'id': <instance id>
