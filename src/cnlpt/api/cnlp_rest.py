@@ -4,7 +4,7 @@ import os
 
 # FastAPI imports
 from pydantic import BaseModel
-from typing import List
+from typing import List, Literal
 
 # Modeling imports
 from transformers import (
@@ -17,6 +17,8 @@ from transformers import (
 )
 from datasets import Dataset
 import torch
+import torch.backends
+import torch.backends.mps
 import logging
 
 # intra-library imports
@@ -61,7 +63,28 @@ def create_instance_string(doc_text: str, offsets : List[int]):
     raw_str = doc_text[start:offsets[0]] + ' <e> ' + doc_text[offsets[0]:offsets[1]] + ' </e> ' + doc_text[offsets[1]:end]
     return raw_str.replace('\n', ' ')
 
-def initialize_cnlpt_model(app, model_name, cuda=True, batch_size=8):
+def move_model_to_device(model, device: Literal["auto", "cuda", "mps", "cpu"]):
+    if (device == "cuda" and not torch.cuda.is_available()) or (device == "mps" and not torch.backends.mps.is_available()):
+        logging.warning(f"Device was set to '{device}' but {device} was not found -- using CPU instead. If you have a GPU you need to debug why pytorch cannot see it.")
+        device = "cpu"
+
+    if device == "auto":
+        if torch.cuda.is_available():
+            device = "cuda"
+        elif torch.backends.mps.is_available():
+            device = "mps"
+        else:
+            logging.warning("Device was set to 'auto' but neither cuda nor mps are available -- using CPU instead. If you have a GPU you need to debug why pytorch cannot see it.")
+            device = "cpu"
+
+    if device == "cuda":
+        return model.to("cuda")
+    elif device == "mps":
+        return model.to("mps")
+    else:
+        return model.to("cpu")
+
+def initialize_cnlpt_model(app, model_name, device: Literal["auto", "cuda", "mps", "cpu"] = "auto", batch_size=8):
     args = ['--output_dir', 'save_run/', '--per_device_eval_batch_size', str(batch_size), '--do_predict', '--report_to', 'none']
     parser = HfArgumentParser((TrainingArguments,))
     training_args, = parser.parse_args_into_dataclasses(args=args)
@@ -76,14 +99,8 @@ def initialize_cnlpt_model(app, model_name, cuda=True, batch_size=8):
     app.state.tokenizer = AutoTokenizer.from_pretrained(model_name,
                                                   config=config)
     model = CnlpModelForClassification.from_pretrained(model_name, cache_dir=os.getenv('HF_CACHE'), config=config)
-    if cuda and not torch.cuda.is_available():
-        logging.warning('CUDA is set to True (probably a default) but was not available; setting to False and proceeding. If you have a GPU you need to debug why pytorch cannot see it.')
-        cuda = False
     
-    if cuda:
-        model = model.to('cuda')
-    else:
-        model = model.to('cpu')
+    model = move_model_to_device(model, device)
 
     app.state.model = model
     app.state.trainer = Trainer(
@@ -92,7 +109,7 @@ def initialize_cnlpt_model(app, model_name, cuda=True, batch_size=8):
         compute_metrics=None,
     )
 
-def initialize_hier_model(app, model_name, cuda=True, batch_size=1):
+def initialize_hier_model(app, model_name, device: Literal["auto", "cuda", "mps", "cpu"] = "auto", batch_size=1):
     AutoConfig.register("cnlpt", CnlpConfig)
     AutoModel.register(CnlpConfig, HierarchicalModel)
 
@@ -104,13 +121,6 @@ def initialize_hier_model(app, model_name, cuda=True, batch_size=1):
     model = AutoModel.from_pretrained(model_name, cache_dir=os.getenv('HF_CACHE'), config=config)
     model.train(False)
 
-    if cuda and not torch.cuda.is_available():
-        logging.warning('CUDA is set to True (probably a default) but was not available; setting to False and proceeding. If you have a GPU you need to debug why pytorch cannot see it.')
-        cuda = False
-    
-    if cuda:
-        model = model.to('cuda')
-    else:
-        model = model.to('cpu')
+    model = move_model_to_device(model, device)
 
     app.state.model = model

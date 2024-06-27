@@ -24,6 +24,7 @@ import json
 
 from transformers import AutoTokenizer, Trainer
 import torch
+import torch.backends.mps
 import numpy as np
 
 from .cnlp_rest import UnannotatedDocument, get_dataset
@@ -34,6 +35,14 @@ model_name = os.getenv('MODEL_PATH')
 if model_name is None:
     sys.stderr.write('This REST container requires a MODEL_PATH environment variable\n')
     sys.exit(-1)
+device = os.getenv('MODEL_DEVICE', 'auto')
+if device == 'auto':
+    if torch.cuda.is_available():
+        device = 'cuda'
+    elif torch.backends.mps.is_available():
+        device = 'mps'
+    else:
+        device = 'cpu'
 
 logger = logging.getLogger('CNN_REST_Processor')
 logger.setLevel(logging.DEBUG)
@@ -54,7 +63,7 @@ async def startup_event():
                                   filters=conf_dict['filters'])
     model.load_state_dict(torch.load(join(model_name, 'pytorch_model.bin')))
     
-    app.state.model = model.to('cuda')
+    app.state.model = model.to(device)
     app.state.tokenizer = tokenizer
     app.state.conf_dict = conf_dict
 
@@ -63,8 +72,8 @@ async def process(doc: UnannotatedDocument):
     results = []
     instances = [doc.doc_text]
     dataset = get_dataset(instances, app.state.tokenizer, max_length=app.state.conf_dict['max_seq_length'])
-    _, logits = app.state.model.forward(input_ids=torch.LongTensor(dataset['input_ids']).to('cuda'),
-                                        attention_mask = torch.LongTensor(dataset['attention_mask']).to('cuda'),
+    _, logits = app.state.model.forward(input_ids=torch.LongTensor(dataset['input_ids']).to(device),
+                                        attention_mask = torch.LongTensor(dataset['attention_mask']).to(device),
                                      )
     
     prediction = int(np.argmax(logits[0].cpu().detach().numpy(), axis=1))
