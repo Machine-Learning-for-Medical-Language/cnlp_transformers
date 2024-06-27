@@ -13,8 +13,7 @@ This library is _not_ intended to serve as a place for clinical NLP applications
 **Due to some dependency issues, this package does not officially
 support macOS on Apple Silicon.**
 For experimental support, use python 3.10 and run 
-`pip install -r macos-requirements.txt` between steps 3 and 4 
-of the [editable installation](#editable-installation) instructions below.
+`pip install -r macos-requirements.txt` before installing the package.
 
 > [!NOTE] 
 When installing the library's dependencies, `pip` will probably install 
