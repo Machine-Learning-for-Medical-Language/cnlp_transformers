@@ -1,7 +1,9 @@
 import logging
-from collections import defaultdict
+import re
+from collections import defaultdict, deque
 from itertools import chain, groupby
-from typing import Dict, Generator, Iterable, List, Tuple, Union
+from operator import itemgetter
+from typing import Dict, Iterable, List, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -358,28 +360,34 @@ def get_tagging_prints(
         get_tokens = lambda inst: [char for char in inst.split() if char is not None]
         token_sep = " "
 
-    def flatten_dict(d):
-        def tups(k, ls):
+    def flatten_dict(
+        d: Dict[str, Iterable[Tuple[int, int]]]
+    ) -> Iterable[Tuple[str, Tuple[int, int]]]:
+        def tups(
+            k: str, ls: Iterable[Tuple[int, int]]
+        ) -> Iterable[Tuple[str, Tuple[int, int]]]:
             return ((k, elem) for elem in ls)
 
         return chain.from_iterable(
             (((k, span) for k, span in tups(key, spans)) for key, spans in d.items())
         )
 
-    def dict_to_str(d, tokens):
+    def dict_to_str(
+        d: Dict[str, Iterable[Tuple[int, int]]], tokens: Iterable[str]
+    ) -> str:
         result = " , ".join(
             f'{key}: "{token_sep.join(tokens[span[0]:span[1]])}"'
             for key, span in flatten_dict(d)
         )
         return result
 
-    def group_and_span(inds: List[int]) -> List[Tuple[int, int]]:
-        ranges = []
-        for _, group in groupby(enumerate(inds), lambda x: x[0] - x[1]):
-            index_group = [g[1] for g in group]
-            # adjusted for python list conventions
-            ranges.append((index_group[0], index_group[-1] + 1))
-        return ranges
+    # def group_and_span(inds: List[int]) -> Iterable[Tuple[int, int]]:
+    #     ranges = deque()
+    #     for _, group in groupby(enumerate(inds), lambda x: x[0] - x[1]):
+    #         index_group = [g[1] for g in group]
+    #         # adjusted for python list conventions
+    #         ranges.append((index_group[0], index_group[-1] + 1))
+    #     return ranges
 
     # since sometimes it's just
     # BIO with no suffixes and
@@ -390,8 +398,28 @@ def get_tagging_prints(
             return elems[-1].lower()
         return task_name.lower()
 
-    def types2spans(raw_tag_inds: np.ndarray, word_ids: List[Union[None, int]]):
-        type2inds = defaultdict(list)
+    # NER model output tags without NER task info (e.g. B-fxno -> B)
+    def get_partitions(annotation: List[str]) -> str:
+        return "".join(tag[0].upper() for tag in annotation)
+
+    def process_labels(annotation: str) -> Iterable[Tuple[int, int]]:
+        span_begin, span_end = 0, 0
+        indices = deque()
+        partitions = get_partitions(annotation)
+        # Group B's individually as well as B's followed by
+        # any nummber of I's, e.g.
+        # OOOOOOBBBBBBBIIIIBIBIBI
+        # -> OOOOOO B B B B B B BIIII BI BI BI
+        for span in filter(None, re.split(r"(BI*)", partitions)):
+            span_end = len(span) + span_begin - 1
+            if span[0] == "B":
+                # Get indices in list/string of each span
+                # which describes a mention
+                indices.append((span_begin, span_end + 1))
+            span_begin = span_end + 1
+        return indices
+
+    def types_to_spans(raw_tag_inds: np.ndarray, word_ids: List[Union[None, int]]):
         relevant_token_ids_and_tags = [
             (word_id, tag)
             for word_id, tag in zip(word_ids, raw_tag_inds)
@@ -403,11 +431,15 @@ def get_tagging_prints(
         ]
 
         raw_labels = [tagging_labels[tag] for _, tag in relevant_token_ids_and_tags]
-        for index, raw_label in enumerate(raw_labels):
-            if raw_label != "O":
-                type2inds[get_ner_type(raw_label)].append(index)
-
-        return {ner_type: group_and_span(inds) for ner_type, inds in type2inds.items()}
+        raw_spans = process_labels(raw_labels)
+        span_tuples = [(get_ner_type(raw_labels[tup[0]]), tup) for tup in raw_spans]
+        type_to_spans = {
+            ner_type: [g[1] for g in group]
+            for ner_type, group in groupby(
+                sorted(span_tuples, key=itemgetter(0)), key=itemgetter(0)
+            )
+        }
+        return type_to_spans
 
     def dictmerge(
         ground_dict: Dict[str, List[Tuple[int, int]]],
@@ -458,19 +490,19 @@ def get_tagging_prints(
         return f"Ground: {ground_string} Predicted: {predicted_string}"
 
     def get_pred_out_string(
-        type2spans: Dict[str, List[Tuple[int, int]]], instance: str
+        type_to_spans: Dict[str, List[Tuple[int, int]]], instance: str
     ):
         instance_tokens = get_tokens(instance)
-        result = dict_to_str(type2spans, instance_tokens)
+        result = dict_to_str(type_to_spans, instance_tokens)
         return result
 
     pred_span_dictionaries = (
-        types2spans(pred, word_id_ls)
+        types_to_spans(pred, word_id_ls)
         for pred, word_id_ls in zip(resolved_predictions, word_ids)
     )
     if ground_truths is not None:
         ground_span_dictionaries = (
-            types2spans(ground_truth, word_id_ls)
+            types_to_spans(ground_truth, word_id_ls)
             for ground_truth, word_id_ls in zip(ground_truths, word_ids)
         )
         disagreement_dicts = (
@@ -486,8 +518,8 @@ def get_tagging_prints(
         )
 
     return pd.Series(
-        get_pred_out_string(type_2_pred_spans, instance)
-        for type_2_pred_spans, instance in zip(pred_span_dictionaries, text_samples)
+        get_pred_out_string(type_to_pred_spans, instance)
+        for type_to_pred_spans, instance in zip(pred_span_dictionaries, text_samples)
     )
 
 
