@@ -23,10 +23,11 @@ from os.path import join
 import numpy as np
 import torch
 from fastapi import FastAPI
+from scipy.special import softmax
 from transformers import AutoTokenizer, Trainer
+
 from ..BaselineModels import CnnSentenceClassifier
 from .cnlp_rest import UnannotatedDocument, get_dataset
-from scipy.special import softmax
 
 app = FastAPI()
 model_name = os.getenv("MODEL_PATH")
