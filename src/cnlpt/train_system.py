@@ -227,9 +227,11 @@ def main(
     else:
         truncation_side = "right"
     tokenizer = AutoTokenizer.from_pretrained(
-        model_args.tokenizer_name
-        if model_args.tokenizer_name
-        else model_args.encoder_name,
+        (
+            model_args.tokenizer_name
+            if model_args.tokenizer_name
+            else model_args.encoder_name
+        ),
         cache_dir=model_args.cache_dir,
         add_prefix_space=True,
         truncation_side=truncation_side,
@@ -341,9 +343,11 @@ def main(
         if is_external_encoder(encoder_name):
             config = CnlpConfig(
                 encoder_name=encoder_name,
-                finetuning_task=data_args.task_name
-                if data_args.task_name is not None
-                else dataset.tasks,
+                finetuning_task=(
+                    data_args.task_name
+                    if data_args.task_name is not None
+                    else dataset.tasks
+                ),
                 layer=model_args.layer,
                 tokens=model_args.token,
                 num_rel_attention_heads=model_args.num_rel_feats,
@@ -445,9 +449,11 @@ def main(
             # the arguments from trained cnlp models. While using CnlpConfig will override
             # the model_type and model_name of the encoder.
             config = AutoConfig.from_pretrained(
-                model_args.config_name
-                if model_args.config_name
-                else model_args.encoder_name,
+                (
+                    model_args.config_name
+                    if model_args.config_name
+                    else model_args.encoder_name
+                ),
                 cache_dir=model_args.cache_dir,
             )
 
@@ -495,9 +501,11 @@ def main(
             )
             config = CnlpConfig(
                 encoder_name=encoder_name,
-                finetuning_task=data_args.task_name
-                if data_args.task_name is not None
-                else dataset.tasks,
+                finetuning_task=(
+                    data_args.task_name
+                    if data_args.task_name is not None
+                    else dataset.tasks
+                ),
                 layer=model_args.layer,
                 tokens=model_args.token,
                 num_rel_attention_heads=model_args.num_rel_feats,
