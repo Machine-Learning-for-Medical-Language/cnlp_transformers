@@ -24,9 +24,9 @@ import numpy as np
 import torch
 from fastapi import FastAPI
 from transformers import AutoTokenizer, Trainer
-
 from ..BaselineModels import CnnSentenceClassifier
 from .cnlp_rest import UnannotatedDocument, get_dataset
+from scipy.special import softmax
 
 app = FastAPI()
 model_name = os.getenv("MODEL_PATH")
@@ -65,7 +65,6 @@ async def startup_event():
 
 @app.post("/cnn/classify")
 async def process(doc: UnannotatedDocument):
-    results = []
     instances = [doc.doc_text]
     dataset = get_dataset(
         instances, app.state.tokenizer, max_length=app.state.conf_dict["max_seq_length"]
@@ -74,12 +73,15 @@ async def process(doc: UnannotatedDocument):
         input_ids=torch.LongTensor(dataset["input_ids"]).to("cuda"),
         attention_mask=torch.LongTensor(dataset["attention_mask"]).to("cuda"),
     )
-
     prediction = int(np.argmax(logits[0].cpu().detach().numpy(), axis=1))
     result = app.state.conf_dict["label_dictionary"][
         app.state.conf_dict["task_names"][0]
     ][prediction]
-    return {"result": result}
+    probabilities = softmax(logits[0][0].cpu().detach().numpy())
+    # for redcap purposes, it might make more sense to only output the probability for the predicted class,
+    # but i'm outputting them all, for transparency
+    out_probabilities = [str(prob) for prob in probabilities]
+    return {"result": result, "probabilities": out_probabilities}
 
 
 def rest():
