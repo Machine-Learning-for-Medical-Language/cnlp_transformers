@@ -22,6 +22,7 @@ from typing import List, Tuple, Dict
 from .cnlp_rest import UnannotatedDocument, create_instance_string, initialize_cnlpt_model, initialize_hier_model, get_dataset
 from ..CnlpModelForClassification import CnlpModelForClassification, CnlpConfig
 import torch
+import torch.backends.mps
 import numpy as np
 
 import logging
@@ -30,6 +31,15 @@ import os
 
 app = FastAPI()
 model_name = os.getenv('MODEL_PATH')
+
+device = os.getenv('MODEL_DEVICE', 'auto')
+if device == 'auto':
+    if torch.cuda.is_available():
+        device = 'cuda'
+    elif torch.backends.mps.is_available():
+        device = 'mps'
+    else:
+        device = 'cpu'
 
 logger = logging.getLogger('HierRep_REST_Processor')
 logger.setLevel(logging.DEBUG)
@@ -42,9 +52,9 @@ async def startup_event():
 async def get_representation(doc: UnannotatedDocument):
     instances = [doc.doc_text]
     dataset = get_dataset(instances, app.state.tokenizer, max_length=16000, hier=True, chunk_len=200, num_chunks=80, insert_empty_chunk_at_beginning=False)
-    result = app.state.model.forward(input_ids=torch.LongTensor(dataset['input_ids']).to('cuda'),
-                                     token_type_ids=torch.LongTensor(dataset['token_type_ids']).to('cuda'),
-                                     attention_mask = torch.LongTensor(dataset['attention_mask']).to('cuda'),
+    result = app.state.model.forward(input_ids=torch.LongTensor(dataset['input_ids']).to(device),
+                                     token_type_ids=torch.LongTensor(dataset['token_type_ids']).to(device),
+                                     attention_mask = torch.LongTensor(dataset['attention_mask']).to(device),
                                      output_hidden_states=True)
     
     # Convert to a list so python can send it out
@@ -55,9 +65,9 @@ async def get_representation(doc: UnannotatedDocument):
 async def classify(doc: UnannotatedDocument):
     instances = [doc.doc_text]
     dataset = get_dataset(instances, app.state.tokenizer, max_length=16000, hier=True, chunk_len=200, num_chunks=80, insert_empty_chunk_at_beginning=False)
-    result = app.state.model.forward(input_ids=torch.LongTensor(dataset['input_ids']).to('cuda'),
-                                     token_type_ids=torch.LongTensor(dataset['token_type_ids']).to('cuda'),
-                                     attention_mask = torch.LongTensor(dataset['attention_mask']).to('cuda'),
+    result = app.state.model.forward(input_ids=torch.LongTensor(dataset['input_ids']).to(device),
+                                     token_type_ids=torch.LongTensor(dataset['token_type_ids']).to(device),
+                                     attention_mask = torch.LongTensor(dataset['attention_mask']).to(device),
                                      output_hidden_states=False)
     
     predictions = [int(torch.argmax(logits.to('cpu').detach()).numpy()) for logits in result['logits']]
