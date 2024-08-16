@@ -133,7 +133,7 @@ if __name__ == "__main__":
                     "end":timex["end"],
                     "sent_begin":sent.begin,
                     "begin_char": token_spans[timex["begin"]][0],
-                    "endi_char": token_spans[timex["end"]][1],
+                    "end_char": token_spans[timex["end"]][1],
                     "begin_origin": timex_start_offset,
                     "end_origin": timex_end_offset,
                     "text": timex_text,
