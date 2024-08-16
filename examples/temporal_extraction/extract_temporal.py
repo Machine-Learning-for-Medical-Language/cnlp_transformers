@@ -19,13 +19,20 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-d", "--data_dir", type=pathlib.Path, required=True, help="path to read data from. should be a directory (of json or txt files).")
 parser.add_argument("-o", "--out_dir", type=pathlib.Path, required=True, help="directory in which to save output")
 parser.add_argument("-s", "--sentence_dir", type=pathlib.Path, required=True, help="directory in which to save sentences")
-parser.add_argument("-u", "--rest_url", type=str, default="http://0.0.0.0:8000/temporal/process")
+parser.add_argument("-u", "--rest_url", type=str, default="http://0.0.0.0:8000/temporal/process",
+                    help="Primary REST server. Use GPU REST server for high throughput.")
+parser.add_argument("--backup_rest_url", type=str, default="http://0.0.0.0:8000/temporal/process",
+                    help=("Backup REST server. This server will be used if the primary server fails to process "
+                          "(often due to VRAM restrictions). Use a CPU REST server for stability, "
+                          "especially with large or long documents."))
 parser.add_argument("--input_format", choices=["json", "pkl", "txt"], default="json")
 parser.add_argument("--text_name", type=str, default="text", help="key to access the text in a dictionary format")
 parser.add_argument("--output_format", choices=["json", "pkl"], default="json")
 args = parser.parse_args()
 
 rush = RuSH("conf/rush_rules.tsv")
+#rush = RuSH("conf/rush_rules_cr.tsv")  # Use this if you want to use <cr> as a paragraph splitter.
+
 
 def read_file(filename):
     if args.input_format == "txt":
@@ -68,6 +75,8 @@ if __name__ == "__main__":
     
     in_files = [f for f in os.listdir(args.data_dir) if f.endswith("." + args.input_format)]
     
+    retry_attempts_cnt = 0
+     
     for filename in tqdm(in_files):
         bare_filename = filename.split(".")[0]
         out_filename = bare_filename + "." + args.output_format
@@ -89,8 +98,14 @@ if __name__ == "__main__":
         
         # send off to rest
         r = requests.post(args.rest_url, json={"sent_tokens": sent_tokens, "metadata": f"FNAME={filename}"})
+        if r.status_code == 500:
+            sys.stderr.write(f"Failed from primary server.\nRe-try with alternative server :{args.backup_rest_url}\n")
+            r = requests.post(args.backup_rest_url, json={"sent_tokens": sent_tokens, "metadata": f"FNAME={filename}"})
+            retry_attempts_cnt += 1
+            sys.stderr.write(f"Current retry_attempts_cnt: {retry_attempts_cnt}\n")
         if r.status_code != 200:
             raise Exception(f"Problem processing {filename}: status code {r.status_code}")
+            
         out_json = r.json()
 
         events_docs, timexes_docs, rels_docs = [], [], []
@@ -184,3 +199,4 @@ if __name__ == "__main__":
             {"sentences": sent_text_list},
             os.path.join(args.sentence_dir, out_filename)
         )
+    sys.stderr.write(f"Current retry_attempts_cnt: {retry_attempts_cnt}\n")
