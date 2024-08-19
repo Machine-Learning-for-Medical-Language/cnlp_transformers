@@ -14,6 +14,9 @@ from .cnlp_processors import classification, relex, tagging
 
 logger = logging.getLogger(__name__)
 
+def simple_softmax(x: list):
+    """Softmax values for 1-D score array"""
+    return np.exp(x) / np.sum(np.exp(x), axis=0)
 
 def restructure_prediction(
     task_names: List[str],
@@ -76,7 +79,7 @@ def structure_labels(
     else:
         preds = np.argmax(p.predictions[task_ind], axis=1)
         if output_prob:
-            prob_values = np.max(p.predictions[task_ind], axis=1)
+            prob_values = np.max([simple_softmax(logits) for logits in p.predictions[task_ind]], axis=1)
 
     # for inference
     if not hasattr(p, "label_ids") or p.label_ids is None:
