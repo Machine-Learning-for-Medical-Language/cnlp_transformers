@@ -61,7 +61,7 @@ async def startup_event():
                                   embed_dims = conf_dict['cnn_embed_dim'], 
                                   num_filters=conf_dict['num_filters'], 
                                   filters=conf_dict['filters'])
-    model.load_state_dict(torch.load(join(model_name, 'pytorch_model.bin')))
+    model.load_state_dict(torch.load(join(model_name, 'pytorch_model.bin')), map_location=torch.device(device))
     
     app.state.model = model.to(device)
     app.state.tokenizer = tokenizer
