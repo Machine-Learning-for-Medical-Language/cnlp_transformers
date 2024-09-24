@@ -386,7 +386,7 @@ def main(
             config = AutoConfig.from_pretrained(
                 encoder_name, cache_dir=model_args.cache_dir, layer=model_args.layer
             )
-            if model_args.ignore_existing_classifers:
+            if model_args.ignore_existing_classifiers:
                 config.finetuning_task = (
                     data_args.task_name
                     if data_args.task_name is not None
@@ -413,7 +413,7 @@ def main(
             logger.info("Loading pre-trained hierarchical model...")
             model = AutoModel.from_pretrained(encoder_name, config=config)
 
-            if model_args.ignore_existing_classifers:
+            if model_args.ignore_existing_classifiers:
                 model.remove_task_classifiers()
                 for task in data_args.task_name:
                     model.add_task_classifier(task, dataset.get_labels()[task])
@@ -544,12 +544,16 @@ def main(
             # steps per epoch factors in gradient accumulation steps (as compared to batches_per_epoch above which doesn't)
             steps_per_epoch = int(total_steps // training_args.num_train_epochs)
             training_args.eval_steps = steps_per_epoch // training_args.evals_per_epoch
-            training_args.evaluation_strategy = IntervalStrategy.STEPS
+            training_args.evaluation_strategy = (
+                training_args.eval_strategy
+            ) = IntervalStrategy.STEPS
             # This will save model per epoch
             # training_args.save_strategy = IntervalStrategy.EPOCH
         elif training_args.do_eval:
             logger.info("Evaluation strategy not specified so evaluating every epoch")
-            training_args.evaluation_strategy = IntervalStrategy.EPOCH
+            training_args.evaluation_strategy = (
+                training_args.eval_strategy
+            ) = IntervalStrategy.EPOCH
 
     current_prediction_packet = deque()
 
