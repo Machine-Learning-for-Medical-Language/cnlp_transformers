@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, Set
+from typing import Any, Dict, List
 
 import numpy as np
 from seqeval.metrics import classification_report as seq_cls
@@ -34,7 +34,7 @@ def fix_np_types(input_variable):
 
 
 def tagging_metrics(
-    label_set: Set[str],
+    label_set: List[str],
     preds: np.ndarray,
     labels: np.ndarray,
     task_name: str,
@@ -85,7 +85,7 @@ def tagging_metrics(
 
 
 def relation_metrics(
-    label_set: Set[str],
+    label_set: List[str],
     preds: np.ndarray,
     labels: np.ndarray,
     task_name: str,
@@ -117,9 +117,11 @@ def relation_metrics(
     # scorer also ignores them.
     relevant_inds = np.where(labels != -100)
 
-    relevant_labels = labels[relevant_inds].astype("int")
-    relevant_preds = preds[relevant_inds]
-    num_correct = (relevant_labels == relevant_preds).sum()
+    relevant_labels = [label_set[i] for i in labels[relevant_inds].astype("int")]
+    relevant_preds = [label_set[i] for i in preds[relevant_inds].astype("int")]
+    num_correct = np.equal(
+        labels[relevant_inds].astype("int"), preds[relevant_inds].astype("int")
+    ).sum()
     acc = num_correct / len(relevant_preds)
 
     recall = recall_score(y_pred=relevant_preds, y_true=relevant_labels, average=None)
@@ -191,7 +193,7 @@ def cnlp_compute_metrics(
     preds: np.ndarray,
     labels: np.ndarray,
     output_mode: str,
-    label_set: Set[str],
+    label_set: List[str],
 ) -> Dict[str, Any]:
     """
     Function that defines and computes the metrics used for each task.
