@@ -67,6 +67,7 @@ class CnnSentenceClassifier(nn.Module):
         input_ids=None,
         event_tokens=None,
         labels=None,
+        output_hidden_states=False,
         **kwargs,
     ):
         embeddings = self.embed(input_ids)
@@ -103,8 +104,10 @@ class CnnSentenceClassifier(nn.Module):
                 loss += self.loss_fn[self.task_names[task_ind]](
                     task_logits, task_labels.type(torch.LongTensor).to(labels.device)
                 )
-
-        return loss, logits
+        if output_hidden_states:
+            return loss, logits, fc_in
+        else:
+            return loss, logits
 
 
 class LstmSentenceClassifier(nn.Module):
@@ -160,5 +163,4 @@ class LstmSentenceClassifier(nn.Module):
                 loss += self.loss_fn(
                     task_logits, task_labels.type(torch.LongTensor).to(labels.device)
                 )
-
         return loss, logits
