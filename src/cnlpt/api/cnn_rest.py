@@ -38,6 +38,8 @@ if model_name is None:
 logger = logging.getLogger("CNN_REST_Processor")
 logger.setLevel(logging.DEBUG)
 
+max_seq_length = 128
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -49,15 +51,12 @@ async def startup_event():
     num_labels_dict = {
         task: len(values) for task, values in conf_dict["label_dictionary"].items()
     }
-    model = CnnSentenceClassifier(
-        len(tokenizer),
+    model = CnnSentenceClassifier.from_pretrained(
+        model_name,
+        vocab_size=len(tokenizer),
         task_names=conf_dict["task_names"],
         num_labels_dict=num_labels_dict,
-        embed_dims=conf_dict["cnn_embed_dim"],
-        num_filters=conf_dict["num_filters"],
-        filters=conf_dict["filters"],
     )
-    model.load_state_dict(torch.load(join(model_name, "pytorch_model.bin")))
 
     app.state.model = model.to("cuda")
     app.state.tokenizer = tokenizer
@@ -67,9 +66,7 @@ async def startup_event():
 @app.post("/cnn/classify")
 async def process(doc: UnannotatedDocument):
     instances = [doc.doc_text]
-    dataset = get_dataset(
-        instances, app.state.tokenizer, max_length=app.state.conf_dict["max_seq_length"]
-    )
+    dataset = get_dataset(instances, app.state.tokenizer, max_length=max_seq_length)
     _, logits = app.state.model.forward(
         input_ids=torch.LongTensor(dataset["input_ids"]).to("cuda"),
         attention_mask=torch.LongTensor(dataset["attention_mask"]).to("cuda"),

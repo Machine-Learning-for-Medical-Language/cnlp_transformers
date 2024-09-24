@@ -2,10 +2,11 @@ from typing import Dict, List
 
 import torch
 import torch.nn.functional as F
+from huggingface_hub import PyTorchModelHubMixin
 from torch import nn
 
 
-class CnnSentenceClassifier(nn.Module):
+class CnnSentenceClassifier(nn.Module, PyTorchModelHubMixin):
     def __init__(
         self,
         vocab_size,
@@ -110,7 +111,7 @@ class CnnSentenceClassifier(nn.Module):
             return loss, logits
 
 
-class LstmSentenceClassifier(nn.Module):
+class LstmSentenceClassifier(nn.Module, PyTorchModelHubMixin):
     def __init__(
         self,
         vocab_size,
