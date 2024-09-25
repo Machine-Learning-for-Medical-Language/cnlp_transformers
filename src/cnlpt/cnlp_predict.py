@@ -148,13 +148,8 @@ def compute_disagreements(
     ), f"Predictions and labels have mismatched lengths {len(preds)} and {len(labels)}"
     if output_mode == classification:
         return classification_disagreements(preds=preds, labels=labels)
-    elif output_mode == tagging:
-        return tagging_disagreements(preds=preds, labels=labels)
-    elif output_mode == relex:
-        return relation_disagreements(
-            preds=preds,
-            labels=labels,
-        )
+    elif output_mode == tagging or output_mode == relex:
+        return relation_or_tagging_disagreements(preds=preds, labels=labels)
     else:
         raise Exception("As yet unsupported task in cnlpt")
 
@@ -164,12 +159,9 @@ def classification_disagreements(preds: np.ndarray, labels: np.ndarray) -> np.nd
     return indices
 
 
-def tagging_disagreements(preds: np.ndarray, labels: np.ndarray) -> np.ndarray:
-    (indices,) = np.where([any(neqs) for neqs in np.not_equal(preds, labels)])
-    return indices
-
-
-def relation_disagreements(preds: np.ndarray, labels: np.ndarray) -> np.ndarray:
+def relation_or_tagging_disagreements(
+    preds: np.ndarray, labels: np.ndarray
+) -> np.ndarray:
     (indices,) = np.where([neqs.any() for neqs in np.not_equal(preds, labels)])
     return indices
 
@@ -193,10 +185,15 @@ def process_prediction(
             task_to_error_inds[task] = compute_disagreements(
                 preds, labels, output_mode[task]
             )
+            print(
+                f"{task} - predictions: {len(preds)} - labels: {len(labels)} - error counts: {len(task_to_error_inds[task])}"
+            )
 
-        relevant_indices: Iterable[int] = {
+        unique_indices = {
             int(i) for i in chain.from_iterable(task_to_error_inds.values())
         }
+        # Otherwise Pandas allocates them wherever
+        relevant_indices = sorted(unique_indices)
 
     else:
         relevant_indices = range(len(eval_dataset["text"]))
@@ -217,7 +214,12 @@ def process_prediction(
 
     # ordering in terms of ease of reading
     out_table = pd.DataFrame(
-        columns=["text", *classification_tasks, *tagging_tasks, *relex_tasks],
+        columns=[
+            "text",
+            *sorted(classification_tasks),
+            *sorted(tagging_tasks),
+            *sorted(relex_tasks),
+        ],
         index=relevant_indices,
     )
 
@@ -256,7 +258,7 @@ def process_prediction(
             out_table[task_name][error_inds] = result_series
         else:
             out_table[task_name] = result_series
-        return out_table
+    return out_table
 
 
 # might be more efficient to return a pd.Series or something for the
@@ -387,14 +389,6 @@ def get_tagging_prints(
             for key, span in flatten_dict(d)
         )
         return result
-
-    # def group_and_span(inds: List[int]) -> Iterable[Tuple[int, int]]:
-    #     ranges = deque()
-    #     for _, group in groupby(enumerate(inds), lambda x: x[0] - x[1]):
-    #         index_group = [g[1] for g in group]
-    #         # adjusted for python list conventions
-    #         ranges.append((index_group[0], index_group[-1] + 1))
-    #     return ranges
 
     # since sometimes it's just
     # BIO with no suffixes and

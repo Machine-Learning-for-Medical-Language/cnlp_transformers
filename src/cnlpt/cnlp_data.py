@@ -339,7 +339,7 @@ def cnlp_preprocess_data(
         if character_level:
 
             def get_word_ids(indices: Iterable[int]) -> List[Union[None, int]]:
-                current = 1
+                current = 0
                 raw: Deque[Union[None, int]] = deque()
                 for index in indices:
                     if index in special_token_ids:
@@ -445,9 +445,6 @@ def cnlp_preprocess_data(
             tokenizer.convert_tokens_to_ids("</e>"),
         )
     else:
-        # logging.warn(
-        #     "No real implementation for character level event masking yet, using a placeholder"
-        # )
         result["event_mask"] = _build_event_mask_character(
             result,
             num_instances,
@@ -952,6 +949,10 @@ class ClinicalNlpDataset(Dataset):
 
         self.tasks = tasks
 
+        if self.args.character_level:
+            logging.warn(
+                "No real implementation for character level event masking yet, using a placeholder"
+            )
         self.processed_dataset = combined_dataset.map(
             cnlp_preprocess_data,
             batched=True,
