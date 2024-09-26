@@ -370,7 +370,7 @@ def get_tagging_prints(
         token_sep = " "
 
     def flatten_dict(
-        d: Dict[str, Iterable[Tuple[int, int]]]
+        d: Dict[str, List[Tuple[int, int]]]
     ) -> Iterable[Tuple[str, Tuple[int, int]]]:
         def tups(
             k: str, ls: Iterable[Tuple[int, int]]
@@ -382,7 +382,7 @@ def get_tagging_prints(
         )
 
     def dict_to_str(
-        d: Dict[str, Iterable[Tuple[int, int]]], tokens: Iterable[str]
+        d: Dict[str, List[Tuple[int, int]]], tokens: List[str]
     ) -> str:
         result = " , ".join(
             f'{key}: "{token_sep.join(tokens[span[0]:span[1]])}"'
@@ -403,7 +403,7 @@ def get_tagging_prints(
     def get_partitions(annotation: List[str]) -> str:
         return "".join(tag[0].upper() for tag in annotation)
 
-    def process_labels(annotation: str) -> Iterable[Tuple[int, int]]:
+    def process_labels(annotation: List[str]) -> Iterable[Tuple[int, int]]:
         span_begin, span_end = 0, 0
         indices = deque()
         partitions = get_partitions(annotation)
