@@ -18,13 +18,21 @@ from tqdm import tqdm
 parser = argparse.ArgumentParser()
 parser.add_argument("-d", "--data_dir", type=pathlib.Path, required=True, help="path to read data from. should be a directory (of json or txt files).")
 parser.add_argument("-o", "--out_dir", type=pathlib.Path, required=True, help="directory in which to save output")
-parser.add_argument("-u", "--rest_url", type=str, default="http://0.0.0.0:8000/temporal/process")
+parser.add_argument("-s", "--sentence_dir", type=pathlib.Path, required=True, help="directory in which to save sentences")
+parser.add_argument("-u", "--rest_url", type=str, default="http://0.0.0.0:8000/temporal/process",
+                    help="Primary REST server. Use GPU REST server for high throughput.")
+parser.add_argument("--backup_rest_url", type=str, default="http://0.0.0.0:8000/temporal/process",
+                    help=("Backup REST server. This server will be used if the primary server fails to process "
+                          "(often due to VRAM restrictions). Use a CPU REST server for stability, "
+                          "especially with large or long documents."))
 parser.add_argument("--input_format", choices=["json", "pkl", "txt"], default="json")
 parser.add_argument("--text_name", type=str, default="text", help="key to access the text in a dictionary format")
 parser.add_argument("--output_format", choices=["json", "pkl"], default="json")
 args = parser.parse_args()
 
 rush = RuSH("conf/rush_rules.tsv")
+#rush = RuSH("conf/rush_rules_cr.tsv")  # Use this if you want to use <cr> as a paragraph splitter.
+
 
 def read_file(filename):
     if args.input_format == "txt":
@@ -41,10 +49,10 @@ def read_file(filename):
 
 def write_file(data, out_filename):
     if args.output_format == "json":
-        with open(os.path.join(args.out_dir, out_filename), "w") as f:
+        with open(out_filename, "w") as f:
             json.dump(data, f)
     elif args.output_format == "pkl":
-        with open(os.path.join(args.out_dir, out_filename), "wb") as f:
+        with open(out_filename, "wb") as f:
             pickle.dump(data, f)
 
 
@@ -62,7 +70,13 @@ def preprocess(sents):
 
 
 if __name__ == "__main__":
+    os.makedirs(args.out_dir, exist_ok=True)
+    os.makedirs(args.sentence_dir, exist_ok=True)
+    
     in_files = [f for f in os.listdir(args.data_dir) if f.endswith("." + args.input_format)]
+    
+    retry_attempts_cnt = 0
+     
     for filename in tqdm(in_files):
         bare_filename = filename.split(".")[0]
         out_filename = bare_filename + "." + args.output_format
@@ -84,13 +98,22 @@ if __name__ == "__main__":
         
         # send off to rest
         r = requests.post(args.rest_url, json={"sent_tokens": sent_tokens, "metadata": f"FNAME={filename}"})
+        if r.status_code == 500:
+            sys.stderr.write(f"Failed from primary server.\nRe-try with alternative server :{args.backup_rest_url}\n")
+            r = requests.post(args.backup_rest_url, json={"sent_tokens": sent_tokens, "metadata": f"FNAME={filename}"})
+            retry_attempts_cnt += 1
+            sys.stderr.write(f"Current retry_attempts_cnt: {retry_attempts_cnt}\n")
         if r.status_code != 200:
             raise Exception(f"Problem processing {filename}: status code {r.status_code}")
+            
         out_json = r.json()
 
-        events, timexes, rels = {}, {}, []
+        events_docs, timexes_docs, rels_docs = [], [], []
+        sent_text_list = []
         for sent_idx, sent in enumerate(sents):
-            sent_text = text[sent.begin:sent.end]
+            events, timexes, rels = [], [], []
+            sent_text = text[sent.begin:sent.end+1]
+            sent_text_list.append(sent_text)
             sent_events = out_json["events"][sent_idx]
             sent_timexes = out_json["timexes"][sent_idx]
             sent_rels = out_json["relations"][sent_idx]
@@ -102,24 +125,37 @@ if __name__ == "__main__":
                 timex_text =  text[timex_start_offset:timex_end_offset]
                 timex_id = f"Timex_{bare_filename}_Sent-{sent_idx}_Ind-{len(timex_ids)}"
                 timex_ids.append(timex_id)
-                timexes[timex_id] = {"note_id": bare_filename,  # NOTE: this is "row_id" in `extract_mimic_temporal`
-                                     "sent_index": sent_idx,
-                                     "begin": timex_start_offset,
-                                     "end": timex_end_offset,
-                                     "text": timex_text,
-                                     "timeClass": timex["timeClass"]}
+                timexes.append({
+                    "note_id": bare_filename,  # NOTE: this is "row_id" in `extract_mimic_temporal`
+                    "entity_id":timex_id,
+                    "sent_index": sent_idx,
+                    "begin":timex["begin"],
+                    "end":timex["end"],
+                    "sent_begin":sent.begin,
+                    "begin_char": token_spans[timex["begin"]][0],
+                    "end_char": token_spans[timex["end"]][1],
+                    "begin_origin": timex_start_offset,
+                    "end_origin": timex_end_offset,
+                    "text": timex_text,
+                    "timeClas": timex["timeClass"]})
             for event in sent_events:
                 event_start_offset = token_spans[event["begin"]][0] + sent.begin
                 event_end_offset = token_spans[event["end"]][1] + sent.begin
                 event_text =  text[event_start_offset:event_end_offset]
                 event_id = f"Event_{bare_filename}_Sent-{sent_idx}_Ind-{len(event_ids)}"
                 event_ids.append(event_id)
-                events[event_id] = {"note_id": bare_filename,  # NOTE: this is "row_id" in `extract_mimic_temporal`
-                                    "sent_index": sent_idx,
-                                    "begin": event_start_offset,
-                                    "end": event_end_offset,
-                                    "text": event_text,
-                                    "dtr": event["dtr"]}
+                events.append({"note_id": bare_filename,  # NOTE: this is "row_id" in `extract_mimic_temporal`
+                               "entity_id": event_id,
+                               "sent_index": sent_idx,
+                               "begin":event["begin"],
+                               "end":event["end"],
+                               "sent_begin":sent.begin,
+                               "begin_char": token_spans[event["begin"]][0] ,
+                               "end_char": token_spans[event["end"]][1],
+                               "begin_origin": event_start_offset,
+                               "end_origin": event_end_offset,
+                               "text": event_text,
+                               "dtr": event["dtr"]})
             
             for rel in sent_rels:
                 if rel["arg1"] is None or rel["arg2"] is None:
@@ -145,8 +181,22 @@ if __name__ == "__main__":
                             "arg1": arg1, 
                             "arg2": arg2, 
                             "category": rel["category"]})
+            
+            timexes_docs.append(timexes)
+            events_docs.append(events)
+            rels_docs.append(rels)
                 
-        temporal_info = {"timexes": timexes,  # TODO call these "timex" and "event"?
-                         "events": events, 
-                         "relations": rels}
-        write_file(temporal_info, out_filename)
+        temporal_info = {
+                         "timexes": timexes_docs,  # TODO call these "timex" and "event"?
+                         "events": events_docs, 
+                         "relations": rels_docs,
+                         }
+        write_file(
+            temporal_info, 
+            os.path.join(args.out_dir, out_filename)
+        )
+        write_file(
+            {"sentences": sent_text_list},
+            os.path.join(args.sentence_dir, out_filename)
+        )
+    sys.stderr.write(f"Current retry_attempts_cnt: {retry_attempts_cnt}\n")
