@@ -162,7 +162,12 @@ def classification_disagreements(preds: np.ndarray, labels: np.ndarray) -> np.nd
 def relation_or_tagging_disagreements(
     preds: np.ndarray, labels: np.ndarray
 ) -> np.ndarray:
-    (indices,) = np.where([neqs.any() for neqs in np.not_equal(preds, labels)])
+    (indices,) = np.where(
+        [
+            np.not_equal(pred[label != -100], label[label != -100]).any()
+            for pred, label in zip(preds.astype(int), labels.astype(int))
+        ]
+    )
     return indices
 
 
@@ -184,9 +189,6 @@ def process_prediction(
             preds, labels, prob_values = label_packet
             task_to_error_inds[task] = compute_disagreements(
                 preds, labels, output_mode[task]
-            )
-            print(
-                f"{task} - predictions: {len(preds)} - labels: {len(labels)} - error counts: {len(task_to_error_inds[task])}"
             )
 
         unique_indices = {
@@ -286,6 +288,7 @@ def get_outputs(
             ground_truth = labels[error_inds].astype(int)
             task_prediction = prediction[error_inds].astype(int)
             text_samples = pd.Series(text_column[error_inds])
+            word_ids = [word_ids[error_ind] for error_ind in error_inds]
         else:
             relevant_prob_values = prob_values
             ground_truth = labels.astype(int)
@@ -381,9 +384,7 @@ def get_tagging_prints(
             (((k, span) for k, span in tups(key, spans)) for key, spans in d.items())
         )
 
-    def dict_to_str(
-        d: Dict[str, List[Tuple[int, int]]], tokens: List[str]
-    ) -> str:
+    def dict_to_str(d: Dict[str, List[Tuple[int, int]]], tokens: List[str]) -> str:
         result = " , ".join(
             f'{key}: "{token_sep.join(tokens[span[0]:span[1]])}"'
             for key, span in flatten_dict(d)
@@ -451,21 +452,16 @@ def get_tagging_prints(
         )
 
         for key in {*ground_dict.keys(), *pred_dict.keys()}:
-            ground_spans = ground_dict[key] if key in ground_dict.keys() else []
+            ground_spans = ground_dict.get(key, [])
+            pred_spans = pred_dict.get(key, [])
 
-            pred_spans = pred_dict[key] if key in pred_dict.keys() else []
-
-            ground_not_in_pred = [
+            disagreements["ground"][key].extend(
                 span for span in ground_spans if span not in pred_spans
-            ]
+            )
 
-            pred_not_in_ground = [
+            disagreements["predicted"][key].extend(
                 span for span in pred_spans if span not in ground_spans
-            ]
-
-            disagreements["ground"][key].extend(ground_not_in_pred)
-
-            disagreements["predicted"][key].extend(pred_not_in_ground)
+            )
 
         return disagreements
 
@@ -473,17 +469,9 @@ def get_tagging_prints(
         disagreements: Dict[str, Dict[str, List[Tuple[int, int]]]], instance: str
     ) -> str:
         instance_tokens = get_tokens(instance)
-        ground_string = (
-            dict_to_str(disagreements["ground"], instance_tokens)
-            if "ground" in disagreements.keys()
-            else ""
-        )
+        ground_string = dict_to_str(disagreements["ground"], instance_tokens)
 
-        predicted_string = (
-            dict_to_str(disagreements["predicted"], instance_tokens)
-            if "predicted" in disagreements.keys()
-            else ""
-        )
+        predicted_string = dict_to_str(disagreements["predicted"], instance_tokens)
 
         if len(ground_string) == 0 == len(predicted_string):
             return f"_no_{task_name.lower()}_errors_"
@@ -499,7 +487,7 @@ def get_tagging_prints(
 
     pred_span_dictionaries = (
         types_to_spans(pred, word_id_ls)
-        for pred, word_id_ls in zip(resolved_predictions, word_ids)
+        for pred, word_id_ls in zip(task_predictions, word_ids)
     )
     if ground_truths is not None:
         ground_span_dictionaries = (
