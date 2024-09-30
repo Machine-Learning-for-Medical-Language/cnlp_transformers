@@ -558,6 +558,7 @@ def main(
                 bias_fit=training_args.bias_fit,
             )
 
+    model_type = type(model)
     output_eval_file = os.path.join(training_args.output_dir, "eval_results.txt")
     if training_args.do_train:
         # TODO: This assumes that if there are multiple training sets, they all have the same length, but
@@ -694,7 +695,12 @@ def main(
                                     ),
                                     "w",
                                 ) as f:
-                                    json.dump(model_args.to_dict(), f)
+                                    config_dict = model_args.to_dict()
+                                    config_dict["label_dictionary"] = (
+                                        dataset.get_labels()
+                                    )
+                                    config_dict["task_names"] = task_names
+                                    json.dump(config_dict, f)
                         for task_ind, task_name in enumerate(metrics):
                             with open(output_eval_file, "a") as writer:
                                 logger.info(
@@ -751,10 +757,13 @@ def main(
                 trainer.save_model()
                 tokenizer.save_pretrained(training_args.output_dir)
                 if model_name == "cnn" or model_name == "lstm":
+                    config_dict = model_args.to_dict()
+                    config_dict["label_dictionary"] = dataset.get_labels()
+                    config_dict["task_names"] = task_names
                     with open(
                         os.path.join(training_args.output_dir, "config.json"), "w"
                     ) as f:
-                        json.dump(model_args, f)
+                        json.dump(config_dict, f)
 
     # Evaluation
     eval_results = {}
@@ -790,10 +799,19 @@ def main(
                         writer.write(f"{key} : {value} \n")
             # here we probably want separate predictions for each dataset:
             if training_args.load_best_model_at_end:
-                model.load_state_dict(
-                    torch.load(join(training_args.output_dir, "pytorch_model.bin"))
-                )  # load best model
-                trainer = Trainer(  # maake trainer from best model
+                model_path = training_args.output_dir
+                if model_name == "cnn" or model_name == "lstm":
+                    # non-HF models need manually passed config args
+                    model = model_type.from_pretrained(
+                        model_path,
+                        vocab_size=len(tokenizer),
+                        task_names=task_names,
+                        num_labels_dict=num_labels,
+                    )
+                else:
+                    model = model_type.from_pretrained(model_path)
+
+                trainer = Trainer(  # make trainer from best model
                     model=model,
                     args=training_args,
                     train_dataset=dataset.processed_dataset.get("train", None),
