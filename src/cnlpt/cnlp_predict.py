@@ -22,6 +22,8 @@ logging.basicConfig(
     datefmt="%m/%d/%Y %H:%M:%S",
     level=logging.INFO,
 )
+
+
 def simple_softmax(x: list):
     """Softmax values for 1-D score array"""
     return np.exp(x) / np.sum(np.exp(x), axis=0)
@@ -264,7 +266,9 @@ def process_prediction(
         if len(error_inds) > 0:
             out_table[task_name][error_inds] = result_series
             remaining_indices = sorted(unique_indices - set(error_inds))
-            out_table[task_name][remaining_indices] = len(remaining_indices) * [f"_no_{task_name}_errors_"]
+            out_table[task_name][remaining_indices] = len(remaining_indices) * [
+                f"_no_{task_name}_errors_"
+            ]
         else:
             out_table[task_name] = result_series
     return out_table
@@ -448,8 +452,12 @@ def get_tagging_prints(
         raw_labels = [tagging_labels[tag] for _, tag in relevant_token_ids_and_tags]
         raw_spans = process_labels(raw_labels)
         span_tuples = [(get_ner_type(raw_labels[tup[0]]), tup) for tup in raw_spans]
-        if len(span_tuples) == 0 and any(tag in {t for _,t in relevant_token_ids_and_tags} for tag in others):
-            logger.warning(f"{src} {idx} discoveries but no spans\n\n{raw_spans}\n\n{raw_labels}\n\n{word_ids}\n\n{raw_tag_inds}")
+        if len(span_tuples) == 0 and any(
+            tag in {t for _, t in relevant_token_ids_and_tags} for tag in others
+        ):
+            logger.warning(
+                f"{src} {idx} discoveries but no spans\n\n{raw_spans}\n\n{raw_labels}\n\n{word_ids}\n\n{raw_tag_inds}"
+            )
         type_to_spans = {
             ner_type: [g[1] for g in group]
             for ner_type, group in groupby(
@@ -484,8 +492,9 @@ def get_tagging_prints(
         return disagreements
 
     def get_error_out_string(
-            # disagreements: Dict[str, Dict[str, List[Tuple[int, int]]]], instance: str
-            idx, tup
+        # disagreements: Dict[str, Dict[str, List[Tuple[int, int]]]], instance: str
+        idx,
+        tup,
     ) -> str:
         disagreements, instance = tup
         instance_tokens = get_tokens(instance)
@@ -550,6 +559,7 @@ def get_relex_prints(
 ) -> pd.Series:
     resolved_predictions = task_predictions
     none_index = relex_labels.index("None") if "None" in relex_labels else -1
+
     # thought we'd filtered them out but apparently not
     def tuples_to_str(label_tuples: Iterable[Cell]) -> str:
         return " ".join(
@@ -647,7 +657,9 @@ def get_relex_prints(
             if len(pred_cells) == 0 == len(ground_cells):
                 print(f"DISAGREEMENT WITH NO DATA")
             else:
-                print(f"THIS SHOULDN'T HAPPEN bad cells: {bad_cells} ground cells: {ground_cells} ")
+                print(
+                    f"THIS SHOULDN'T HAPPEN bad cells: {bad_cells} ground cells: {ground_cells} "
+                )
             if len(bad_cells_str) > 0:
                 return "INVALID RELATION LABELS : {bad_cells_str}"
             return f"_no_{task_name}_errors_"
