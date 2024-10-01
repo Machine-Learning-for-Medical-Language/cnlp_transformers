@@ -17,6 +17,11 @@ logger = logging.getLogger(__name__)
 Cell = Tuple[int, int, int]
 
 
+logging.basicConfig(
+    format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
+    datefmt="%m/%d/%Y %H:%M:%S",
+    level=logging.INFO,
+)
 def simple_softmax(x: list):
     """Softmax values for 1-D score array"""
     return np.exp(x) / np.sum(np.exp(x), axis=0)
@@ -190,7 +195,6 @@ def process_prediction(
             task_to_error_inds[task] = compute_disagreements(
                 preds, labels, output_mode[task]
             )
-
         unique_indices = {
             int(i) for i in chain.from_iterable(task_to_error_inds.values())
         }
@@ -239,6 +243,7 @@ def process_prediction(
         task_to_label_packet.items(), desc="getting human readable labels"
     ):
         preds, labels, prob_values = packet
+        print(f"{task_name} has {len(preds)} predictions and {len(labels)} labels")
         if not output_prob:
             prob_values = np.array([])
         task_labels = task_to_label_space[task_name]
@@ -258,6 +263,8 @@ def process_prediction(
         )
         if len(error_inds) > 0:
             out_table[task_name][error_inds] = result_series
+            remaining_indices = sorted(unique_indices - set(error_inds))
+            out_table[task_name][remaining_indices] = len(remaining_indices) * [f"_no_{task_name}_errors_"]
         else:
             out_table[task_name] = result_series
     return out_table
@@ -334,8 +341,9 @@ def get_classification_prints(
     def clean_string(gp: Tuple[str, str]) -> str:
         ground, predicted = gp
         if ground == predicted:
+            logger.warning("INVALID CLASSIFICATION DISAGREEMENT")
             return f"_no_{task_name}_error_"
-        return f"Ground: {ground} , Predicted: {predicted}"
+        return f"Ground: {ground} Predicted: {predicted}"
 
     pred_list = predicted_labels
     if ground_truths is not None:
@@ -421,7 +429,12 @@ def get_tagging_prints(
             span_begin = span_end + 1
         return indices
 
-    def types_to_spans(raw_tag_inds: np.ndarray, word_ids: List[Union[None, int]]):
+    outside_mention_idx = tagging_labels.index("O")
+    others = set(range(len(tagging_labels))) - {outside_mention_idx}
+
+    # def types_to_spans(raw_tag_inds: np.ndarray, word_ids: List[Union[None, int]]):
+    def types_to_spans(idx, src, tup):
+        raw_tag_inds, word_ids = tup
         relevant_token_ids_and_tags = [
             (word_id, tag)
             for word_id, tag in zip(word_ids, raw_tag_inds)
@@ -435,6 +448,8 @@ def get_tagging_prints(
         raw_labels = [tagging_labels[tag] for _, tag in relevant_token_ids_and_tags]
         raw_spans = process_labels(raw_labels)
         span_tuples = [(get_ner_type(raw_labels[tup[0]]), tup) for tup in raw_spans]
+        if len(span_tuples) == 0 and any(tag in {t for _,t in relevant_token_ids_and_tags} for tag in others):
+            logger.warning(f"{src} {idx} discoveries but no spans\n\n{raw_spans}\n\n{raw_labels}\n\n{word_ids}\n\n{raw_tag_inds}")
         type_to_spans = {
             ner_type: [g[1] for g in group]
             for ner_type, group in groupby(
@@ -451,6 +466,9 @@ def get_tagging_prints(
             lambda: defaultdict(list)
         )
 
+        ground_values = list(chain.from_iterable(ground_dict.values()))
+        pred_values = list(chain.from_iterable(pred_dict.values()))
+
         for key in {*ground_dict.keys(), *pred_dict.keys()}:
             ground_spans = ground_dict.get(key, [])
             pred_spans = pred_dict.get(key, [])
@@ -466,15 +484,20 @@ def get_tagging_prints(
         return disagreements
 
     def get_error_out_string(
-        disagreements: Dict[str, Dict[str, List[Tuple[int, int]]]], instance: str
+            # disagreements: Dict[str, Dict[str, List[Tuple[int, int]]]], instance: str
+            idx, tup
     ) -> str:
+        disagreements, instance = tup
         instance_tokens = get_tokens(instance)
         ground_string = dict_to_str(disagreements["ground"], instance_tokens)
 
         predicted_string = dict_to_str(disagreements["predicted"], instance_tokens)
 
         if len(ground_string) == 0 == len(predicted_string):
-            return f"_no_{task_name.lower()}_errors_"
+            # logger.warning("{idx} TAGGING DISAGREEMENT FOUND WITH BLANK STR RESULTS")
+            # if not len(disagreements["ground"]) == 0 == len(disagreements["predicted"]):
+            #     logger.warning("TAGGING DISAGREEMENT FOUND WITH BLANK STR INPUT")
+            return f"_no_{task_name}_errors_"
 
         return f"Ground: {ground_string} Predicted: {predicted_string}"
 
@@ -486,13 +509,17 @@ def get_tagging_prints(
         return result
 
     pred_span_dictionaries = (
-        types_to_spans(pred, word_id_ls)
-        for pred, word_id_ls in zip(task_predictions, word_ids)
+        # types_to_spans(pred, word_id_ls)
+        # for pred, word_id_ls in zip(task_predictions, word_ids)
+        types_to_spans(idx, "pred", tup)
+        for idx, tup in enumerate(zip(task_predictions, word_ids))
     )
     if ground_truths is not None:
         ground_span_dictionaries = (
-            types_to_spans(ground_truth, word_id_ls)
-            for ground_truth, word_id_ls in zip(ground_truths, word_ids)
+            # types_to_spans(ground_truth, word_id_ls)
+            # for ground_truth, word_id_ls in zip(ground_truths, word_ids)
+            types_to_spans(idx, "ground", tup)
+            for idx, tup in enumerate(zip(ground_truths, word_ids))
         )
         disagreement_dicts = (
             dictmerge(ground_dictionary, pred_dictionary)
@@ -502,8 +529,10 @@ def get_tagging_prints(
         )
 
         return pd.Series(
-            get_error_out_string(disagreements, instance)
-            for disagreements, instance in zip(disagreement_dicts, text_samples)
+            # get_error_out_string(disagreements, instance)
+            # for disagreements, instance in zip(disagreement_dicts, text_samples)
+            get_error_out_string(idx, tup)
+            for idx, tup in enumerate(zip(disagreement_dicts, text_samples))
         )
 
     return pd.Series(
@@ -521,7 +550,6 @@ def get_relex_prints(
 ) -> pd.Series:
     resolved_predictions = task_predictions
     none_index = relex_labels.index("None") if "None" in relex_labels else -1
-
     # thought we'd filtered them out but apparently not
     def tuples_to_str(label_tuples: Iterable[Cell]) -> str:
         return " ".join(
@@ -578,30 +606,30 @@ def get_relex_prints(
             return [], [], []
 
         bad_cells = (
-            (
+            [
                 (*i, j)
                 for i, j in zip(
                     zip(invalid_ground_inds, invalid_ground_inds),
                     ground_matrix[invalid_ground_inds, invalid_ground_inds],
                 )
-            )
+            ]
             if len(invalid_ground_inds) > 0
             else []
         )
         # nones will just clutter things up
         # and we will be able to infer disagreements on nones
         # from each other
-        ground_cells = (
+        ground_cells = [
             cell
             for cell in zip(*disagreements, ground_matrix[disagreements])
             if cell[-1] != none_index
-        )
+        ]
 
-        pred_cells = (
+        pred_cells = [
             cell
             for cell in zip(*disagreements, pred_matrix[disagreements])
             if cell[-1] != none_index
-        )
+        ]
 
         return bad_cells, ground_cells, pred_cells
 
@@ -615,8 +643,11 @@ def get_relex_prints(
         ground_cells_str = tuples_to_str(ground_cells)
 
         pred_cells_str = tuples_to_str(pred_cells)
-
         if len(ground_cells_str) == 0 == len(pred_cells_str):
+            if len(pred_cells) == 0 == len(ground_cells):
+                print(f"DISAGREEMENT WITH NO DATA")
+            else:
+                print(f"THIS SHOULDN'T HAPPEN bad cells: {bad_cells} ground cells: {ground_cells} ")
             if len(bad_cells_str) > 0:
                 return "INVALID RELATION LABELS : {bad_cells_str}"
             return f"_no_{task_name}_errors_"
@@ -625,7 +656,7 @@ def get_relex_prints(
             if len(bad_cells_str) > 0
             else ""
         )
-        return f"{bad_out}Ground: {ground_cells_str} , Predicted: {pred_cells_str}"
+        return f"{bad_out}Ground: {ground_cells_str} Predicted: {pred_cells_str}"
 
     def to_pred_string(reduced_matrix: np.ndarray) -> str:
         non_none_inds = np.where(reduced_matrix != none_index)

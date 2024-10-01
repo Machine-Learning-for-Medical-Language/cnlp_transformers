@@ -19,3 +19,15 @@
 
 For chemical NER and the following for gene NER (`GENE-Y` are normalizable gene names and `GENE-N` are non-normalizable):
 ```gene_ner = {'acc': 0.9835720382010852, 'token_f1': [0.5503875968992249, 0.8223125230882896, 0.0, 0.0, 0.9949847518170479], 'f1': 0.7477207783371888, 'report': '\n              precision    recall  f1-score   support\n\n      GENE-N       0.70      0.45      0.55      2355\n      GENE-Y       0.76      0.88      0.82      5013\n\n   micro avg       0.75      0.75      0.75      7368\n   macro avg       0.73      0.67      0.68      7368\nweighted avg       0.74      0.75      0.73      7368\n'}```
+
+If you run the command above with the `--error_analysis` flag, you can see the instances which the model got wrong on the dev set in `temp/eval_predictions_scispacy_chemprot...tsv`.
+```
+	text	chemical_ner	gene_ner	end_to_end
+2	The mechanisms of these CNS effects of DM have been suggested to be associated with the low-affinity , noncompetitive , N-methyl-d-aspartate ( NMDA ) antagonism of DM and/or the high-affinity DM/sigma receptors .	Ground: chemical: "DM/sigma" Predicted: 	Ground:  Predicted: n: "DM/sigma"	
+...
+```
+The first column are the instances from dev and the subsequent columns are the tasks on which the model was run.  
+We only output instances for which there exists at least one error under a given task.  
+If the prediction for an instance on a given task is erroneous, the column cell will be of the form `Ground: ... Predicted: ...`, 
+where `Ground` is the relevant part of the gold label for the instance error and `Predicted` is the relevant part of the 
+model's prediction for the instance error.  If there is no error for the instance, the column cell will be `_no_{task_name}_errors_`
