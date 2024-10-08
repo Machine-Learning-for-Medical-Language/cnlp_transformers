@@ -424,7 +424,7 @@ def get_tagging_prints(
         # any nummber of I's, e.g.
         # OOOOOOBBBBBBBIIIIBIBIBI
         # -> OOOOOO B B B B B B BIIII BI BI BI
-        for span in filter(None, re.split(r"(BI*)", partitions)):
+        for span in filter(None, re.split(r"[B|I]+", partitions)):
             span_end = len(span) + span_begin - 1
             if span[0] == "B":
                 # Get indices in list/string of each span
