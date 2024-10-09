@@ -1,12 +1,13 @@
-from enum import Enum
 import logging
 import re
 from collections import defaultdict, deque
+from enum import Enum
 from itertools import chain, groupby
 from operator import itemgetter
-from typing import Dict, Iterable, List, Tuple, Union
+from typing import Callable, Dict, Iterable, List, Sequence, Tuple, Union
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 import tqdm
 from transformers import EvalPrediction
@@ -20,8 +21,8 @@ class SpanBegin(Enum):
     VALID = 0
     INVALID = 1
 
-    def __str__(self):
-        if self.name == SpanBegin.VALID:
+    def __str__(self) -> str:
+        if self.value == 0:
             return ""
         return "WARNING: Invalid span beginning ( first token is I- )"
 
@@ -96,8 +97,8 @@ def structure_labels(
     # disagreement collection stuff for this scope
 
     pad = 0
-    prob_values = np.ndarray([])
-    labels = np.ndarray([])
+    prob_values: npt.NDArray[np.float64] = np.ndarray([])
+    labels: npt.NDArray[np.int64] = np.ndarray([])
     if tagger[task_name]:
         preds = np.argmax(p.predictions[task_ind], axis=2)
         # labels will be -100 where we don't need to tag
@@ -213,8 +214,9 @@ def process_prediction(
         unique_indices = {
             int(i) for i in chain.from_iterable(task_to_error_inds.values())
         }
-        # Otherwise Pandas allocates them wherever
-        relevant_indices = sorted(unique_indices)
+        # Indices need to be ordered otherwise Pandas
+        # assumes the order in memory
+        relevant_indices: Sequence[int] = sorted(unique_indices)
 
     else:
         unique_indices = set()
@@ -226,11 +228,11 @@ def process_prediction(
         if output_mode[task_name] == classification
     )
 
-    tagging_tasks = (
+    tagging_tasks = sorted(
         task_name for task_name in task_names if output_mode[task_name] == tagging
     )
 
-    relex_tasks = (
+    relex_tasks = sorted(
         task_name for task_name in task_names if output_mode[task_name] == relex
     )
 
@@ -238,9 +240,9 @@ def process_prediction(
     out_table = pd.DataFrame(
         columns=[
             "text",
-            *sorted(classification_tasks),
-            *sorted(tagging_tasks),
-            *sorted(relex_tasks),
+            *classification_tasks,
+            *tagging_tasks,
+            *relex_tasks,
         ],
         index=relevant_indices,
     )
@@ -259,7 +261,6 @@ def process_prediction(
         task_to_label_packet.items(), desc="getting human readable labels"
     ):
         preds, labels, prob_values = packet
-        print(f"{task_name} has {len(preds)} predictions and {len(labels)} labels")
         if not output_prob:
             prob_values = np.array([])
         task_labels = task_to_label_space[task_name]
@@ -344,7 +345,7 @@ def get_outputs(
             pred_task, task_labels, ground_truth, task_prediction, word_ids
         )
     else:
-        pd.Series("UNSUPPORTED TASK TYPE" for _ in error_inds)
+        pd.Series(len(error_inds) * ["UNSUPPORTED TASK TYPE"])
 
 
 def get_classification_prints(
@@ -359,8 +360,7 @@ def get_classification_prints(
     def clean_string(gp: Tuple[str, str]) -> str:
         ground, predicted = gp
         if ground == predicted:
-            logger.warning("INVALID CLASSIFICATION DISAGREEMENT")
-            return f"_no_{task_name}_error_"
+            return f"_{task_name}_error_detection_bug_"
         return f"Ground: {ground} Predicted: {predicted}"
 
     pred_list = predicted_labels
@@ -388,7 +388,7 @@ def get_tagging_prints(
 ) -> pd.Series:
     # to save ourselves the branch instructions
     # in all the nested functions
-    get_tokens = lambda _: []
+    get_tokens: Callable[[str], List[str]] = lambda _: []
     token_sep = ""  # default since typesystem doesn't like the None
     if character_level:
         get_tokens = lambda inst: [token for token in inst if token is not None]
@@ -434,28 +434,25 @@ def get_tagging_prints(
     # we run into only occasionally
     def process_labels(annotation: List[str]) -> Iterable[Span]:
         span_begin, span_end = 0, 0
-        indices = deque()
         partitions = get_partitions(annotation)
-        for span in filter(None, re.split(r"[B|I]+", partitions)):
-            span_end = len(span) + span_begin - 1
-            valid_begin = span[0] == "B"
-            invalid_begin = span[0] == "I"
+        for tag_group in filter(None, re.split(r"(B?I*)|(O+)", partitions)):
+            span_end = len(tag_group) + span_begin - 1
+            valid_begin = tag_group[0] == "B"
+            invalid_begin = tag_group[0] == "I"
             if valid_begin or invalid_begin:
                 # Get indices in list/string of each span
                 # which describes a mention
-                indices.append(
-                    (
-                        span_begin,
-                        span_end + 1,
-                        SpanBegin.VALID if valid_begin else SpanBegin.INVALID,
-                    )
+                span = (
+                    span_begin,
+                    span_end + 1,
+                    SpanBegin.VALID if valid_begin else SpanBegin.INVALID,
                 )
+                yield span
             span_begin = span_end + 1
-        return indices
 
     def types_to_spans(
         raw_tag_inds: np.ndarray, word_ids: List[Union[None, int]]
-    ) -> Dict[str, List[Tuple[int, int, SpanBegin]]]:
+    ) -> Dict[str, List[Span]]:
         # def types_to_spans(idx, src, tup):
         # raw_tag_inds, word_ids = tup
         relevant_token_ids_and_tags = [
@@ -465,18 +462,14 @@ def get_tagging_prints(
         ]
         relevant_token_ids_and_tags = [
             next(group)
-            for _, group in groupby(relevant_token_ids_and_tags, key=lambda s: s[0])
+            for _, group in groupby(relevant_token_ids_and_tags, key=itemgetter(0))
         ]
 
         raw_labels = [tagging_labels[tag] for _, tag in relevant_token_ids_and_tags]
-        raw_spans = process_labels(raw_labels)
-        span_tuples = [(get_ner_type(raw_labels[tup[0]]), tup) for tup in raw_spans]
-        # if len(span_tuples) == 0 and any(
-        #     tag in {t for _, t in relevant_token_ids_and_tags} for tag in others
-        # ):
-        #     logger.warning(
-        #         f"{src} {idx} discoveries but no spans\n\n{raw_spans}\n\n{raw_labels}\n\n{word_ids}\n\n{raw_tag_inds}"
-        # )
+        span_tuples = [
+            (get_ner_type(raw_labels[tup[0]]), tup)
+            for tup in process_labels(raw_labels)
+        ]
         type_to_spans = {
             ner_type: [g[1] for g in group]
             for ner_type, group in groupby(
@@ -522,7 +515,7 @@ def get_tagging_prints(
             # logger.warning("{idx} TAGGING DISAGREEMENT FOUND WITH BLANK STR RESULTS")
             # if not len(disagreements["ground"]) == 0 == len(disagreements["predicted"]):
             #     logger.warning("TAGGING DISAGREEMENT FOUND WITH BLANK STR INPUT")
-            return f"_no_{task_name}_errors_"
+            return f"_{task_name}_error_detection_bug_"
 
         return f"Ground: {ground_string} Predicted: {predicted_string}"
 
@@ -669,15 +662,12 @@ def get_relex_prints(
 
         pred_cells_str = tuples_to_str(pred_cells)
         if len(ground_cells_str) == 0 == len(pred_cells_str):
-            if len(pred_cells) == 0 == len(ground_cells):
-                print(f"DISAGREEMENT WITH NO DATA")
-            else:
-                print(
-                    f"THIS SHOULDN'T HAPPEN bad cells: {bad_cells} ground cells: {ground_cells} "
-                )
-            if len(bad_cells_str) > 0:
-                return "INVALID RELATION LABELS : {bad_cells_str}"
-            return f"_no_{task_name}_errors_"
+            bad_cells_msg = (
+                "INVALID RELATION LABELS : {bad_cells_str} "
+                if len(bad_cells_str) > 0
+                else ""
+            )
+            return f"{bad_cells_msg}{task_name}_error_detection_bug_"
         bad_out = (
             f"INVALID RELATION LABELS : {bad_cells_str} , "
             if len(bad_cells_str) > 0
