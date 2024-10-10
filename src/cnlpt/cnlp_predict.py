@@ -497,24 +497,30 @@ def get_tagging_prints(
                 span for span in pred_spans if span not in ground_spans
             )
 
+        def empty_disagree(key: str) -> bool:
+            return (
+                len(disagreements["predicted"][key])
+                == 0
+                == len(disagreements["ground"][key])
+            )
+
+        if all(empty_disagree[key] for key in {*ground_dict.keys(), *pred_dict.keys()}):
+            logger.warning(
+                f"Empty disagreements, here are the ground vs pred spans {ground_dict} {pred_dict}"
+            )
+
         return disagreements
 
     def get_error_out_string(
         disagreements: Dict[str, Dict[str, List[Span]]],
         instance: str,
-        # idx,
-        # tup,
     ) -> str:
-        # disagreements, instance = tup
         instance_tokens = get_tokens(instance)
         ground_string = dict_to_str(disagreements["ground"], instance_tokens)
 
         predicted_string = dict_to_str(disagreements["predicted"], instance_tokens)
 
         if len(ground_string) == 0 == len(predicted_string):
-            # logger.warning("{idx} TAGGING DISAGREEMENT FOUND WITH BLANK STR RESULTS")
-            # if not len(disagreements["ground"]) == 0 == len(disagreements["predicted"]):
-            #     logger.warning("TAGGING DISAGREEMENT FOUND WITH BLANK STR INPUT")
             return f"_{task_name}_error_detection_bug_"
 
         return f"Ground: {ground_string} Predicted: {predicted_string}"
@@ -527,16 +533,11 @@ def get_tagging_prints(
     pred_span_dictionaries = (
         types_to_spans(pred, word_id_ls)
         for pred, word_id_ls in zip(task_predictions, word_ids)
-        # types_to_spans(idx, "pred", tup)
-        # for idx, tup in enumerate(zip(task_predictions, word_ids))
-        # for idx, tup in zip(task_predictions, word_ids)
     )
     if ground_truths is not None:
         ground_span_dictionaries = (
             types_to_spans(ground_truth, word_id_ls)
             for ground_truth, word_id_ls in zip(ground_truths, word_ids)
-            # types_to_spans(idx, "ground", tup)
-            # for idx, tup in enumerate(zip(ground_truths, word_ids))
         )
         disagreement_dicts = (
             dictmerge(ground_dictionary, pred_dictionary)
@@ -548,8 +549,6 @@ def get_tagging_prints(
         return pd.Series(
             get_error_out_string(disagreements, instance)
             for disagreements, instance in zip(disagreement_dicts, text_samples)
-            # get_error_out_string(idx, tup)
-            # for idx, tup in enumerate(zip(disagreement_dicts, text_samples))
         )
 
     return pd.Series(
