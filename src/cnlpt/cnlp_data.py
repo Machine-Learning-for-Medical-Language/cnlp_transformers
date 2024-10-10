@@ -571,8 +571,9 @@ def get_tagging_labels(
             else:
                 # Dongfang's logic for beginning or interior of a word
                 label_ids.append(-100)
-                previous_word_idx = word_idx
-        encoded_labels.append(np.expand_dims(np.array(label_ids), 1).astype(int))
+            previous_word_idx = word_idx
+        encoded_label = np.expand_dims(np.array(label_ids), 1).astype(int)
+        encoded_labels.append(encoded_label)
 
     return encoded_labels
 
