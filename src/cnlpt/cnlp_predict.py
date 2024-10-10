@@ -458,22 +458,37 @@ def get_tagging_prints(
                 yield span
             span_begin = span_end + 1
 
-    def types_to_spans(
-        raw_tag_inds: np.ndarray, word_ids: List[Union[None, int]]
+    def error_analysis_type_to_spans(
+        pred: np.ndarray,
+        label: np.ndarray,
+        word_id_ls: List[Union[None, int]],
     ) -> Dict[str, List[Span]]:
-        # def types_to_spans(idx, src, tup):
-        # raw_tag_inds, word_ids = tup
-        relevant_token_ids_and_tags = [
+        id_tag_pairs = [
             (word_id, tag)
-            for word_id, tag in zip(word_ids, raw_tag_inds)
+            for ptag, ltag, word_id in zip(pred, label, word_id_ls)
+            if label != -100
+        ]
+        return id_tag_pairs_to_dict(id_tag_pairs)
+
+    def predict_grouped_type_to_spans(
+        label: np.ndarray,
+        word_id_ls: List[Union[None, int]],
+    ) -> Dict[str, List[Span]]:
+        id_tag_pairs = [
+            (word_id, tag)
+            for tag, word_id in zip(label, word_id_ls)
             if word_id is not None
         ]
-        relevant_token_ids_and_tags = [
-            next(group)
+        return id_tag_pairs_to_dict(id_tag_pairs)
+
+    def id_tag_pairs_to_dict(
+        grouped_spans: List[Tuple[int, int]]
+    ) -> Dict[str, List[Span]]:
+        grouped_spans = [
+            next(group)[1]
             for _, group in groupby(relevant_token_ids_and_tags, key=itemgetter(0))
         ]
-
-        raw_labels = [tagging_labels[tag] for _, tag in relevant_token_ids_and_tags]
+        raw_labels = [tagging_labels[tag] for tag in grouped_spans]
         span_tuples = [
             (get_ner_type(raw_labels[tup[0]]), tup)
             for tup in process_labels(raw_labels)
@@ -505,18 +520,6 @@ def get_tagging_prints(
                 span for span in pred_spans if span not in ground_spans
             )
 
-        def empty_disagree(key: str) -> bool:
-            return (
-                len(disagreements["predicted"][key])
-                == 0
-                == len(disagreements["ground"][key])
-            )
-
-        if all(empty_disagree(key) for key in {*ground_dict.keys(), *pred_dict.keys()}):
-            logger.warning(
-                f"Empty disagreements, here are the ground vs pred spans {ground_dict} {pred_dict}"
-            )
-
         return disagreements
 
     def get_error_out_string(
@@ -538,109 +541,38 @@ def get_tagging_prints(
         result = dict_to_str(type_to_spans, instance_tokens)
         return result
 
-    pred_span_dictionaries = (
-        types_to_spans(pred, word_id_ls)
-        for pred, word_id_ls in zip(task_predictions, word_ids)
-    )
+    logger.warning("UNFINISHED")
+    return pd.Series([])
+    # pred_span_dictionaries = (
+    #     predict_grouped_type_to_spans(pred, word_id_ls)
+    #     for pred, word_id_ls in zip(
+    #             task_predictions, word_ids
+    #     )
+    # )
 
-    def debug(
-        pred: np.ndarray, ground: np.ndarray, word_id_ls: List[Union[None, int]]
-    ) -> None:
-        relevant_indices = np.where(ground != 100)
-        assert np.not_equal(
-            pred[relevant_indices], ground[relevant_indices]
-        ).any(), f"Defcon 1 - samples are equal at the ndarray level {pred} {ground}"
-        relevant_pred_ids_and_tags = [
-            (word_id, ptag)
-            for word_id, ptag, gtag in zip(word_id_ls, pred, ground)
-            if gtag != -100
-            # for word_id, tag in zip(word_id_ls, pred)
-            # if word_id is not None
-        ]
+    # if ground_truths is not None:
+    #     ground_span_dictionaries = (
+    #         types_to_spans(ground_truth, word_id_ls, ground_truth)
+    #         for ground_truth, word_id_ls, ground_truth in zip(
+    #             ground_truths, word_ids, ground_truths
+    #         )
+    #     )
+    #     disagreement_dicts = (
+    #         dictmerge(ground_dictionary, pred_dictionary)
+    #         for ground_dictionary, pred_dictionary in zip(
+    #             ground_span_dictionaries, pred_span_dictionaries
+    #         )
+    #     )
 
-        relevant_ground_ids_and_tags = [
-            (word_id, tag)
-            for word_id, tag in zip(word_id_ls, ground)
-            if tag != -100
-            # if word_id is not None
-        ]
-        assert (
-            relevant_pred_ids_and_tags != relevant_ground_ids_and_tags
-        ), f"Defcon 2 - samples are equal at the word id filtered tag level {relevant_pred_ids_and_tags} {relevant_ground_ids_and_tags}"
-        grouped_ground_ids_and_tags = [
-            next(group)
-            for _, group in groupby(relevant_ground_ids_and_tags, key=itemgetter(0))
-        ]
-        grouped_pred_ids_and_tags = [
-            next(group)
-            for _, group in groupby(relevant_pred_ids_and_tags, key=itemgetter(0))
-        ]
+    #     return pd.Series(
+    #         get_error_out_string(disagreements, instance)
+    #         for disagreements, instance in zip(disagreement_dicts, text_samples)
+    #     )
 
-        assert grouped_pred_ids_and_tags != grouped_ground_ids_and_tags, (
-            "Defcon 3 - samples are equal at the raw group level\n\n"
-            f"grouped pred ids:{grouped_pred_ids_and_tags}\n\ngrouped ground ids:{grouped_ground_ids_and_tags}"
-            f"\n\nrelevant pred ids:{relevant_pred_ids_and_tags}\n\nrelevant ground ids:{relevant_ground_ids_and_tags}\n\n"
-            f"raw pred {pred}\n\nraw ground {ground}\n\nraw word id ls{word_id_ls}"
-        )
-        pred_raw_labels = [tagging_labels[tag] for _, tag in grouped_pred_ids_and_tags]
-        pred_span_tuples = [
-            (get_ner_type(pred_raw_labels[tup[0]]), tup)
-            for tup in process_labels(pred_raw_labels)
-        ]
-        pred_types_to_spans = {
-            ner_type: [g[1] for g in group]
-            for ner_type, group in groupby(
-                sorted(pred_span_tuples, key=itemgetter(0)), key=itemgetter(0)
-            )
-        }
-
-        ground_raw_labels = [
-            tagging_labels[tag] for _, tag in grouped_ground_ids_and_tags
-        ]
-        ground_span_tuples = [
-            (get_ner_type(ground_raw_labels[tup[0]]), tup)
-            for tup in process_labels(ground_raw_labels)
-        ]
-        ground_types_to_spans = {
-            ner_type: [g[1] for g in group]
-            for ner_type, group in groupby(
-                sorted(ground_span_tuples, key=itemgetter(0)), key=itemgetter(0)
-            )
-        }
-        assert (
-            pred_raw_labels != ground_raw_labels
-        ), f"Defcon 4 - samples are equal at the raw labels level {pred_raw_labels} {ground_raw_labels}"
-        assert (
-            pred_span_tuples != ground_span_tuples
-        ), f"Defcon 5 - samples are equal at the span tuples level {pred_span_tuples} {ground_span_tuples}"
-        assert (
-            pred_types_to_spans != ground_types_to_spans
-        ), f"Defcon 6 - samples are equal at the type to span level {pred_types_to_spans} {ground_types_to_spans}"
-
-    if ground_truths is not None:
-        for pred, ground, word_id_ls in zip(task_predictions, ground_truths, word_ids):
-            debug(pred, ground, word_id_ls)
-        return pd.Series([])
-        # ground_span_dictionaries = (
-        #     types_to_spans(ground_truth, word_id_ls)
-        #     for ground_truth, word_id_ls in zip(ground_truths, word_ids)
-        # )
-        # disagreement_dicts = (
-        #     dictmerge(ground_dictionary, pred_dictionary)
-        #     for ground_dictionary, pred_dictionary in zip(
-        #         ground_span_dictionaries, pred_span_dictionaries
-        #     )
-        # )
-
-        # return pd.Series(
-        #     get_error_out_string(disagreements, instance)
-        #     for disagreements, instance in zip(disagreement_dicts, text_samples)
-        # )
-
-    return pd.Series(
-        get_pred_out_string(type_to_pred_spans, instance)
-        for type_to_pred_spans, instance in zip(pred_span_dictionaries, text_samples)
-    )
+    # return pd.Series(
+    #     get_pred_out_string(type_to_pred_spans, instance)
+    #     for type_to_pred_spans, instance in zip(pred_span_dictionaries, text_samples)
+    # )
 
 
 def get_relex_prints(
