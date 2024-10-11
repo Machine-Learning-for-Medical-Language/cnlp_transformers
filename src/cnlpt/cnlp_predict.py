@@ -458,32 +458,15 @@ def get_tagging_prints(
                 yield span
             span_begin = span_end + 1
 
-    def error_analysis_type_to_spans(
-        pred: np.ndarray,
-        label: np.ndarray,
+    def raw_tags_to_spans(
+        raw_tags: np.ndarray,
         word_id_ls: List[Union[None, int]],
     ) -> Dict[str, List[Span]]:
-        id_tag_pairs = [
+        relevant_token_ids_and_tags = [
             (word_id, tag)
-            for ptag, ltag, word_id in zip(pred, label, word_id_ls)
-            if label != -100
-        ]
-        return id_tag_pairs_to_dict(id_tag_pairs)
-
-    def predict_grouped_type_to_spans(
-        label: np.ndarray,
-        word_id_ls: List[Union[None, int]],
-    ) -> Dict[str, List[Span]]:
-        id_tag_pairs = [
-            (word_id, tag)
-            for tag, word_id in zip(label, word_id_ls)
+            for tag, word_id in zip(raw_tags, word_id_ls)
             if word_id is not None
         ]
-        return id_tag_pairs_to_dict(id_tag_pairs)
-
-    def id_tag_pairs_to_dict(
-        grouped_spans: List[Tuple[int, int]]
-    ) -> Dict[str, List[Span]]:
         grouped_spans = [
             next(group)[1]
             for _, group in groupby(relevant_token_ids_and_tags, key=itemgetter(0))
@@ -541,38 +524,32 @@ def get_tagging_prints(
         result = dict_to_str(type_to_spans, instance_tokens)
         return result
 
-    logger.warning("UNFINISHED")
-    return pd.Series([])
-    # pred_span_dictionaries = (
-    #     predict_grouped_type_to_spans(pred, word_id_ls)
-    #     for pred, word_id_ls in zip(
-    #             task_predictions, word_ids
-    #     )
-    # )
+    pred_span_dictionaries = (
+        raw_tags_to_spans(pred, word_id_ls)
+        for pred, word_id_ls in zip(task_predictions, word_ids)
+    )
 
-    # if ground_truths is not None:
-    #     ground_span_dictionaries = (
-    #         types_to_spans(ground_truth, word_id_ls, ground_truth)
-    #         for ground_truth, word_id_ls, ground_truth in zip(
-    #             ground_truths, word_ids, ground_truths
-    #         )
-    #     )
-    #     disagreement_dicts = (
-    #         dictmerge(ground_dictionary, pred_dictionary)
-    #         for ground_dictionary, pred_dictionary in zip(
-    #             ground_span_dictionaries, pred_span_dictionaries
-    #         )
-    #     )
+    if ground_truths is not None:
+        ground_span_dictionaries = (
+            raw_tags_to_spans(ground_truth, word_id_ls)
+            for ground_truth, word_id_ls in zip(ground_truths, word_ids)
+        )
+        disagreement_dicts = (
+            dictmerge(ground_dictionary, pred_dictionary)
+            for ground_dictionary, pred_dictionary in zip(
+                ground_span_dictionaries, pred_span_dictionaries
+            )
+        )
 
-    #     return pd.Series(
-    #         get_error_out_string(disagreements, instance)
-    #         for disagreements, instance in zip(disagreement_dicts, text_samples)
-    #     )
+        return pd.Series(
+            get_error_out_string(disagreements, instance)
+            for disagreements, instance in zip(disagreement_dicts, text_samples)
+        )
 
-    # return pd.Series(
-    #     get_pred_out_string(type_to_pred_spans, instance)
-    #     for type_to_pred_spans, instance in zip(pred_span_dictionaries, text_samples)
-    # )
+    return pd.Series(
+        get_pred_out_string(type_to_pred_spans, instance)
+        for type_to_pred_spans, instance in zip(pred_span_dictionaries, text_samples)
+    )
 
 
 def get_relex_prints(
