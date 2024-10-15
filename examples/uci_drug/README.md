@@ -10,19 +10,19 @@
 3. Fine-tune with something like: 
 ```
 python -m cnlpt.train_system \
-	    --task_name sentiment \
-	    --data_dir /lab-share/CHIP-Savova-e2/Public/mmtl-data/uci-drug/cnlpt/ \
-	    --encoder_name roberta-base \
-	    --do_train \
-        --do_eval \
-        --cache cache/ \
-        --output_dir uci_error_sample_for_documentation/ \
-        --overwrite_output_dir \
-        --evals_per_epoch 5 \
-	    --num_train_epochs 1 \
-	    --learning_rate 1e-5 \
-	    --report_to none \
-        --save_strategy no
+    --task_name sentiment \
+    --data_dir <processed dir> \
+    --encoder_name roberta-base \
+    --do_train \
+    --do_eval \
+    --cache cache/ \
+    --output_dir temp/ \
+    --overwrite_output_dir \
+    --evals_per_epoch 5 \
+    --num_train_epochs 1 \
+    --learning_rate 1e-5 \
+    --report_to none \
+    --save_strategy no
 ```
 
 On our hardware, that command results in eval performance like the following:
@@ -30,7 +30,7 @@ On our hardware, that command results in eval performance like the following:
 
 For a demo of how to run the system in colab: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1IVT53DBwFxLKftpIn5iKtF0g4xb9yuxm?usp=sharing)
 
-#### Error Analysis / Human Readable Predictions for Classification
+#### Error Analysis for Classification
 
 If you run the above command with the `--error_analysis` flag, you can obtain the `dev` instances for which the model made an erroneous 
 prediction, organized by their original index in `dev` split, in the `eval_predictions...tsv` file in the `--output_dir` argument.  
@@ -39,7 +39,9 @@ For us the first line of this file is:
 	text	sentiment
 9	I'm 16 and  I have been on Loestrin 24 for about a week and half. The day I got them (and started taking them) was a day after I stopped my period and two days ago I started my period it is like a normal. I don't think I have gained weight due to me being sick and therefore don't eat as much as I normally do but I did not lose weight like I normally do when I'm sick. I have been getting cramps which I don't normally get except the first one or two days of my period. I have been really depressed and I'm not a depressed person. I mean I was crying over the stupidest things like my mom not cooking dinner when I wasn't even hungry. I'm going to talk to my doctor tomorrow.	Ground: Low Predicted: Medium
 ```
-The `text` column contains the text of the erroneous instances and the following columns are the tasks provided to the model, in this case, just `sentiment`.  `Ground: Low Predicted: Medium` indicates that the provided ground truth label for the instance sentiment is `Low` but the model predicted `Medium`.  
+The number at the beginning of the line, 9, is the index of the instance in the `dev` split.  The `text` column contains the text of the erroneous instances and the following columns are the tasks provided to the model, in this case, just `sentiment`.  `Ground: Low Predicted: Medium` indicates that the provided ground truth label for the instance sentiment is `Low` but the model predicted `Medium`.  
+
+#### Human Readable Predictions for Classification
 Similarly if you run the above command with `--do_predict` you can obtain human readable predictions for the `test` split, in the `test_predictions...tsv` file.  For us the first line of this file is:
 ```
         text    sentiment

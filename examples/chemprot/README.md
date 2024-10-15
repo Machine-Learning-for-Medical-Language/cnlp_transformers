@@ -50,21 +50,21 @@ end_to_end = {'f1': [0.49406688241639696, 0.5513974419706301, 0.4415584415584415
 
 If you run the above command with the `--error_analysis` flag,  you can obtain the `dev` instances for which the model made an erroneous 
 prediction, organized by their original index in `dev` split, in the `eval_predictions...tsv` file in the `--output_dir` argument.  
-For us the first line of this file is:
+
+
+On our hardware using the hyperparameters above, the first line of this file is:
 ```
         text    chemical_ner    gene_ner        end_to_end
 2       The mechanisms of these CNS effects of DM have been suggested to be associated with the low-affinity , noncompetitive , N-methyl-d-aspartate ( NMDA ) antagonism of DM and/or the high-affinity DM/sigma receptors .   Ground: chemical: " DM" , chemical: " DM" , chemical: " DM/sigma" Predicted:  Ground:  Predicted: n: " N-methyl-d-aspartate" , y: " DM"        Ground:  Predicted: ( 22, 26,  CPR_9 )
 ```
-The `text` column contains the text of the erroneous instances and the following columns are the tasks provided to the model, in this case, `chemical_ner` and `gene_ner`, both tagging tasks, and `end_to_end` an end to end relation extraction task.
-For `chemical_ner`, the result `Ground: chemical: " DM" , chemical: " DM" , chemical: " DM/sigma" Predicted:` 
-indicates that the provided ground truth label has the two spans of "DM" and the span of " DM/sigma" as as chemicals, 
+The number at the beginning of the line, 2, is the index of the instance in the `dev` split.  The `text` column contains the text of the erroneous instances and the following columns are the tasks provided to the model, in this case, `chemical_ner` and `gene_ner`, both tagging tasks, and `end_to_end`, an end to end relation extraction task.  For `chemical_ner`, the result `Ground: chemical: " DM" , chemical: " DM" , chemical: " DM/sigma" Predicted:` indicates that the provided ground truth label has the two spans of "DM" and the span of " DM/sigma" as as chemicals, 
 but that the empty `Predicted:` indicates that the model did not tag these spans as `chemical`. For `end_to_end`, 
 the result `Ground:  Predicted: ( 22, 26,  CPR_9 )` 
 indicates that there are no relations between any of the tokens in the provided ground truth labels but 
 that the model predicted a `CPR_9` relationship between tokens 22 and 26 ("NMDA" and the second "DM" mention)
 
 #### Human Readable Predictions for Tagging and End to End Relation Extraction
-Note, for error analysis on tagging and end to end relation extraction, we only print the disagreements between the ground truth and predictions in the relevant task cells.  
+Note, for error analysis on tagging and end to end relation extraction tasks, we only print the disagreements between the ground truth and predictions in the relevant task cells.  
 We do not process the ChemProt `test` split for processing, but if we copy `dev.tsv` to `test.tsv` and run the above command with `--do_predict`, 
 we can obtain human readable predictions (without error analysis) for `dev`.  For example, with the above instance we obtain:
 ```
