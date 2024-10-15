@@ -58,7 +58,7 @@ class CnlpTrainingArguments(TrainingArguments):
     output_prob: Optional[bool] = field(
         default=False,
         metadata={
-            "help": "If selected, probability scores will be added to the output prediction file for test data."
+            "help": "If selected, probability scores will be added to the output prediction file for test data when used with --do_predict, and to the evaluation file for dev data when used with --error_analysis.  Currently implemented for classification tasks only."
         },
     )
     truncation_side_left: Optional[bool] = field(
@@ -71,7 +71,7 @@ class CnlpTrainingArguments(TrainingArguments):
     error_analysis: bool = field(
         default=False,
         metadata={
-            "help": "Pretty printing for instances where (any) ground label disagrees with a prediction"
+            "help": "Pretty printing for instances where at least one ground truth label for any of the tasks disagrees with the model's prediction"
         },
     )
 

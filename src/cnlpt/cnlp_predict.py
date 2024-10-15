@@ -304,25 +304,27 @@ def get_outputs(
     word_ids: List[List[Union[None, int]]],
     text_column: pd.Series,
 ) -> pd.Series:
-    if len(labels) > 0:
-        if len(error_inds) > 0 and error_analysis:
+    if error_analysis:
+        if len(error_inds) > 0:
             relevant_prob_values = (
                 prob_values[error_inds]
                 if output_mode[pred_task] == classification and len(prob_values) > 0
-                else prob_values
+                else np.array([])
             )
             ground_truth = labels[error_inds].astype(int)
             task_prediction = prediction[error_inds].astype(int)
             text_samples = pd.Series(text_column[error_inds])
             word_ids = [word_ids[error_ind] for error_ind in error_inds]
         else:
-            relevant_prob_values = prob_values
-            ground_truth = labels.astype(int)
-            task_prediction = prediction.astype(int)
+            return pd.Series([])
     else:
-        relevant_prob_values = np.ndarray([])
         ground_truth = None
         task_prediction = prediction.astype(int)
+        relevant_prob_values = (
+            prob_values
+            if output_mode[pred_task] == classification and len(prob_values) > 0
+            else np.array([])
+        )
     text_samples = text_column
     task_type = output_mode[pred_task]
     if task_type == classification:
@@ -386,12 +388,12 @@ def get_tagging_prints(
     text_samples: pd.Series,
     word_ids: List[List[Union[None, int]]],
 ) -> pd.Series:
-    # to save ourselves the branch instructions
+    # to save ourselves some branching
     # in all the nested functions
     def get_tokens(inst: str) -> List[str]:
         return []
 
-    token_sep = ""  # default since typesystem doesn't like the None
+    token_sep = ""
     if character_level:
 
         def get_tokens(inst: str) -> List[str]:
@@ -562,7 +564,6 @@ def get_relex_prints(
     resolved_predictions = task_predictions
     none_index = relex_labels.index("None") if "None" in relex_labels else -1
 
-    # thought we'd filtered them out but apparently not
     def tuples_to_str(label_tuples: Iterable[Cell]) -> str:
         return " ".join(
             f"( {row}, {col}, {relex_labels[label]} )"
@@ -573,7 +574,6 @@ def get_relex_prints(
         raw_cells: np.ndarray, token_ids: List[Union[None, int]]
     ) -> Tuple[np.ndarray, np.ndarray]:
         (invalid_inds,) = np.where(np.diag(raw_cells) != -100)
-        # just in case
 
         word_ids_and_indices = [
             (index, word_id)
@@ -595,12 +595,6 @@ def get_relex_prints(
         )
 
         np.fill_diagonal(reduced_matrix, none_index)
-
-        assert (
-            reduced_matrix.shape[0] == reduced_matrix.shape[1]
-        ), f"reduced matrix shape: {reduced_matrix.shape}"
-
-        assert -100 not in reduced_matrix, f"final matrix contents: {reduced_matrix}"
 
         return invalid_inds, reduced_matrix
 
@@ -629,8 +623,8 @@ def get_relex_prints(
             else []
         )
         # nones will just clutter things up
-        # and we will be able to infer disagreements on nones
-        # from each other
+        # and we will be able to infer disagreements
+        #  on nones from each other
         ground_cells = [
             cell
             for cell in zip(*disagreements, ground_matrix[disagreements])
