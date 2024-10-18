@@ -16,9 +16,6 @@ from nltk.tokenize import TreebankWordTokenizer
 from nltk.tokenize import wordpunct_tokenize as tokenize
 from nltk.tokenize.util import align_tokens
 
-# sentence and token splitters:
-from PyRuSH import RuSH
-
 from .api.temporal_rest import TokenizedSentenceDocument
 
 xml_name_regex = r"Temporal-(Entity|Relation)\.gold\.completed\.xml"
@@ -38,6 +35,15 @@ def main(args):
     process_url = "http://%s:8000/temporal/process" % hostname
 
     # sentence segmenter
+    # sentence and token splitters:
+    try:
+        from PyRuSH import RuSH
+    except:
+        sys.stderr.write(
+            "PyRuSH must be installed for this script to run -- it is managed separately from other dependencies because it can be hard to integrate with newer versions of Python."
+        )
+        raise Exception()
+
     rush = RuSH("conf/rush_rules.tsv")
     # tokenizer
     tokenizer = TreebankWordTokenizer()
