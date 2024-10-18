@@ -219,6 +219,7 @@ class CnlpConfig(PretrainedConfig):
         use_prior_tasks: bool = False,
         hier_head_config: Dict[str, Any] = None,
         label_dictionary: Dict[str, List[str]] = None,
+        character_level: bool = False,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -236,6 +237,7 @@ class CnlpConfig(PretrainedConfig):
         self.hier_head_config = hier_head_config
         self.label_dictionary = label_dictionary
         self.cnlpt_version = cnlpt_version
+        self.character_level = character_level
         if encoder_name.startswith("distilbert"):
             self.hidden_dropout_prob = self.encoder_config["dropout"]
             self.hidden_size = self.encoder_config["dim"]
@@ -284,7 +286,13 @@ class CnlpModelForClassification(PreTrainedModel):
         config.encoder_config = encoder_config.to_dict()
         encoder_model = AutoModel.from_config(encoder_config)
         self.encoder = encoder_model.from_pretrained(config.encoder_name)
-        self.encoder.resize_token_embeddings(encoder_config.vocab_size)
+        # part of the motivation for leaving this
+        # logic alone for character level models is that
+        # at the time of writing,  CANINE and Flair are the only game in town.
+        # CANINE's hashable embeddings for unicode codepoints allows for
+        # additional parameterization, which rn doesn't seem so relevant
+        if not config.character_level:
+            self.encoder.resize_token_embeddings(encoder_config.vocab_size)
 
         # This would seem to be redundant with the label list, which maps from tasks to labels,
         # but this version is ordered. This will allow the user to specify an order for any methods

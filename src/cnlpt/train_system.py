@@ -14,21 +14,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """ Finetuning the library models for sequence classification on clinical NLP tasks"""
+import csv
 import json
 import logging
 import math
 import os
-import pdb
 import sys
 import tempfile
 from collections import defaultdict, deque
 from os.path import exists, join
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 import requests
 import torch
-from datasets import Dataset
 from huggingface_hub import hf_hub_url
 from transformers import (
     AutoConfig,
@@ -48,18 +47,46 @@ from .cnlp_args import CnlpTrainingArguments, ModelArguments
 from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments, get_dataset_segment
 from .cnlp_metrics import cnlp_compute_metrics
 from .cnlp_predict import process_prediction, restructure_prediction, structure_labels
-from .cnlp_processors import classification, relex, tagging
+from .cnlp_processors import relex, tagging
 from .CnlpModelForClassification import CnlpConfig, CnlpModelForClassification
 from .HierarchicalTransformer import HierarchicalModel
 
 sys.path.append(os.path.join(os.getcwd()))
 
 
-from collections import defaultdict
-
 AutoConfig.register("cnlpt", CnlpConfig)
 
 logger = logging.getLogger(__name__)
+
+
+eval_state = defaultdict(lambda: -1)
+
+
+# For stopping with actual_epochs while
+# spoofing the lr scheduler with num_train_epochs
+# as described in the README
+class StopperCallback(TrainerCallback):
+    """ """
+
+    def __init__(self, last_step=-1, last_epoch=-1):
+        self.last_step = last_step
+        self.last_epoch = last_epoch
+
+    def on_step_end(self, args, state, control, **kwargs):
+        """
+
+        Args:
+          args:
+          state:
+          control:
+          **kwargs:
+
+        Returns:
+
+        """
+        control.should_training_stop = (
+            self.last_epoch > 0 and state.epoch >= self.last_epoch
+        ) or (self.last_step > 0 and state.global_step >= self.last_step)
 
 
 eval_state = defaultdict(lambda: -1)
@@ -102,7 +129,7 @@ def is_hub_model(model_name: str) -> bool:
         r = requests.head(url)
         if r.status_code == 200:
             return True
-    except:
+    except Exception:
         pass
 
     return False
@@ -235,16 +262,20 @@ def main(
         cache_dir=model_args.cache_dir,
         add_prefix_space=True,
         truncation_side=truncation_side,
-        additional_special_tokens=[
-            "<e>",
-            "</e>",
-            "<a1>",
-            "</a1>",
-            "<a2>",
-            "</a2>",
-            "<cr>",
-            "<neg>",
-        ],
+        additional_special_tokens=(
+            [
+                "<e>",
+                "</e>",
+                "<a1>",
+                "</a1>",
+                "<a2>",
+                "</a2>",
+                "<cr>",
+                "<neg>",
+            ]
+            if not data_args.character_level
+            else None
+        ),
     )
 
     # Get datasets
@@ -455,6 +486,8 @@ def main(
                     else model_args.encoder_name
                 ),
                 cache_dir=model_args.cache_dir,
+                # in this case we're looking at a fine-tuned model (?)
+                character_level=data_args.character_level,
             )
 
             if training_args.do_train:
@@ -513,6 +546,7 @@ def main(
                 tagger=tagger,
                 relations=relations,
                 label_dictionary=dataset.get_labels(),
+                character_level=data_args.character_level,
                 # num_tokens=len(tokenizer),
             )
             config.vocab_size = len(tokenizer)
@@ -668,10 +702,15 @@ def main(
                                     config_dict["task_names"] = task_names
                                     json.dump(config_dict, f)
                         for task_ind, task_name in enumerate(metrics):
-                            with open(output_eval_file, "w") as writer:
-                                # logger.info("***** Eval results for task %s *****" % (task_name))
+                            with open(output_eval_file, "a") as writer:
+                                logger.info(
+                                    "***** Eval results for task %s *****" % (task_name)
+                                )
+                                writer.write(
+                                    f"\n\n***** Eval results for task {task_name} *****\n\n"
+                                )
                                 for key, value in metrics[task_name].items():
-                                    # logger.info("  %s = %s", key, value)
+                                    logger.info("  %s = %s", key, value)
                                     writer.write("%s = %s\n" % (key, value))
 
                     if training_args.error_analysis:
@@ -783,10 +822,7 @@ def main(
                 )
                 # use trainer to predict
 
-            (
-                task_to_label_packet,
-                task_to_label_boundaries,
-            ) = (
+            (task_to_label_packet, _) = (
                 current_prediction_packet.pop()
                 if len(current_prediction_packet) > 0
                 else (None, None)
@@ -803,16 +839,24 @@ def main(
                     "validation", dataset_ind, dataset
                 )
                 if training_args.error_analysis:
-                    process_prediction(
-                        dataset.tasks,
+                    out_table = process_prediction(
+                        task_names=dataset.tasks,
+                        error_analysis=True,
+                        output_prob=training_args.output_prob,
+                        character_level=data_args.character_level,
+                        task_to_label_packet=task_to_label_packet,
+                        eval_dataset=dataset_dev_segment,
+                        task_to_label_space=task_to_label_space,
+                        output_mode=output_mode,
+                    )
+
+                    out_table.to_csv(
                         output_eval_predictions_file,
-                        True,
-                        training_args.output_prob,
-                        task_to_label_packet,
-                        task_to_label_boundaries,
-                        dataset_dev_segment,
-                        task_to_label_space,
-                        output_mode,
+                        sep="\t",
+                        index=True,
+                        header=True,
+                        quoting=csv.QUOTE_NONE,
+                        escapechar="\\",
                     )
 
         eval_results.update(eval_result)
@@ -839,26 +883,34 @@ def main(
 
                 (
                     task_to_label_packet,
-                    task_to_label_boundaries,
+                    _,
                 ) = restructure_prediction(
-                    dataset.tasks,
-                    raw_test_predictions,
-                    data_args.max_seq_length,
-                    tagger,
-                    relations,
-                    training_args.output_prob,
+                    task_names=dataset.tasks,
+                    raw_prediction=raw_test_predictions,
+                    max_seq_length=data_args.max_seq_length,
+                    tagger=tagger,
+                    relations=relations,
+                    output_prob=training_args.output_prob,
                 )
 
-                process_prediction(
-                    dataset.tasks,
+                out_table = process_prediction(
+                    task_names=dataset.tasks,
+                    error_analysis=False,
+                    output_prob=training_args.output_prob,
+                    character_level=data_args.character_level,
+                    task_to_label_packet=task_to_label_packet,
+                    eval_dataset=dataset_test_segment,
+                    task_to_label_space=task_to_label_space,
+                    output_mode=output_mode,
+                )
+
+                out_table.to_csv(
                     output_test_predictions_file,
-                    False,
-                    training_args.output_prob,
-                    task_to_label_packet,
-                    task_to_label_boundaries,
-                    dataset_test_segment,
-                    task_to_label_space,
-                    output_mode,
+                    sep="\t",
+                    index=True,
+                    header=True,
+                    quoting=csv.QUOTE_NONE,
+                    escapechar="\\",
                 )
     return eval_results
 
