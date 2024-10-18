@@ -13,7 +13,6 @@ import numpy as np
 import torch
 from datasets import Dataset as HFDataset
 from datasets import DatasetDict, Features, IterableDatasetDict
-from filelock import FileLock
 from torch.utils.data.dataset import Dataset
 from transformers import BatchEncoding, DataCollatorForLanguageModeling, InputExample
 from transformers.tokenization_utils import PreTrainedTokenizer
