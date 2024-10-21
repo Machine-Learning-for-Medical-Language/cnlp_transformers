@@ -1,8 +1,0 @@
-build
-pip>=21.3
-pytest
-twine
-pre-commit
-black
-flake8
-isort

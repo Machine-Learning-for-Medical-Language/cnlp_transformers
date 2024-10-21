@@ -1,0 +1,38 @@
+name: Lint and Format
+
+on:
+  push:
+    branches:
+      - main
+      - "dev-v[0-9]*"
+    paths:
+      - "src/**"
+      - "test/**"
+      - "pyproject.toml"
+  pull_request:
+    branches:
+      - main
+      - "dev-v[0-9]*"
+    paths:
+      - "src/**"
+      - "test/**"
+      - "pyproject.toml"
+
+jobs:
+  ruff:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11"]
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/ruff-action@v1
+        with:
+          version: 0.7.0
+          args: check
+      - uses: astral-sh/ruff-action@v1
+        with:
+          version: 0.7.0
+          args: format --check
