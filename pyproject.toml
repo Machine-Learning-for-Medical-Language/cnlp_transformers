@@ -45,14 +45,13 @@ Homepage = "https://github.com/Machine-Learning-for-Medical-Language/cnlp_transf
 version = { attr = "cnlpt.__version__" }
 
 [project.optional-dependencies]
-dev = [
-    "build",
-    "pip>=21.3",
-    "pre-commit",
-    "pytest",
+lint = [
     "ruff==0.7.0", # same as in pre-commit hooks
-    "twine",
 ]
+build = ["build", "pip>=21.3", "twine"]
+test = ["pytest"]
+docs = ["sphinx", "sphinx-autodoc-typehints", "sphinx-rtd-theme", "sphobjinv"]
+dev = ["cnlp-transformers[lint,build,test,docs]", "pre-commit"]
 
 # [project.scripts]
 # TODO Add entrypoints here
