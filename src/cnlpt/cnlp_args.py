@@ -4,7 +4,7 @@ Module containing the CNLP command line argument definitions
 
 from dataclasses import dataclass, field, fields
 from enum import Enum
-from typing import List, Optional, Union
+from typing import Union
 
 from transformers import TrainingArguments
 
@@ -17,13 +17,13 @@ class CnlpTrainingArguments(TrainingArguments):
     or by passing the ``--help`` flag to this script.
     """
 
-    evals_per_epoch: Optional[int] = field(
+    evals_per_epoch: Union[int, None] = field(
         default=-1,
         metadata={
             "help": "Number of times to evaluate and possibly save model per training epoch (allows for a lazy kind of early stopping)"
         },
     )
-    final_task_weight: Optional[float] = field(
+    final_task_weight: Union[float, None] = field(
         default=1.0,
         metadata={
             "help": "Amount to up/down-weight final task in task list (other tasks weighted 1.0)"
@@ -49,19 +49,19 @@ class CnlpTrainingArguments(TrainingArguments):
             "help": "Score to use in evaluation. Should be one of acc, f1, acc_and_f1, recall, or precision."
         },
     )
-    model_selection_label: Union[int, str, List[int], List[str]] = field(
+    model_selection_label: Union[int, str, list[int], list[str]] = field(
         default=None,
         metadata={
             "help": "Class whose score should be used in evalutation. Should be an integer if scores are indexed, or a string if they are labeled by name."
         },
     )
-    output_prob: Optional[bool] = field(
+    output_prob: Union[bool, None] = field(
         default=False,
         metadata={
             "help": "If selected, probability scores will be added to the output prediction file for test data when used with --do_predict, and to the evaluation file for dev data when used with --error_analysis.  Currently implemented for classification tasks only."
         },
     )
-    truncation_side_left: Optional[bool] = field(
+    truncation_side_left: Union[bool, None] = field(
         default=False,
         metadata={
             "help": "Truncate samples from left. Note that hier model do not support this setting."
@@ -86,34 +86,34 @@ class ModelArguments:
     See all possible arguments by passing the ``--help`` flag to this script.
     """
 
-    model: Optional[str] = field(
+    model: Union[str, None] = field(
         default="cnlpt", metadata={"help": "Model type", "choices": cnlpt_models}
     )
-    encoder_name: Optional[str] = field(
+    encoder_name: Union[str, None] = field(
         default="roberta-base",
         metadata={
             "help": "Path to pretrained model or model identifier from huggingface.co/models"
         },
     )
-    config_name: Optional[str] = field(
+    config_name: Union[str, None] = field(
         default=None,
         metadata={
             "help": "Pretrained config name or path if not the same as model_name"
         },
     )
-    tokenizer_name: Optional[str] = field(
+    tokenizer_name: Union[str, None] = field(
         default=None,
         metadata={
             "help": "Pretrained tokenizer name or path if not the same as model_name"
         },
     )
-    cache_dir: Optional[str] = field(
+    cache_dir: Union[str, None] = field(
         default=None,
         metadata={
             "help": "Where do you want to store the pretrained models downloaded from s3"
         },
     )
-    layer: Optional[int] = field(
+    layer: Union[int, None] = field(
         default=-1, metadata={"help": "Which layer's CLS ('<s>') token to use"}
     )
     token: bool = field(
@@ -124,13 +124,13 @@ class ModelArguments:
     )
 
     # NxN relation classifier-specific arguments
-    num_rel_feats: Optional[int] = field(
+    num_rel_feats: Union[int, None] = field(
         default=12,
         metadata={
             "help": "Number of features/attention heads to use in the NxN relation classifier"
         },
     )
-    head_features: Optional[int] = field(
+    head_features: Union[int, None] = field(
         default=64,
         metadata={
             "help": "Number of parameters in each attention head in the NxN relation classifier"
@@ -138,13 +138,13 @@ class ModelArguments:
     )
 
     # CNN-specific arguments
-    cnn_embed_dim: Optional[int] = field(
+    cnn_embed_dim: Union[int, None] = field(
         default=100,
         metadata={
             "help": "For the CNN baseline model, the size of the word embedding space."
         },
     )
-    cnn_num_filters: Optional[int] = field(
+    cnn_num_filters: Union[int, None] = field(
         default=25,
         metadata={
             "help": (
@@ -154,7 +154,7 @@ class ModelArguments:
         },
     )
 
-    cnn_filter_sizes: Optional[List[int]] = field(
+    cnn_filter_sizes: Union[list[int], None] = field(
         default_factory=lambda: [1, 2, 3],
         metadata={
             "help": (
@@ -165,13 +165,13 @@ class ModelArguments:
     )
 
     # LSTM-specific arguments
-    lstm_embed_dim: Optional[int] = field(
+    lstm_embed_dim: Union[int, None] = field(
         default=100,
         metadata={
             "help": "For the LSTM baseline model, the size of the word embedding space."
         },
     )
-    lstm_hidden_size: Optional[int] = field(
+    lstm_hidden_size: Union[int, None] = field(
         default=100,
         metadata={
             "help": "For the LSTM baseline model, the hidden size of the LSTM layer"
@@ -187,7 +187,7 @@ class ModelArguments:
     )
 
     # Hierarchical Transformer-specific arguments
-    hier_num_layers: Optional[int] = field(
+    hier_num_layers: Union[int, None] = field(
         default=2,
         metadata={
             "help": (
@@ -196,7 +196,7 @@ class ModelArguments:
             )
         },
     )
-    hier_hidden_dim: Optional[int] = field(
+    hier_hidden_dim: Union[int, None] = field(
         default=2048,
         metadata={
             "help": (
@@ -205,7 +205,7 @@ class ModelArguments:
             )
         },
     )
-    hier_n_head: Optional[int] = field(
+    hier_n_head: Union[int, None] = field(
         default=8,
         metadata={
             "help": (
@@ -214,7 +214,7 @@ class ModelArguments:
             )
         },
     )
-    hier_d_k: Optional[int] = field(
+    hier_d_k: Union[int, None] = field(
         default=8,
         metadata={
             "help": (
@@ -223,7 +223,7 @@ class ModelArguments:
             )
         },
     )
-    hier_d_v: Optional[int] = field(
+    hier_d_v: Union[int, None] = field(
         default=96,
         metadata={
             "help": (
@@ -232,7 +232,7 @@ class ModelArguments:
             )
         },
     )
-    hier_dropout: Optional[float] = field(
+    hier_dropout: Union[float, None] = field(
         default=0.1,
         metadata={
             "help": "For the hierarchical model, the dropout probability for the "
@@ -280,25 +280,25 @@ class ModelArguments:
 
 @dataclass
 class DaptArguments:
-    encoder_name: Optional[str] = field(
+    encoder_name: Union[str, None] = field(
         default="roberta-base",
         metadata={
             "help": "Path to pretrained model or model identifier from huggingface.co/models"
         },
     )
-    config_name: Optional[str] = field(
+    config_name: Union[str, None] = field(
         default=None,
         metadata={
             "help": "Pretrained config name or path if not the same as model_name"
         },
     )
-    tokenizer_name: Optional[str] = field(
+    tokenizer_name: Union[str, None] = field(
         default=None,
         metadata={
             "help": "Pretrained tokenizer name or path if not the same as model_name"
         },
     )
-    output_dir: Optional[str] = field(
+    output_dir: Union[str, None] = field(
         default=None, metadata={"help": "Directory path to write trained model to."}
     )
     overwrite_output_dir: bool = field(
@@ -310,10 +310,10 @@ class DaptArguments:
             )
         },
     )
-    data_dir: Optional[str] = field(
+    data_dir: Union[str, None] = field(
         default=None, metadata={"help": "The data dir for domain-adaptive pretraining."}
     )
-    cache_dir: Optional[str] = field(
+    cache_dir: Union[str, None] = field(
         default=None,
         metadata={
             "help": "Where do you want to store the pretrained models downloaded from s3"

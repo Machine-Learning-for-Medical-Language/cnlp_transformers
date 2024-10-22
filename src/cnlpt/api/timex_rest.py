@@ -67,19 +67,17 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     sents = doc.sent_tokens
     metadata = doc.metadata
 
-    logger.warn(
-        "Received document labeled %s with %d sentences" % (metadata, len(sents))
-    )
+    logger.warning(f"Received document labeled {metadata} with {len(sents)} sentences")
     instances = []
     start_time = time()
 
     for sent_ind, token_list in enumerate(sents):
         inst_str = create_instance_string(token_list)
-        logger.debug("Instance string is %s" % (inst_str))
+        logger.debug(f"Instance string is {inst_str}")
         instances.append(inst_str)
 
     dataset = get_dataset(instances, app.state.tokenizer, max_length=max_length)
-    logger.warn("Dataset is as follows: %s" % (str(dataset.features)))
+    logger.warning(f"Dataset is as follows: {str(dataset.features)}")
 
     preproc_end = time()
 
@@ -119,7 +117,7 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
 
         timex_entities = get_entities(timex_labels)
         logging.info(
-            "Extracted %d timex entities from the sentence" % (len(timex_entities))
+            f"Extracted {len(timex_entities)} timex entities from the sentence"
         )
         timex_results.append(
             [
@@ -141,8 +139,7 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     postproc_time = postproc_end - pred_end
 
     logging.info(
-        "Pre-processing time: %f, processing time: %f, post-processing time %f"
-        % (preproc_time, pred_time, postproc_time)
+        f"Pre-processing time: {preproc_time:f}, processing time: {pred_time:f}, post-processing time {postproc_time:f}"
     )
 
     return results

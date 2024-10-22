@@ -5,7 +5,7 @@ Domain-adaptive pretraining (see DAPT.md for details)
 import logging
 import os
 import sys
-from typing import Any, Dict, Optional
+from typing import Any, Union
 
 from transformers import (
     AutoModelForMaskedLM,
@@ -22,7 +22,9 @@ from .cnlp_data import DaptDataset
 logger = logging.getLogger(__name__)
 
 
-def main(json_file: Optional[str] = None, json_obj: Optional[Dict[str, Any]] = None):
+def main(
+    json_file: Union[str, None] = None, json_obj: Union[dict[str, Any], None] = None
+):
     """
     Domain-adaptive pretraining.
 

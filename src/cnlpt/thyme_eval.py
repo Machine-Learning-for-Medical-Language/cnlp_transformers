@@ -30,7 +30,7 @@ def main(args):
     hostname = args[1]
 
     # initialize rest server
-    process_url = "http://%s:8000/temporal/process" % hostname
+    process_url = f"http://{hostname}:8000/temporal/process"
 
     # sentence segmenter
     # sentence and token splitters:
@@ -51,12 +51,11 @@ def main(args):
     if len(args) > 3:
         given_entities = True
         for xml_ind, xml_dir in enumerate(args[3:]):
-            print("Reading in xml_dir %s for temporal entities" % (xml_dir))
+            print(f"Reading in xml_dir {xml_dir} for temporal entities")
             for sub_dir, text_name, xml_names in anafora.walk(xml_dir):
                 if len(xml_names) > 1:
                     sys.stderr.write(
-                        "There were multiple valid xml files for file %s\n"
-                        % (text_name)
+                        f"There were multiple valid xml files for file {text_name}\n"
                     )
                     filtered_names = []
                     for xml_name in xml_names:
@@ -64,8 +63,7 @@ def main(args):
                             filtered_names.append(xml_name)
                     if len(filtered_names) == 1:
                         sys.stderr.write(
-                            'Picking the file with "Relation" in the title: %s\n'
-                            % (filtered_names[0])
+                            f'Picking the file with "Relation" in the title: {filtered_names[0]}\n'
                         )
                         xml_names = filtered_names
                     else:
@@ -82,7 +80,6 @@ def main(args):
                             xml_ind,
                         )
                         input_annotations[text_name].append(annot)
-                    pass
                 else:
                     input_annotations[text_name] = anafora_input_data.annotations
     else:
@@ -92,12 +89,12 @@ def main(args):
     token_threshold = 100
 
     for sub_dir, text_name, xml_names in anafora.walk(args[0], xml_name_regex):
-        print("Processing filename: %s" % (text_name))
+        print(f"Processing filename: {text_name}")
         # The point here is just to get the filename that we'll use to write out our system-generated relations.
         # We never actually open up the gold standard xml file.
         if len(xml_names) > 1:
             sys.stderr.write(
-                "There were multiple valid xml files for file %s\n" % (text_name)
+                f"There were multiple valid xml files for file {text_name}\n"
             )
             filtered_names = []
             for xml_name in xml_names:
@@ -105,8 +102,7 @@ def main(args):
                     filtered_names.append(xml_name)
             if len(filtered_names) == 1:
                 sys.stderr.write(
-                    'Picking the file with "Relation" in the title: %s\n'
-                    % (filtered_names[0])
+                    f'Picking the file with "Relation" in the title: {filtered_names[0]}\n'
                 )
                 xml_names = filtered_names
             else:
@@ -124,11 +120,7 @@ def main(args):
                 text += line
                 line_len = len(line)
                 line = line.rstrip()
-                if (
-                    line.startswith("[meta")
-                    or line.startswith("[start section")
-                    or line.startswith("[end section")
-                ):
+                if line.startswith(("[meta", "[start section", "[end section")):
                     if len(cur_section) > 0:
                         # section_texts.append('\n'.join(cur_section))
                         section_text = "\n".join(cur_section)
@@ -291,8 +283,7 @@ def main(args):
                 token_spans = align_tokens(sent_tokens[sent_ind], sent_txt)
             except Exception as e:
                 sys.stderr.write(
-                    "In document %s, error \n%s\n processing sentence:\n*****\n%s\n******\n"
-                    % (text_name, str(e), sent_txt)
+                    f"In document {text_name}, error \n{str(e)}\n processing sentence:\n*****\n{sent_txt}\n******\n"
                 )
                 sys.exit(-1)
 
@@ -401,14 +392,12 @@ def main(args):
                             anafora_data.annotations.append(reln)
                         else:
                             logging.warning(
-                                "Skipping relation in %s that could not be mapped to a given event/timex"
-                                % (text_name)
+                                f"Skipping relation in {text_name} that could not be mapped to a given event/timex"
                             )
                     else:
                         if rel["arg1"] is None or rel["arg2"] is None:
                             logging.warning(
-                                "Skipping relation in %s that could not be aligned to event/timex arguments."
-                                % (text_name)
+                                f"Skipping relation in {text_name} that could not be aligned to event/timex arguments."
                             )
                             continue
 

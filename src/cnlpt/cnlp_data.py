@@ -2,9 +2,10 @@ import functools
 import json
 import logging
 from collections import deque
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Deque, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Union
 
 import datasets
 import numpy as np
@@ -56,11 +57,11 @@ class InputFeatures:
             float for regression problems.
     """
 
-    input_ids: List[int]
-    attention_mask: Optional[List[int]] = None
-    token_type_ids: Optional[List[int]] = None
-    event_tokens: Optional[List[int]] = None
-    label: List[Optional[Union[int, float, List[int], List[Tuple[int]]]]] = None
+    input_ids: list[int]
+    attention_mask: Union[list[int], None] = None
+    token_type_ids: Union[list[int], None] = None
+    event_tokens: Union[list[int], None] = None
+    label: list[Union[int, float, list[int], list[tuple[int]], None]] = None
 
     def to_json_string(self):
         """Serializes this instance to a JSON string."""
@@ -85,11 +86,11 @@ class HierarchicalInputFeatures:
             float for regression problems.
     """
 
-    input_ids: List[List[int]]
-    attention_mask: Optional[List[List[int]]] = None
-    token_type_ids: Optional[List[List[int]]] = None
-    event_tokens: Optional[List[List[int]]] = None
-    label: List[Optional[Union[int, float, List[int], List[Tuple[int]]]]] = None
+    input_ids: list[list[int]]
+    attention_mask: Union[list[list[int]], None] = None
+    token_type_ids: Union[list[list[int]], None] = None
+    event_tokens: Union[list[list[int]], None] = None
+    label: list[Union[int, float, list[int], list[tuple[int]], None]] = None
 
     def to_json_string(self):
         """Serializes this instance to a JSON string."""
@@ -237,12 +238,12 @@ def cnlp_convert_features_to_hierarchical(
 
 
 def cnlp_preprocess_data(
-    examples: Dict[str, Union[List[str], List[int], List[float]]],
+    examples: dict[str, Union[list[str], list[int], list[float]]],
     tokenizer: PreTrainedTokenizer,
-    max_length: Optional[int] = None,
-    tasks: List[str] = [],
-    label_lists: Optional[Dict[str, List[str]]] = None,
-    output_modes: Optional[Dict[str, str]] = None,
+    max_length: Union[int, None] = None,
+    tasks: list[str] = [],
+    label_lists: Union[dict[str, list[str]], None] = None,
+    output_modes: Union[dict[str, str], None] = None,
     inference: bool = False,
     hierarchical: bool = False,
     chunk_len: int = -1,
@@ -250,7 +251,7 @@ def cnlp_preprocess_data(
     character_level: bool = False,
     insert_empty_chunk_at_beginning: bool = False,
     truncate_examples: bool = False,
-) -> Union[List[InputFeatures], List[HierarchicalInputFeatures]]:
+) -> Union[list[InputFeatures], list[HierarchicalInputFeatures]]:
     """
     Processes the dictionary of data inputs created by
     the processor defined in :data:`cnlpt.cnlp_processors.cnlp_processors`
@@ -336,9 +337,9 @@ def cnlp_preprocess_data(
     else:
         if character_level:
 
-            def get_word_ids(indices: Iterable[int]) -> List[Union[None, int]]:
+            def get_word_ids(indices: Iterable[int]) -> list[Union[int, None]]:
                 current = 0
-                raw: Deque[Union[None, int]] = deque()
+                raw: deque[Union[int, None]] = deque()
                 for index in indices:
                     if index in special_token_ids:
                         raw.append(None)
@@ -374,8 +375,7 @@ def cnlp_preprocess_data(
         for task in tasks:
             if none_column in label_map[task]:
                 raise Exception(
-                    "There is a column named %s which is a reserved name"
-                    % (none_column)
+                    f"There is a column named {none_column} which is a reserved name"
                 )
             label_map[task][none_column] = -100
 
@@ -418,8 +418,7 @@ def cnlp_preprocess_data(
                         task_labels.append(inst_labels)
             else:
                 raise NotImplementedError(
-                    "This method is not complete for output mode %s"
-                    % (output_modes[task],)
+                    f"This method is not complete for output mode {output_modes[task]}"
                 )
             labels.append(task_labels)
 
@@ -463,12 +462,12 @@ def cnlp_preprocess_data(
 
 def _build_pytorch_labels(
     result: BatchEncoding,
-    tasks: List[str],
-    labels: List,
-    output_modes: Dict[str, str],
+    tasks: list[str],
+    labels: list,
+    output_modes: dict[str, str],
     num_instances: int,
     max_length: int,
-    label_lists: Dict[str, List[str]],
+    label_lists: dict[str, list[str]],
 ):
     # labels_out = []
     # TODO -- also adapt to character level
@@ -515,14 +514,14 @@ def _build_pytorch_labels(
 def _build_labels_for_task(
     task: str,
     task_ind: int,
-    output_mode: Dict[str, str],
+    output_mode: dict[str, str],
     result: BatchEncoding,
-    labels: List,
+    labels: list,
     num_instances: int,
     max_length: int,
-    label_lists: Dict[str, List[str]],
+    label_lists: dict[str, list[str]],
     pad_classification: bool,
-) -> Union[np.ndarray, List[np.ndarray]]:
+) -> Union[np.ndarray, list[np.ndarray]]:
     if output_mode[task] == tagging:
         return get_tagging_labels(task_ind, result, labels, num_instances)
     elif output_mode[task] == relex:
@@ -548,9 +547,9 @@ def _build_labels_for_task(
 def get_tagging_labels(
     task_ind: int,
     result: BatchEncoding,
-    labels: List,
+    labels: list,
     num_instances: int,
-) -> List[np.ndarray]:
+) -> list[np.ndarray]:
     encoded_labels = []
     for sent_ind in range(num_instances):
         word_ids = result["word_ids"][sent_ind]
@@ -580,21 +579,21 @@ def get_relex_labels(
     task: str,
     task_ind: int,
     result: BatchEncoding,
-    labels: List,
+    labels: list,
     num_instances: int,
     max_length: int,
-    label_lists: Dict[str, List[str]],
-) -> List[np.ndarray]:
+    label_lists: dict[str, list[str]],
+) -> list[np.ndarray]:
     encoded_labels = []
     # start by building a matrix that's N' x N' (word-piece length) with "None" as the default
     # for word pairs, and -100 (mask) as the default if one of word pair is a suffix token
     out_of_bounds = 0
     num_relations = 0
 
-    def ids_getter(sent_ind: int) -> List[int]:
+    def ids_getter(sent_ind: int) -> list[int]:
         return result["word_ids"][sent_ind]
 
-    def relevant(word_idx: Union[None, int]) -> bool:
+    def relevant(word_idx: Union[int, None]) -> bool:
         return word_idx is not None
 
     for sent_ind in range(num_instances):
@@ -638,19 +637,17 @@ def get_relex_labels(
 
         encoded_labels.append(sent_labels)
     if out_of_bounds > 0:
-        logger.warn(
-            (
-                "During relation processing,"
-                f"there were {out_of_bounds} relations (out of {num_relations} total relations)"
-                "where at least one argument was truncated so the relation could not be trained/predicted."
-            )
+        logger.warning(
+            "During relation processing,"
+            f"there were {out_of_bounds} relations (out of {num_relations} total relations)"
+            "where at least one argument was truncated so the relation could not be trained/predicted."
         )
     return encoded_labels
 
 
 def get_classification_labels(
     task_ind: int,
-    labels: List,
+    labels: list,
     num_instances: int,
     max_length: int,
     pad_classification: bool,
@@ -783,7 +780,7 @@ class DataTrainingArguments:
     the command line.
     """
 
-    data_dir: List[str] = field(
+    data_dir: list[str] = field(
         metadata={
             "help": "The input data dirs. A space-separated list of directories that "
             "should contain the .tsv files (or other data files) for the task. "
@@ -791,7 +788,7 @@ class DataTrainingArguments:
         }
     )
 
-    task_name: List[str] = field(
+    task_name: list[str] = field(
         default_factory=lambda: None,
         metadata={
             "help": "A space-separated list of tasks to train on (mainly used as keys to internally track and display output)"
@@ -822,7 +819,7 @@ class DataTrainingArguments:
         },
     )
 
-    chunk_len: Optional[int] = field(
+    chunk_len: Union[int, None] = field(
         default=None, metadata={"help": "Chunk length for hierarchical model"}
     )
     character_level: bool = field(
@@ -833,7 +830,7 @@ class DataTrainingArguments:
         },
     )
 
-    num_chunks: Optional[int] = field(
+    num_chunks: Union[int, None] = field(
         default=None, metadata={"help": "Max chunk count for hierarchical model"}
     )
 
@@ -849,14 +846,14 @@ class DataTrainingArguments:
         },
     )
 
-    max_train_items: Optional[int] = field(
+    max_train_items: Union[int, None] = field(
         default=-1,
         metadata={
             "help": "Set a number of train instances to use during training (useful for debugging data processing logic if a dataset is very large. Default is to train on all training data."
         },
     )
 
-    max_eval_items: Optional[int] = field(
+    max_eval_items: Union[int, None] = field(
         default=-1,
         metadata={
             "help": "Set a number of validation instances to use during training (useful if a dataset has been created using dumb logic like 80/10/10 and 10%% takes forever to evaluate on. Default is evaluate on all validation data."
@@ -880,14 +877,14 @@ class ClinicalNlpDataset(Dataset):
     """
 
     args: DataTrainingArguments
-    features: List[InputFeatures]
+    features: list[InputFeatures]
 
     def __init__(
         self,
         args: DataTrainingArguments,
         tokenizer: PreTrainedTokenizer,
-        limit_length: Optional[int] = None,
-        cache_dir: Optional[str] = None,
+        limit_length: Union[int, None] = None,
+        cache_dir: Union[str, None] = None,
         hierarchical: bool = False,
     ):
         self.args = args
@@ -949,7 +946,7 @@ class ClinicalNlpDataset(Dataset):
         self.tasks = tasks
 
         if self.args.character_level:
-            logging.warn(
+            logging.warning(
                 "No real implementation for character level event masking yet, using a placeholder"
             )
         self.processed_dataset = combined_dataset.map(
@@ -995,13 +992,11 @@ class ClinicalNlpDataset(Dataset):
                 old_labels = set(self.tasks_to_labels[task])
                 if new_labels.isdisjoint(old_labels):
                     raise Exception(
-                        "The same task name has disjoint sets of labels in different dataset: %s vs. %s"
-                        % (str(old_labels), str(new_labels))
+                        f"The same task name has disjoint sets of labels in different dataset: {str(old_labels)} vs. {str(new_labels)}"
                     )
                 elif new_labels != old_labels:
-                    logger.warn(
-                        "Two different datasets have the same task name but not completely equal label lists: %s vs. %s. We will merge them."
-                        % (str(old_labels), str(new_labels))
+                    logger.warning(
+                        f"Two different datasets have the same task name but not completely equal label lists: {str(old_labels)} vs. {str(new_labels)}. We will merge them."
                     )
                     self.tasks_to_labels[task] = list(old_labels.union(new_labels))
                 else:
@@ -1022,8 +1017,7 @@ class ClinicalNlpDataset(Dataset):
                 existing_output_mode = self.output_modes[task]
                 if output_mode != existing_output_mode:
                     raise Exception(
-                        "The task %s has two different output modes in different datasets and might not be the same task: %s vs. %s"
-                        % (task, existing_output_mode, output_mode)
+                        f"The task {task} has two different output modes in different datasets and might not be the same task: {existing_output_mode} vs. {output_mode}"
                     )
             else:
                 self.output_modes[task] = output_mode
@@ -1088,7 +1082,7 @@ class ClinicalNlpDataset(Dataset):
         """
         return self.features[i]
 
-    def get_labels(self) -> Dict[str, List[str]]:
+    def get_labels(self) -> dict[str, list[str]]:
         """
         Retrieve the label lists for all the tasks for the dataset.
 

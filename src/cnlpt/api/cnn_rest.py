@@ -44,7 +44,7 @@ max_seq_length = 128
 @app.on_event("startup")
 async def startup_event():
     conf_file = join(model_name, "config.json")
-    with open(conf_file, "rt") as fp:
+    with open(conf_file) as fp:
         conf_dict = json.load(fp)
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)

@@ -2,12 +2,14 @@
 Module containing the CNLP transformer model.
 """
 
+from __future__ import annotations
+
 import inspect
 import logging
 import math
 import random
 from os import PathLike
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Union
 
 import torch
 from torch import nn
@@ -22,7 +24,7 @@ from . import __version__ as cnlpt_version
 logger = logging.getLogger(__name__)
 
 
-def generalize_encoder_forward_kwargs(encoder, **kwargs: Any) -> Dict[str, Any]:
+def generalize_encoder_forward_kwargs(encoder, **kwargs: Any) -> dict[str, Any]:
     """
     Create a new input feature argument that preserves only the features that are valid for this encoder.
     Warn if a feature is present but not valid for the encoder.
@@ -94,7 +96,7 @@ class RepresentationProjectionLayer(nn.Module):
 
     def __init__(
         self,
-        config: "CnlpConfig",
+        config: CnlpConfig,
         layer: int = 10,
         tokens: bool = False,
         tagger: bool = False,
@@ -206,16 +208,16 @@ class CnlpConfig(PretrainedConfig):
         self,
         *,
         encoder_name: Union[str, PathLike] = "roberta-base",
-        finetuning_task: Optional[List[str]] = None,
+        finetuning_task: Union[list[str], None] = None,
         layer: int = -1,
         tokens: bool = False,
         num_rel_attention_heads: int = 12,
         rel_attention_head_dims: int = 64,
-        tagger: Dict[str, bool] = {},
-        relations: Dict[str, bool] = {},
+        tagger: dict[str, bool] = {},
+        relations: dict[str, bool] = {},
         use_prior_tasks: bool = False,
-        hier_head_config: Dict[str, Any] = None,
-        label_dictionary: Dict[str, List[str]] = None,
+        hier_head_config: dict[str, Any] = None,
+        label_dictionary: dict[str, list[str]] = None,
         character_level: bool = False,
         **kwargs,
     ):
@@ -271,7 +273,7 @@ class CnlpModelForClassification(PreTrainedModel):
         self,
         config: config_class,
         *,
-        class_weights: Optional[Dict[str, float]] = None,
+        class_weights: Union[dict[str, float], None] = None,
         final_task_weight: float = 1.0,
         freeze: float = -1.0,
         bias_fit: bool = False,
@@ -385,13 +387,12 @@ class CnlpModelForClassification(PreTrainedModel):
                         (features, aug), 3
                     )  # concatenate the  relation matrix with the sequence matrix
                 else:
-                    logging.warn(
-                        "It is not implemented to add a task of shape %s to a relation matrix"
-                        % (str(prior_task_logits.shape))
+                    logging.warning(
+                        f"It is not implemented to add a task of shape {str(prior_task_logits.shape)} to a relation matrix"
                     )
             elif len(features.shape) == 3:
                 # sequence
-                logging.warn(
+                logging.warning(
                     "It is not implemented to add previous task of any type to a sequence task"
                 )
 

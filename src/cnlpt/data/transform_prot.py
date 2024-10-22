@@ -141,7 +141,7 @@ def build_abstract_dictionary(filename):
 
 
 def build_entity_dictionary(filename, mode="drugprot"):
-    identifier_to_entity = defaultdict(lambda: {})
+    identifier_to_entity = defaultdict(dict)
     with open(filename) as fd:
         rd = csv.reader(fd, delimiter="\t")
         for row in rd:
@@ -166,7 +166,7 @@ def build_entity_dictionary(filename, mode="drugprot"):
 
 
 def build_rel_dictionary(filename, mode="drugprot"):
-    identifier_to_rel = defaultdict(lambda: {})
+    identifier_to_rel = defaultdict(dict)
     with open(filename) as fd:
         rd = csv.reader(fd, delimiter="\t")
         for row in rd:
@@ -302,7 +302,7 @@ def build_e2e_data_dict(entity_to_info, rel_ents_to_type):
     def clean(e2e_t):
         return str(e2e_t).replace("'", "")
 
-    sent_idx_to_rels = defaultdict(lambda: [])
+    sent_idx_to_rels = defaultdict(list)
     for ent_pair, rel_type in rel_ents_to_type.items():
         entity_1, entity_2 = ent_pair
         sent_1_idx, ent_1_begin, ent_1_end = entity_to_info[entity_1]["stanza_location"]
@@ -334,7 +334,7 @@ def intervals_to_tags(intervals_dict, sent_len):
 
 
 def build_ner_data_dict(entity_to_info, stanza_sents, mode):
-    sent_idx_to_tags = defaultdict(lambda: [])
+    sent_idx_to_tags = defaultdict(list)
     for entity, info_dict in entity_to_info.items():
         sent_idx, ent_begin, ent_end = info_dict["stanza_location"]
         entity_type = info_dict["type"]
@@ -342,8 +342,8 @@ def build_ner_data_dict(entity_to_info, stanza_sents, mode):
     for sent_idx, stanza_sent in enumerate(stanza_sents):
         tags = sent_idx_to_tags[sent_idx]
         sorted_tags = sorted(tags, key=lambda s: s[:2])
-        final_tags = defaultdict(lambda: [])
-        for i in range(0, len(sorted_tags)):
+        final_tags = defaultdict(list)
+        for i in range(len(sorted_tags)):
             curr_begin, curr_end, curr_type = sorted_tags[i]
             prev_ls = final_tags[curr_type]
             dict_type = curr_type.split("-")[0]

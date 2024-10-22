@@ -16,7 +16,6 @@
 # under the License.
 import logging
 from time import time
-from typing import List
 
 import numpy as np
 from fastapi import FastAPI
@@ -41,7 +40,7 @@ max_length = 128
 class DocTimeRelResults(BaseModel):
     """statuses: dictionary from entity id to classification decision about DocTimeRel"""
 
-    statuses: List[str]
+    statuses: list[str]
 
 
 @app.on_event("startup")
@@ -52,9 +51,8 @@ async def startup_event():
 @app.post("/dtr/process")
 async def process(doc: EntityDocument):
     doc_text = doc.doc_text
-    logger.warn(
-        "Received document of len %d to process with %d entities"
-        % (len(doc_text), len(doc.entities))
+    logger.warning(
+        f"Received document of len {len(doc_text)} to process with {len(doc.entities)} entities"
     )
     instances = []
     start_time = time()
@@ -65,7 +63,7 @@ async def process(doc: EntityDocument):
     for ent_ind, offsets in enumerate(doc.entities):
         # logger.debug('Entity ind: %d has offsets (%d, %d)' % (ent_ind, offsets[0], offsets[1]))
         inst_str = create_instance_string(doc_text, offsets)
-        logger.debug("Instance string is %s" % (inst_str))
+        logger.debug(f"Instance string is {inst_str}")
         instances.append(inst_str)
 
     dataset = get_dataset(instances, app.state.tokenizer, max_length=max_length)
@@ -90,9 +88,8 @@ async def process(doc: EntityDocument):
     pred_time = pred_end - preproc_end
     postproc_time = postproc_end - pred_end
 
-    logging.warn(
-        "Pre-processing time: %f, processing time: %f, post-processing time %f"
-        % (preproc_time, pred_time, postproc_time)
+    logging.warning(
+        f"Pre-processing time: {preproc_time:f}, processing time: {pred_time:f}, post-processing time {postproc_time:f}"
     )
 
     return output

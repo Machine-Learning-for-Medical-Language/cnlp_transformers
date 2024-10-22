@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
 # Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
 #
@@ -24,7 +23,7 @@ import sys
 import tempfile
 from collections import defaultdict, deque
 from os.path import exists, join
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Union
 
 import numpy as np
 import requests
@@ -159,9 +158,9 @@ def is_external_encoder(model_name_or_path: str) -> bool:
 
 
 def main(
-    json_file: Optional[str] = None,
-    json_obj: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Dict[str, Any]]:
+    json_file: Union[str, None] = None,
+    json_obj: Union[dict[str, Any], None] = None,
+) -> dict[str, dict[str, Any]]:
     """
     See all possible arguments in :class:`transformers.TrainingArguments`
     or by passing the --help flag to this script.
@@ -218,21 +217,14 @@ def main(
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
         datefmt="%m/%d/%Y %H:%M:%S",
-        level=logging.INFO if training_args.local_rank in [-1, 0] else logging.WARN,
+        level=logging.INFO if training_args.local_rank in [-1, 0] else logging.WARNING,
     )
     logger.warning(
-        "Process rank: %s, device: %s, n_gpu: %s, distributed training: %s, 16-bits training: %s"
-        % (
-            training_args.local_rank,
-            training_args.device,
-            training_args.n_gpu,
-            bool(training_args.local_rank != -1),
-            training_args.fp16,
-        )
+        f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}, distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
     )
-    logger.info("Training/evaluation parameters %s" % training_args)
-    logger.info("Data parameters %s" % data_args)
-    logger.info("Model parameters %s" % model_args)
+    logger.info(f"Training/evaluation parameters {training_args}")
+    logger.info(f"Data parameters {data_args}")
+    logger.info(f"Model parameters {model_args}")
     # Set seed
     set_seed(training_args.seed)
 
@@ -303,7 +295,7 @@ def main(
             relations[task] = task_output_mode == relex
 
     except KeyError:
-        raise ValueError("Task not found: %s" % (data_args.task_name))
+        raise ValueError(f"Task not found: {data_args.task_name}")
 
     class_weights = None
     # get class weights, if desired
@@ -594,8 +586,8 @@ def main(
     current_prediction_packet = deque()
 
     def build_compute_metrics_fn(
-        task_names: List[str], model, dataset: ClinicalNlpDataset
-    ) -> Callable[[EvalPrediction], Dict]:
+        task_names: list[str], model, dataset: ClinicalNlpDataset
+    ) -> Callable[[EvalPrediction], dict]:
         def compute_metrics_fn(p: EvalPrediction):
             metrics = {}
             task_scores = []
@@ -705,14 +697,14 @@ def main(
                         for task_ind, task_name in enumerate(metrics):
                             with open(output_eval_file, "a") as writer:
                                 logger.info(
-                                    "***** Eval results for task %s *****" % (task_name)
+                                    f"***** Eval results for task {task_name} *****"
                                 )
                                 writer.write(
                                     f"\n\n***** Eval results for task {task_name} *****\n\n"
                                 )
                                 for key, value in metrics[task_name].items():
                                     logger.info("  %s = %s", key, value)
-                                    writer.write("%s = %s\n" % (key, value))
+                                    writer.write(f"{key} = {value}\n")
 
                     if training_args.error_analysis:
                         if len(current_prediction_packet) > 0:
@@ -790,7 +782,7 @@ def main(
                 logger.info("***** Eval results on combined dataset *****")
                 for key, value in eval_result.items():
                     logger.info("  %s = %s", key, value)
-                    writer.write("%s = %s\n" % (key, value))
+                    writer.write(f"{key} = {value}\n")
                 if any(eval_state):
                     curr_step = eval_state["curr_step"]
                     writer.write(
