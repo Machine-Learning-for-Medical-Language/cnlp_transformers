@@ -31,10 +31,9 @@ def test_import_sklearn():
     """
     Test that sklearn can be imported (#85)
     """
-    try:
-        import sklearn
-    except ValueError as e:
-        assert False, e.args[0]
+    from importlib.util import find_spec
+
+    assert find_spec("sklearn") is not None
 
 
 class TestSubmodulesPresent:

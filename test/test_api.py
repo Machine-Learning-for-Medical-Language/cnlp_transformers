@@ -44,11 +44,8 @@ class TestTemporal:
 
     def test_temporal_process_sentence(self, startup_temporal):
         from cnlpt.api.temporal_rest import (
-            Event,
-            Relation,
             SentenceDocument,
             TemporalResults,
-            Timex,
         )
         from cnlpt.api.temporal_rest import (
             process_sentence as temporal_process_sentence,
