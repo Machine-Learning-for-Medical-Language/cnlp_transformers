@@ -1,3 +1,12 @@
+.PHONY: help
+help:
+	@echo 'Targets:'
+	@echo '  help  - show this help message'
+	@echo '  hooks - install pre-commit hooks'
+	@echo '  check - lint and format using ruff'
+	@echo '  test  - run tests with pytest'
+	@echo '  docs  - build the docs'
+
 .PHONY: hooks
 hooks:
 	pre-commit install
