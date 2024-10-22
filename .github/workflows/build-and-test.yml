@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - "dev-v[0-9]*"
     paths:
       - "src/**"
       - "test/**"
@@ -11,6 +12,7 @@ on:
   pull_request:
     branches:
       - main
+      - "dev-v[0-9]*"
     paths:
       - "src/**"
       - "test/**"
