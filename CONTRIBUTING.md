@@ -5,44 +5,13 @@
 The first things to do when contributing to the code base here are to
 clone this repository and set up your Python environment.
 
-1. Clone this repository:
+1. Follow the [editable installation instructions](README.md#editable-installation) from the README.
+
+2. Install pre-commit hooks:
 
    ```sh
-   # Either the HTTPS method...
-   $ git clone https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers.git
-   # ...or the SSH method
-   $ git clone git@github.com:Machine-Learning-for-Medical-Language/cnlp_transformers.git
+   make hooks
    ```
-
-2. Enter the repo: `cd cnlp_transformers`
-
-3. You will need Python 3.8. Either a `venv` virtual environment or a
-   Conda environment should work. Create your environment and activate
-   it.
-
-4. Install the development dependencies:
-
-   ```sh
-   pip install -r dev-requirements.txt
-   ```
-
-5. Install pre-commit:
-
-   ```sh
-   pre-commit install
-   ```
-
-6. See [README.md](README.md) for the note about PyTorch;
-   if needed, manually install it now.
-
-7. Install `cnlp-transformers` in editable mode:
-
-   ```sh
-   pip install -e .
-   ```
-
-**The remainder of the instructions on this document will assume that
-you have installed the development dependencies.**
 
 ### Proposing changes
 
@@ -64,7 +33,7 @@ repository, please follow these steps.
 
 3. Switch to the correct base branch:
    * If you are not making changes to source files or project configuration
-     files (`setup.cfg`, `pyproject.toml`, `MANIFEST.in`), stay on `main`
+     files (`pyproject.toml`), stay on `main`
    * Otherwise, **switch to the branch for the next release**.
      * This will be a branch named `dev-vX.Y.Z` for version X.Y.Z.
      * If there is no such branch, create it by branching off of `main`
@@ -94,16 +63,31 @@ repository, please follow these steps.
 
 7. Open a PR to close the issue.
    * If you are not making changes to source files or project configuration
-     files (`setup.cfg`, `pyproject.toml`, `MANIFEST.in`), you can target `main`
+     files (`pyproject.toml`), you can target `main`
    * Otherwise, **have your PR target the branch for the next release**.
      * This will be a branch named `dev-vX.Y.Z` for version X.Y.Z.
      * If there is no such branch, create it by branching off of `main`, then
        target your new branch.
        * You can also ask a maintainer to create this branch for you.
 
+### Linting and formatting
+
+We use [Ruff](https://docs.astral.sh/ruff/) for linting and formatting.
+
+Run `make check` to lint and format your code.
+
+There is also a pre-commit hook that will make sure that your code is
+linted and formatted properly before you commit. If you haven't already done so,
+you can install the pre-commit hooks with `make hooks`.
+
+If you use VSCode, there is a [ruff extension](https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff)
+that might be handy for development.
+
 ### Testing your code
 
-This repository has GitHub Actions set up to automatically run the test
+You can run the pytest test suite with `make test`.
+
+This repository also has GitHub Actions set up to automatically run the test
 suite in `test` whenever a commit is pushed or a pull request is opened
 in certain circumstances.
 
@@ -111,7 +95,6 @@ Tests will run if changes are made to any of the following files:
 
 * `src/**`
 * `test/**`
-* `setup.cfg`
 * `pyproject.toml`
 
 AND the changes are in any of the following:
@@ -211,11 +194,7 @@ it is time to merge the development branch and release the new version.
 
 8. Delete the contents of the `./dist/` directory if it exists.
 
-9. Build the package using `build`:
-
-   ```sh
-   python -m build
-   ```
+9. Build the package using `make build`:
 
    This will build the package in the `./dist/` directory, creating it if
    it does not exist.
