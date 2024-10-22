@@ -2,5 +2,56 @@
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[tool.isort]
-profile = "black"
+[project]
+name = "cnlp-transformers"
+dynamic = ["version"]
+authors = [
+    { name = "Machine Learning for Medical Language Lab @ CHIP", email = "Timothy.Miller@childrens.harvard.edu" },
+]
+description = "Transformers for Clinical NLP"
+
+readme = "README.md"
+requires-python = ">=3.9, <3.12"
+dependencies = [
+    "anaforatools~=1.1.0",
+    "datasets~=2.21.0",
+    "fastapi~=0.115.2",
+    "huggingface-hub>=0.9.0",
+    "nltk~=3.5",
+    "numpy~=2.0.2",
+    "pandas~=2.2.3",
+    "pydantic~=1.10.8",
+    "requests~=2.32.2",
+    "scikit-learn~=1.5.2",
+    "seqeval~=1.2.2",
+    "torch",
+    "transformers[torch]~=4.45",
+    "uvicorn[standard]~=0.32.0",
+]
+
+classifiers = [
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Operating System :: OS Independent",
+    "License :: OSI Approved :: Apache Software License",
+]
+
+[project.urls]
+Homepage = "https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers/"
+"Bug Tracker" = "https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers/issues"
+
+[tool.setuptools.dynamic]
+version = { attr = "cnlpt.__version__" }
+
+[project.optional-dependencies]
+lint = [
+    "ruff==0.7.0", # same as in pre-commit hooks
+]
+build = ["build", "pip>=21.3", "twine"]
+test = ["pytest"]
+docs = ["sphinx", "sphinx-autodoc-typehints", "sphinx-rtd-theme", "sphobjinv"]
+dev = ["cnlp-transformers[lint,build,test,docs]", "pre-commit"]
+
+# [project.scripts]
+# TODO Add entrypoints here
