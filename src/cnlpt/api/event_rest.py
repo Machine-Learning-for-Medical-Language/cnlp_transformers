@@ -16,19 +16,13 @@
 # under the License.
 
 import logging
-import os
 from time import time
-from typing import Dict, List, Tuple
 
 import numpy as np
 from fastapi import FastAPI
 from nltk.tokenize import wordpunct_tokenize as tokenize
-from pydantic import BaseModel
 from seqeval.metrics.sequence_labeling import get_entities
-from torch.utils.data.dataset import Dataset
-from transformers.data.processors.utils import InputExample, InputFeatures
 
-from ..CnlpModelForClassification import CnlpConfig, CnlpModelForClassification
 from .cnlp_rest import get_dataset, initialize_cnlpt_model
 from .temporal_rest import (
     Event,

@@ -8,13 +8,11 @@ from sklearn.metrics import (
     accuracy_score,
     classification_report,
     f1_score,
-    matthews_corrcoef,
     precision_score,
     recall_score,
 )
 
-from .cnlp_data import ClinicalNlpDataset
-from .cnlp_processors import classification, mtl, relex, tagging
+from .cnlp_processors import classification, relex, tagging
 
 logger = logging.getLogger(__name__)
 

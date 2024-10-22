@@ -4,7 +4,7 @@ Module containing the CNLP command line argument definitions
 
 from dataclasses import dataclass, field, fields
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import List, Optional, Union
 
 from transformers import TrainingArguments
 

@@ -4,13 +4,12 @@ import logging
 from collections import deque
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Deque, Dict, Iterable, List, Optional, Set, Tuple, Union
+from typing import Deque, Dict, Iterable, List, Optional, Tuple, Union
 
 import datasets
 import numpy as np
-import torch
 from datasets import Dataset as HFDataset
-from datasets import DatasetDict, Features, IterableDatasetDict
+from datasets import DatasetDict, IterableDatasetDict
 from torch.utils.data.dataset import Dataset
 from transformers import BatchEncoding, DataCollatorForLanguageModeling
 from transformers.tokenization_utils import PreTrainedTokenizer

@@ -21,25 +21,14 @@ from typing import List
 import numpy as np
 from fastapi import FastAPI
 from pydantic import BaseModel
-from torch.utils.data.dataset import Dataset
-from transformers import (
-    AutoConfig,
-    AutoModel,
-    AutoTokenizer,
-    HfArgumentParser,
-    Trainer,
-    TrainingArguments,
-)
-from transformers.data.processors.utils import InputExample, InputFeatures
 
-from ..CnlpModelForClassification import CnlpConfig, CnlpModelForClassification
 from .cnlp_rest import (
     EntityDocument,
     create_instance_string,
     get_dataset,
     initialize_cnlpt_model,
 )
-from .temporal_rest import dtr_label_list, old_dtr_label_list
+from .temporal_rest import old_dtr_label_list
 
 app = FastAPI()
 model_name = "tmills/tiny-dtr"

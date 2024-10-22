@@ -27,7 +27,7 @@ def add_labels_file(fn, ids, labels):
                     id = doc.get("id")
                     ids.add(id)
                     label = doc.get("judgment")
-                    if not id in labels:
+                    if id not in labels:
                         labels[id] = {}
                     labels[id][disease.get("name")] = label
 

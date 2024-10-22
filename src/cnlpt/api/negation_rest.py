@@ -16,13 +16,12 @@
 # under the License.
 import logging
 from time import time
-from typing import Dict, List, Tuple
+from typing import List
 
 import numpy as np
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from ..CnlpModelForClassification import CnlpConfig, CnlpModelForClassification
 from .cnlp_rest import (
     EntityDocument,
     create_instance_string,

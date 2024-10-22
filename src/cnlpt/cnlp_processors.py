@@ -7,21 +7,13 @@ modes for tasks and datasets that use a few conventional formats.
 import json
 import logging
 import os
-import random
-import time
-from dataclasses import dataclass, field
-from os.path import basename, dirname, join
-from typing import Any, Callable, Dict, List, Optional, Set, Union
+from os.path import join
+from typing import Dict, List, Set
 
 import datasets
-import numpy  # for Sphinx
-import numpy as np
-import torch
 from datasets import load_dataset
-from torch.utils.data.dataset import Dataset
 from tqdm import tqdm
-from transformers.data.processors.utils import DataProcessor, InputExample
-from transformers.tokenization_utils import PreTrainedTokenizer
+from transformers.data.processors.utils import DataProcessor
 
 logger = logging.getLogger(__name__)
 

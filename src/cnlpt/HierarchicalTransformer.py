@@ -4,11 +4,9 @@ Module containing the Hierarchical Transformer module, adapted from Xin Su.
 
 import copy
 import logging
-import random
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, cast
 
-import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -428,7 +426,7 @@ class HierarchicalModel(PreTrainedModel):
 
         total_loss = None
         for task_ind, task_name in enumerate(self.tasks):
-            if not self.class_weights[task_name] is None:
+            if self.class_weights[task_name] is not None:
                 class_weights = torch.FloatTensor(self.class_weights[task_name]).to(
                     self.device
                 )

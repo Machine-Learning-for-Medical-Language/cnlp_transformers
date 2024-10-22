@@ -95,7 +95,7 @@ class CnnSentenceClassifier(nn.Module, PyTorchModelHubMixin):
             task_logits = task_fc(fc_in)
             logits.append(task_logits)
 
-            if not labels is None:
+            if labels is not None:
                 if labels.ndim == 2:
                     # if len(self.fcs) == 1:
                     #     task_labels = labels[:,0]
@@ -156,7 +156,7 @@ class LstmSentenceClassifier(nn.Module, PyTorchModelHubMixin):
             task_logits = task_fc(features)
             logits.append(task_logits)
 
-            if not labels is None:
+            if labels is not None:
                 if labels.ndim == 2:
                     task_labels = labels[:, 0]
                 elif labels.ndim == 3:

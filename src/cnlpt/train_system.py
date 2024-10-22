@@ -13,7 +13,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-""" Finetuning the library models for sequence classification on clinical NLP tasks"""
+"""Finetuning the library models for sequence classification on clinical NLP tasks"""
+
 import csv
 import json
 import logging
@@ -246,7 +247,7 @@ def main(
     if training_args.truncation_side_left:
         if hierarchical:
             logger.warning(
-                f"truncation_side_left flag is not available for the hierarchical model -- setting to right"
+                "truncation_side_left flag is not available for the hierarchical model -- setting to right"
             )
             truncation_side = "right"
         else:

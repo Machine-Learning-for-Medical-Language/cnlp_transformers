@@ -3,6 +3,7 @@ import os
 import sys
 from collections import defaultdict
 from heapq import merge
+from importlib.util import find_spec
 from itertools import chain, groupby, tee
 from pathlib import Path
 
@@ -16,17 +17,15 @@ TRAIN_DIR = "chemprot_training"
 # allow script to run only if scispacy is installed
 #  (gated behind certain Python versions and platforms)
 nlp = None
-try:
-    import scispacy
-
+if find_spec("scispacy") is not None:
     nlp = spacy.load("en_core_sci_sm")
-except ImportError:
+else:
     import platform
 
     print(
-        f"scispacy not installed; cannot run transform_prot.\n"
-        f"Note: transform_prot is not runnable on ARM and non-Linux platforms, "
-        f"and is only tested on Linux x86_64 platforms."
+        "scispacy not installed; cannot run transform_prot.\n"
+        "Note: transform_prot is not runnable on ARM and non-Linux platforms, "
+        "and is only tested on Linux x86_64 platforms."
     )
     print(f"Current platform: {sys.platform} {platform.machine()}")
     sys.exit(1)
@@ -382,10 +381,9 @@ def coalesce(abs_dict, ent_dict, rel_dict, mode="drugprot"):
             e2e_cell = raw_e2e_cell if len(raw_e2e_cell) > 0 else "None"
             chemical_tags = ner_data_dict[sent_index]["CHEMICAL"]
             gene_tags = ner_data_dict[sent_index]["GENE"]
-            assert len(gene_tags.split()) == len(tok_sent.split()) and len(
-                gene_tags.split()
-            ) == len(
-                chemical_tags.split()
+            assert (
+                len(gene_tags.split()) == len(tok_sent.split())
+                and len(gene_tags.split()) == len(chemical_tags.split())
             ), f"Error with lengths! \n {tok_sent} : {len(tok_sent.split())} \n {chemical_tags} : {len(chemical_tags.split())} \n {gene_tags} : {len(gene_tags.split())}"
             return [e2e_cell, chemical_tags, gene_tags, tok_sent]
 

@@ -18,7 +18,7 @@
 import logging
 import os
 from time import time
-from typing import Dict, List, Tuple, Union
+from typing import List, Union
 
 import numpy as np
 from fastapi import FastAPI
@@ -26,8 +26,7 @@ from nltk.tokenize import wordpunct_tokenize as tokenize
 from pydantic import BaseModel
 from seqeval.metrics.sequence_labeling import get_entities
 
-from ..CnlpModelForClassification import CnlpConfig, CnlpModelForClassification
-from .cnlp_rest import create_instance_string, get_dataset, initialize_cnlpt_model
+from .cnlp_rest import get_dataset, initialize_cnlpt_model
 
 app = FastAPI()
 model_name = "mlml-chip/thyme2_colon_e2e"
@@ -125,7 +124,14 @@ def create_instance_string(tokens: List[str]):
 
 @app.on_event("startup")
 async def startup_event():
-    global timex_label_list, timex_label_dict, event_label_list, event_label_dict, relation_label_list, relation_label_dict, task_order
+    global \
+        timex_label_list, \
+        timex_label_dict, \
+        event_label_list, \
+        event_label_dict, \
+        relation_label_list, \
+        relation_label_dict, \
+        task_order
 
     local_model_name = os.getenv("MODEL_NAME", model_name)
     initialize_cnlpt_model(app, local_model_name)
@@ -138,7 +144,7 @@ async def startup_event():
     if label_dict is not None:
         # some older versions have one label dictionary per dataset, future versions should just
         # have a task-keyed dictionary
-        if type(label_dict) == list:
+        if type(label_dict) is list:
             label_dict = label_dict[0]
 
         if "event" in label_dict:
@@ -226,7 +232,7 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     rels_by_sent = {}
     for rel_num in range(len(rel_inds[0])):
         sent_ind = rel_inds[0][rel_num]
-        if not sent_ind in rels_by_sent:
+        if sent_ind not in rels_by_sent:
             rels_by_sent[sent_ind] = []
 
         arg1_ind = rel_inds[1][rel_num]
@@ -274,7 +280,7 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
                     event_labels.append(
                         event_label_list[event_predictions[sent_ind][word_pos_idx]]
                     )
-                except:
+                except Exception as e:
                     print(
                         "exception thrown when sent_ind=%d and word_pos_idx=%d"
                         % (sent_ind, word_pos_idx)
@@ -283,7 +289,7 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
                         "prediction is %s"
                         % str(event_predictions[sent_ind][word_pos_idx])
                     )
-                    raise Exception
+                    raise e
 
             previous_word_idx = word_idx
 

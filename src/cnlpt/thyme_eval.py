@@ -16,8 +16,6 @@ from nltk.tokenize import TreebankWordTokenizer
 from nltk.tokenize import wordpunct_tokenize as tokenize
 from nltk.tokenize.util import align_tokens
 
-from .api.temporal_rest import TokenizedSentenceDocument
-
 xml_name_regex = r"Temporal-(Entity|Relation)\.gold\.completed\.xml"
 tb_tokenize = False
 
@@ -38,11 +36,11 @@ def main(args):
     # sentence and token splitters:
     try:
         from PyRuSH import RuSH
-    except:
+    except ImportError as e:
         sys.stderr.write(
             "PyRuSH must be installed for this script to run -- it is managed separately from other dependencies because it can be hard to integrate with newer versions of Python."
         )
-        raise Exception()
+        raise e
 
     rush = RuSH("conf/rush_rules.tsv")
     # tokenizer
@@ -345,7 +343,7 @@ def main(args):
                         timex_ids.append(-1)
                     elif time_class == "SECTIONTIME":
                         timex_ids.append(-1)
-                    elif not re.match(r"\d{5}", timex_text) is None:
+                    elif re.match(r"\d{5}", timex_text) is not None:
                         timex_ids.append(-1)
                     else:
                         # create anafora entry
@@ -360,7 +358,7 @@ def main(args):
 
                     # print("Found timex %s" % (timex_text))
 
-            if not "path" in text_name.lower():
+            if "path" not in text_name.lower():
                 # no relations in pathology notes, so if we find any they are false positives.
                 for rel in sent_rels:
                     if given_entities:
@@ -391,7 +389,7 @@ def main(args):
                                 if arg2_offset >= span[0] and arg2_offset <= span[1]:
                                     arg2 = timex
 
-                        if not arg1 is None and not arg2 is None:
+                        if arg1 is not None and arg2 is not None:
                             reln = AnaforaRelation()
                             reln.id = str(rel_id) + "@r@" + text_name
                             rel_id += 1

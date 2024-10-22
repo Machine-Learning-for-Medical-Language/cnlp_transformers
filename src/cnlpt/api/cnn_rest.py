@@ -24,7 +24,7 @@ import numpy as np
 import torch
 from fastapi import FastAPI
 from scipy.special import softmax
-from transformers import AutoTokenizer, Trainer
+from transformers import AutoTokenizer
 
 from ..BaselineModels import CnnSentenceClassifier
 from .cnlp_rest import UnannotatedDocument, get_dataset

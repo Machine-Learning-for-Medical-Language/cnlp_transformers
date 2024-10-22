@@ -2,8 +2,6 @@
 Module containing the CNLP transformer model.
 """
 
-# from transformers.models.auto import  AutoModel, AutoConfig
-import copy
 import inspect
 import logging
 import math
@@ -14,7 +12,6 @@ from typing import Any, Dict, List, Optional, Union
 import torch
 from torch import nn
 from torch.nn import CrossEntropyLoss, MSELoss
-from torch.nn.functional import relu, softmax
 from transformers import AutoConfig, AutoModel
 from transformers.configuration_utils import PretrainedConfig
 from transformers.modeling_outputs import SequenceClassifierOutput
@@ -311,7 +308,7 @@ class CnlpModelForClassification(PreTrainedModel):
 
         if bias_fit:
             for name, param in self.encoder.named_parameters():
-                if not "bias" in name:
+                if "bias" not in name:
                     param.requires_grad = False
 
         self.feature_extractors = nn.ModuleDict()
@@ -429,7 +426,7 @@ class CnlpModelForClassification(PreTrainedModel):
             loss_fct = MSELoss()
             task_loss = loss_fct(task_logits.view(-1), labels.view(-1))
         else:
-            if not self.class_weights[task_name] is None:
+            if self.class_weights[task_name] is not None:
                 class_weights = torch.FloatTensor(self.class_weights[task_name]).to(
                     self.device
                 )

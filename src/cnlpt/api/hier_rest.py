@@ -16,20 +16,13 @@
 # under the License.
 import logging
 import os
-from time import time
-from typing import Dict, List, Tuple
 
-import numpy as np
 import torch
 from fastapi import FastAPI
-from pydantic import BaseModel
 
-from ..CnlpModelForClassification import CnlpConfig, CnlpModelForClassification
 from .cnlp_rest import (
     UnannotatedDocument,
-    create_instance_string,
     get_dataset,
-    initialize_cnlpt_model,
     initialize_hier_model,
 )
 
