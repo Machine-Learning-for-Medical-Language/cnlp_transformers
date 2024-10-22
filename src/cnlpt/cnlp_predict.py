@@ -58,9 +58,9 @@ def restructure_prediction(
 
     # disagreement collection stuff for this scope
     task_label_to_boundaries: Dict[str, Tuple[int, int]] = {}
-    task_label_to_label_packet: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]] = (
-        {}
-    )
+    task_label_to_label_packet: Dict[
+        str, Tuple[np.ndarray, np.ndarray, np.ndarray]
+    ] = {}
 
     for task_ind, task_name in enumerate(task_names):
         preds, labels, pad, prob_values = structure_labels(
