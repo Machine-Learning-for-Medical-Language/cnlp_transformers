@@ -51,18 +51,12 @@ If you want to modify code (e.g., for developing new models), then install local
 
 2. Enter the repo: `cd cnlp_transformers`
 
-3. Install the development dependencies:
+3. See above for the note about PyTorch; if needed, manually install it now.
+
+4. Install `cnlp-transformers` in editable mode with development extras:
 
    ```sh
-   pip install -r dev-requirements.txt
-   ```
-
-4. See above for the note about PyTorch; if needed, manually install it now.
-
-5. Install `cnlp-transformers` in editable mode:
-
-   ```sh
-   pip install -e .
+   pip install -e ".[dev]"
    ```
 
 ## Fine-tuning
