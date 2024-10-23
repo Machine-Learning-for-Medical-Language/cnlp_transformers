@@ -9,18 +9,7 @@ import pytest
 from cnlpt.api import cnlp_rest
 
 
-def test_torch():
-    import torch
-    import torch.nn as nn
-
-    x = torch.randn(2, 3, 4)
-    layer_norm = nn.LayerNorm(4)
-    layer_norm(x)
-
-
 class TestNegation:
-    __test__ = False
-
     @pytest.fixture
     def startup_negation(self):
         from cnlpt.api.negation_rest import startup_event as negation_startup
