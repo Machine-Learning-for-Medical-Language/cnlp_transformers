@@ -45,7 +45,7 @@ class DocTimeRelResults(BaseModel):
 
 @app.on_event("startup")
 async def startup_event():
-    initialize_cnlpt_model(app, model_name, cuda=False, batch_size=64)
+    initialize_cnlpt_model(app, model_name, device="cpu", batch_size=64)
 
 
 @app.post("/dtr/process")
