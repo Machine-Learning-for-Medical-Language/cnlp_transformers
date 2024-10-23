@@ -9,6 +9,15 @@ import pytest
 from cnlpt.api import cnlp_rest
 
 
+def test_torch():
+    import torch
+    import torch.nn as nn
+
+    x = torch.randn(2, 3, 4)
+    layer_norm = nn.LayerNorm(4)
+    layer_norm(x)
+
+
 class TestNegation:
     __test__ = False
 
