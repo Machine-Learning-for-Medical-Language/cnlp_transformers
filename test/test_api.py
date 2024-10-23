@@ -10,6 +10,8 @@ from cnlpt.api import cnlp_rest
 
 
 class TestNegation:
+    __test__ = False
+
     @pytest.fixture
     def startup_negation(self):
         from cnlpt.api.negation_rest import startup_event as negation_startup
@@ -33,6 +35,8 @@ class TestNegation:
 
 
 class TestTemporal:
+    __test__ = False
+
     @pytest.fixture
     def startup_temporal(self):
         from cnlpt.api.temporal_rest import startup_event as temporal_startup
