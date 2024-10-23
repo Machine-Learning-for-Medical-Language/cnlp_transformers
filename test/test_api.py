@@ -9,6 +9,12 @@ import pytest
 from cnlpt.api import cnlp_rest
 
 
+@pytest.fixture(autouse=True)
+def disable_mps(monkeypatch):
+    """Disable MPS for all tests"""
+    monkeypatch.setattr("torch._C._mps_is_available", lambda: False)
+
+
 class TestNegation:
     @pytest.fixture
     def startup_negation(self):
