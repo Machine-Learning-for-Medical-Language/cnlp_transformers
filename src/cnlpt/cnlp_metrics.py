@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 import numpy as np
 from seqeval.metrics import classification_report as seq_cls
@@ -8,13 +8,11 @@ from sklearn.metrics import (
     accuracy_score,
     classification_report,
     f1_score,
-    matthews_corrcoef,
     precision_score,
     recall_score,
 )
 
-from .cnlp_data import ClinicalNlpDataset
-from .cnlp_processors import classification, mtl, relex, tagging
+from .cnlp_processors import classification, relex, tagging
 
 logger = logging.getLogger(__name__)
 
@@ -34,11 +32,11 @@ def fix_np_types(input_variable):
 
 
 def tagging_metrics(
-    label_set: List[str],
+    label_set: list[str],
     preds: np.ndarray,
     labels: np.ndarray,
     task_name: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     One of the metrics functions for use in :func:`cnlp_compute_metrics`.
 
@@ -85,11 +83,11 @@ def tagging_metrics(
 
 
 def relation_metrics(
-    label_set: List[str],
+    label_set: list[str],
     preds: np.ndarray,
     labels: np.ndarray,
     task_name: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     One of the metrics functions for use in :func:`cnlp_compute_metrics`.
 
@@ -152,7 +150,7 @@ def relation_metrics(
     }
 
 
-def acc_and_f1(preds: np.ndarray, labels: np.ndarray) -> Dict[str, Any]:
+def acc_and_f1(preds: np.ndarray, labels: np.ndarray) -> dict[str, Any]:
     """
     One of the metrics functions for use in :func:`cnlp_compute_metrics`.
 
@@ -193,8 +191,8 @@ def cnlp_compute_metrics(
     preds: np.ndarray,
     labels: np.ndarray,
     output_mode: str,
-    label_set: List[str],
-) -> Dict[str, Any]:
+    label_set: list[str],
+) -> dict[str, Any]:
     """
     Function that defines and computes the metrics used for each task.
 

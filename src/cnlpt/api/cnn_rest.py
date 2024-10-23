@@ -24,7 +24,7 @@ import numpy as np
 import torch
 from fastapi import FastAPI
 from scipy.special import softmax
-from transformers import AutoTokenizer, Trainer
+from transformers import AutoTokenizer
 
 from ..BaselineModels import CnnSentenceClassifier
 from .cnlp_rest import UnannotatedDocument, get_dataset
@@ -44,7 +44,7 @@ max_seq_length = 128
 @app.on_event("startup")
 async def startup_event():
     conf_file = join(model_name, "config.json")
-    with open(conf_file, "rt") as fp:
+    with open(conf_file) as fp:
         conf_dict = json.load(fp)
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)

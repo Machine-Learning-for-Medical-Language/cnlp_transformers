@@ -25,7 +25,6 @@ When using this dataset, you agree that you
 """
 
 import csv
-import string
 import sys
 from pathlib import Path
 

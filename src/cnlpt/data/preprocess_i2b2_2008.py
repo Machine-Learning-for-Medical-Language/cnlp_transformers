@@ -27,7 +27,7 @@ def add_labels_file(fn, ids, labels):
                     id = doc.get("id")
                     ids.add(id)
                     label = doc.get("judgment")
-                    if not id in labels:
+                    if id not in labels:
                         labels[id] = {}
                     labels[id][disease.get("name")] = label
 
@@ -131,13 +131,13 @@ def main(args):
         data_point = {"text": test_texts[test_id], "labels": test_labels[test_id]}
         test_data[test_id] = data_point
 
-    with open(join(args[1], "training.json"), "wt") as of:
+    with open(join(args[1], "training.json"), "w") as of:
         of.write(json.dumps(training_data))
 
-    with open(join(args[1], "dev.json"), "wt") as of:
+    with open(join(args[1], "dev.json"), "w") as of:
         of.write(json.dumps(dev_data))
 
-    with open(join(args[1], "test.json"), "wt") as of:
+    with open(join(args[1], "test.json"), "w") as of:
         of.write(json.dumps(test_data))
 
 

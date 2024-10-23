@@ -16,19 +16,13 @@
 # under the License.
 
 import logging
-import os
 from time import time
-from typing import Dict, List, Tuple
 
 import numpy as np
 from fastapi import FastAPI
 from nltk.tokenize import wordpunct_tokenize as tokenize
-from pydantic import BaseModel
 from seqeval.metrics.sequence_labeling import get_entities
-from torch.utils.data.dataset import Dataset
-from transformers.data.processors.utils import InputExample, InputFeatures
 
-from ..CnlpModelForClassification import CnlpConfig, CnlpModelForClassification
 from .cnlp_rest import get_dataset, initialize_cnlpt_model
 from .temporal_rest import (
     Event,
@@ -73,15 +67,13 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     sents = doc.sent_tokens
     metadata = doc.metadata
 
-    logger.warn(
-        "Received document labeled %s with %d sentences" % (metadata, len(sents))
-    )
+    logger.warning(f"Received document labeled {metadata} with {len(sents)} sentences")
     instances = []
     start_time = time()
 
     for sent_ind, token_list in enumerate(sents):
         inst_str = create_instance_string(token_list)
-        logger.debug("Instance string is %s" % (inst_str))
+        logger.debug(f"Instance string is {inst_str}")
         instances.append(inst_str)
 
     dataset = get_dataset(instances, app.state.tokenizer, max_length=max_length)
@@ -122,7 +114,7 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
             previous_word_idx = word_idx
 
         event_entities = get_entities(event_labels)
-        logging.info("Extracted %d events from the sentence" % (len(event_entities)))
+        logging.info(f"Extracted {len(event_entities)} events from the sentence")
         event_results.append(
             [
                 Event(dtr=label[0], begin=label[1], end=label[2])
@@ -143,8 +135,7 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     postproc_time = postproc_end - pred_end
 
     logging.info(
-        "Pre-processing time: %f, processing time: %f, post-processing time %f"
-        % (preproc_time, pred_time, postproc_time)
+        f"Pre-processing time: {preproc_time:f}, processing time: {pred_time:f}, post-processing time {postproc_time:f}"
     )
 
     return results

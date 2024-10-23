@@ -8,16 +8,6 @@ from cnlpt.train_system import is_hub_model
 
 
 def pre_initialize_cnlpt_model(model_name, cuda=True, batch_size=8):
-    args = [
-        "--output_dir",
-        "save_run/",
-        "--per_device_eval_batch_size",
-        str(batch_size),
-        "--do_predict",
-        "--report_to",
-        "none",
-    ]
-
     AutoConfig.register("cnlpt", CnlpConfig)
     AutoModel.register(CnlpConfig, CnlpModelForClassification)
 
@@ -25,9 +15,9 @@ def pre_initialize_cnlpt_model(model_name, cuda=True, batch_size=8):
     print("fetching pretrained configs")
     config = AutoConfig.from_pretrained(model_name)
     print("fetching pretrained tokens")
-    tokenizer = AutoTokenizer.from_pretrained(model_name, config=config)
+    AutoTokenizer.from_pretrained(model_name, config=config)
     print("fetching pretrained models")
-    model = CnlpModelForClassification.from_pretrained(
+    CnlpModelForClassification.from_pretrained(
         model_name, cache_dir=os.getenv("HF_CACHE"), config=config
     )
 
@@ -40,9 +30,9 @@ def pre_initialize_hier_model(model_name, cuda=True, batch_size=8):
     print("fetching pretrained configs")
     config = AutoConfig.from_pretrained(model_name)
     print("fetching pretrained tokens")
-    tokenizer = AutoTokenizer.from_pretrained(model_name, config=config)
+    AutoTokenizer.from_pretrained(model_name, config=config)
     print("fetching pretrained models")
-    model = HierarchicalModel.from_pretrained(
+    HierarchicalModel.from_pretrained(
         model_name, cache_dir=os.getenv("HF_CACHE"), config=config
     )
 

@@ -1,8 +1,9 @@
 #!/usr/bin/env python
+
 import itertools
 import json
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Union
 
 import click
 
@@ -37,7 +38,7 @@ def get_job_from_hyperparameters(hyperparameters, indices):
     "file with the indexed experiment arguments. Only necessary if "
     "using different default arguments from what is in cnn/train.py.",
 )
-def cli(hyperparameters: Path, indices: Tuple[int], default_args: Optional[Path]):
+def cli(hyperparameters: Path, indices: tuple[int], default_args: Union[Path, None]):
     """
     Produces the hyperparameter dictionary for a job index from a
     hyperparameter search space.
@@ -50,7 +51,7 @@ def cli(hyperparameters: Path, indices: Tuple[int], default_args: Optional[Path]
         hp_dict = json.load(hp_file)
 
     if default_args is not None:
-        with open("default_args.json", "r", encoding="utf8") as def_args_file:
+        with open("default_args.json", encoding="utf8") as def_args_file:
             default_args_dict = json.load(def_args_file)
         hyperparameters = {
             **default_args_dict,

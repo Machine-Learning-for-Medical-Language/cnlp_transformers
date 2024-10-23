@@ -3,6 +3,7 @@ import os
 import sys
 from collections import defaultdict
 from heapq import merge
+from importlib.util import find_spec
 from itertools import chain, groupby, tee
 from pathlib import Path
 
@@ -16,17 +17,15 @@ TRAIN_DIR = "chemprot_training"
 # allow script to run only if scispacy is installed
 #  (gated behind certain Python versions and platforms)
 nlp = None
-try:
-    import scispacy
-
+if find_spec("scispacy") is not None:
     nlp = spacy.load("en_core_sci_sm")
-except ImportError:
+else:
     import platform
 
     print(
-        f"scispacy not installed; cannot run transform_prot.\n"
-        f"Note: transform_prot is not runnable on ARM and non-Linux platforms, "
-        f"and is only tested on Linux x86_64 platforms."
+        "scispacy not installed; cannot run transform_prot.\n"
+        "Note: transform_prot is not runnable on ARM and non-Linux platforms, "
+        "and is only tested on Linux x86_64 platforms."
     )
     print(f"Current platform: {sys.platform} {platform.machine()}")
     sys.exit(1)
@@ -142,7 +141,7 @@ def build_abstract_dictionary(filename):
 
 
 def build_entity_dictionary(filename, mode="drugprot"):
-    identifier_to_entity = defaultdict(lambda: {})
+    identifier_to_entity = defaultdict(dict)
     with open(filename) as fd:
         rd = csv.reader(fd, delimiter="\t")
         for row in rd:
@@ -167,7 +166,7 @@ def build_entity_dictionary(filename, mode="drugprot"):
 
 
 def build_rel_dictionary(filename, mode="drugprot"):
-    identifier_to_rel = defaultdict(lambda: {})
+    identifier_to_rel = defaultdict(dict)
     with open(filename) as fd:
         rd = csv.reader(fd, delimiter="\t")
         for row in rd:
@@ -303,7 +302,7 @@ def build_e2e_data_dict(entity_to_info, rel_ents_to_type):
     def clean(e2e_t):
         return str(e2e_t).replace("'", "")
 
-    sent_idx_to_rels = defaultdict(lambda: [])
+    sent_idx_to_rels = defaultdict(list)
     for ent_pair, rel_type in rel_ents_to_type.items():
         entity_1, entity_2 = ent_pair
         sent_1_idx, ent_1_begin, ent_1_end = entity_to_info[entity_1]["stanza_location"]
@@ -335,7 +334,7 @@ def intervals_to_tags(intervals_dict, sent_len):
 
 
 def build_ner_data_dict(entity_to_info, stanza_sents, mode):
-    sent_idx_to_tags = defaultdict(lambda: [])
+    sent_idx_to_tags = defaultdict(list)
     for entity, info_dict in entity_to_info.items():
         sent_idx, ent_begin, ent_end = info_dict["stanza_location"]
         entity_type = info_dict["type"]
@@ -343,8 +342,8 @@ def build_ner_data_dict(entity_to_info, stanza_sents, mode):
     for sent_idx, stanza_sent in enumerate(stanza_sents):
         tags = sent_idx_to_tags[sent_idx]
         sorted_tags = sorted(tags, key=lambda s: s[:2])
-        final_tags = defaultdict(lambda: [])
-        for i in range(0, len(sorted_tags)):
+        final_tags = defaultdict(list)
+        for i in range(len(sorted_tags)):
             curr_begin, curr_end, curr_type = sorted_tags[i]
             prev_ls = final_tags[curr_type]
             dict_type = curr_type.split("-")[0]
@@ -382,10 +381,9 @@ def coalesce(abs_dict, ent_dict, rel_dict, mode="drugprot"):
             e2e_cell = raw_e2e_cell if len(raw_e2e_cell) > 0 else "None"
             chemical_tags = ner_data_dict[sent_index]["CHEMICAL"]
             gene_tags = ner_data_dict[sent_index]["GENE"]
-            assert len(gene_tags.split()) == len(tok_sent.split()) and len(
-                gene_tags.split()
-            ) == len(
-                chemical_tags.split()
+            assert (
+                len(gene_tags.split()) == len(tok_sent.split())
+                and len(gene_tags.split()) == len(chemical_tags.split())
             ), f"Error with lengths! \n {tok_sent} : {len(tok_sent.split())} \n {chemical_tags} : {len(chemical_tags.split())} \n {gene_tags} : {len(gene_tags.split())}"
             return [e2e_cell, chemical_tags, gene_tags, tok_sent]
 
