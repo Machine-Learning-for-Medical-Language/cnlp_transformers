@@ -53,8 +53,16 @@ test = ["pytest"]
 docs = ["sphinx", "sphinx-autodoc-typehints", "sphinx-rtd-theme", "sphobjinv"]
 dev = ["cnlp-transformers[lint,build,test,docs]", "pre-commit"]
 
-# [project.scripts]
-# TODO Add entrypoints here
+[project.scripts]
+"cnlpt_current_rest" = "cnlpt.api.current_rest:rest"
+"cnlpt_dtr_rest" = "cnlpt.api.dtr_rest:rest"
+"cnlpt_event_rest" = "cnlpt.api.event_rest:rest"
+"cnlpt_negation_rest" = "cnlpt.api.negation_rest:rest"
+"cnlpt_temporal_rest" = "cnlpt.api.temporal_rest:rest"
+"cnlpt_termexists_rest" = "cnlpt.api.termexists_rest:rest"
+"cnlpt_timex_rest" = "cnlpt.api.timex_rest:rest"
+"cnlpt_hier_rest" = "cnlpt.api.hier_rest:rest"
+"cnlpt_cnn_rest" = "cnlpt.api.cnn_rest:rest"
 
 [tool.ruff]
 target-version = "py39"
