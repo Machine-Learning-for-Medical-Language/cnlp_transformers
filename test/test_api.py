@@ -39,8 +39,6 @@ class TestNegation:
 
 
 class TestTemporal:
-    __test__ = False
-
     @pytest.fixture
     def startup_temporal(self):
         from cnlpt.api.temporal_rest import startup_event as temporal_startup
