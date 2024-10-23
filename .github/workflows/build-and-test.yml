@@ -43,4 +43,4 @@ jobs:
           python -m pip install ".[build,test]"
       - name: Test with pytest
         run: |
-          pytest test/
+          OMP_NUM_THREADS=1 pytest test/
