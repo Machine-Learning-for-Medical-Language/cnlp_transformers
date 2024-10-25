@@ -21,11 +21,6 @@ on:
 jobs:
   ruff:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.9", "3.10", "3.11"]
-
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/ruff-action@v1

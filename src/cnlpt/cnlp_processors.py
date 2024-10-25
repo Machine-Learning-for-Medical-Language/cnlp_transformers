@@ -7,21 +7,12 @@ modes for tasks and datasets that use a few conventional formats.
 import json
 import logging
 import os
-import random
-import time
-from dataclasses import dataclass, field
-from os.path import basename, dirname, join
-from typing import Any, Callable, Dict, List, Optional, Set, Union
+from os.path import join
 
 import datasets
-import numpy  # for Sphinx
-import numpy as np
-import torch
 from datasets import load_dataset
-from torch.utils.data.dataset import Dataset
 from tqdm import tqdm
-from transformers.data.processors.utils import DataProcessor, InputExample
-from transformers.tokenization_utils import PreTrainedTokenizer
+from transformers.data.processors.utils import DataProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +23,8 @@ relex = "relations"
 
 
 def get_unique_labels(
-    dataset, tasks: List[str], task_output_modes: Dict[str, str]
-) -> Dict[str, List[str]]:
+    dataset, tasks: list[str], task_output_modes: dict[str, str]
+) -> dict[str, list[str]]:
     """
     Return the set of unique labels defined in a dataset by iterating through the dataset.
     :param tasks: List of tasks that the caller cares about
@@ -78,7 +69,7 @@ def get_unique_labels(
     return dataset_unique_labels
 
 
-def infer_output_modes(dataset: datasets.DatasetDict) -> Dict[str, str]:
+def infer_output_modes(dataset: datasets.DatasetDict) -> dict[str, str]:
     """
     Figure out what output mode each task in the dataset requires by looking at the format of the labels.
     :param dataset: HF datasets DatasetDict containing the loaded dataset
@@ -112,7 +103,7 @@ def infer_output_modes(dataset: datasets.DatasetDict) -> Dict[str, str]:
 
 
 def get_task_pruned_dataset(
-    dataset: datasets.DatasetDict, tasks: List[str], unique_labels: Dict[str, List[str]]
+    dataset: datasets.DatasetDict, tasks: list[str], unique_labels: dict[str, list[str]]
 ) -> datasets.DatasetDict:
     """
     Remove tasks from the dataset that only have 1 unique label
@@ -120,9 +111,8 @@ def get_task_pruned_dataset(
     tasks_to_remove = []
     for task_ind, task_name in enumerate(tasks):
         if len(unique_labels[task_name]) == 1:
-            logger.warn(
-                "Task named %s has only 1 unique label -- this column from the data"
-                % (task_name)
+            logger.warning(
+                f"Task named {task_name} has only 1 unique label -- this column from the data"
             )
             tasks_to_remove.append(task_name)
 
@@ -144,7 +134,7 @@ class AutoProcessor(DataProcessor):
     TODO - add documentation of the expected file formats for json and csv defaults
     """
 
-    def __init__(self, data_dir: str, tasks: Set[str] = None, max_train_items=-1):
+    def __init__(self, data_dir: str, tasks: set[str] = None, max_train_items=-1):
         super().__init__()
 
         train_file = dev_file = test_file = None
@@ -153,7 +143,7 @@ class AutoProcessor(DataProcessor):
             if fn.startswith("train"):
                 train_file = fn
                 data_files["train"] = join(data_dir, train_file)
-            elif fn.startswith("dev") or fn.startswith("valid"):
+            elif fn.startswith(("dev", "valid")):
                 dev_file = fn
                 data_files["validation"] = join(data_dir, dev_file)
             elif fn.startswith("test"):
@@ -171,7 +161,7 @@ class AutoProcessor(DataProcessor):
         else:
             ext_check_file = test_file
 
-        if ext_check_file.endswith("csv") or ext_check_file.endswith("tsv"):
+        if ext_check_file.endswith(("csv", "tsv")):
             if ext_check_file.endswith("csv"):
                 sep = ","
             else:
@@ -195,7 +185,7 @@ class AutoProcessor(DataProcessor):
             self.dataset.task_output_modes = {}
         elif ext_check_file.endswith("json"):
             self.dataset = load_dataset("json", data_files=data_files, field="data")
-            with open(join(data_dir, ext_check_file), "rt", encoding="utf-8") as f:
+            with open(join(data_dir, ext_check_file), encoding="utf-8") as f:
                 json_file = json.load(f)
                 if "metadata" in json_file:
                     metadata = json_file["metadata"]
@@ -223,12 +213,11 @@ class AutoProcessor(DataProcessor):
             self.dataset.task_output_modes = dataset_task2output
         else:
             raise ValueError(
-                "Data file %s has an extension that we cannot handle (tried csv and json)"
-                % (train_file)
+                f"Data file {train_file} has an extension that we cannot handle (tried csv and json)"
             )
 
-        logger.info("This dataset contains these tasks: %s" % (str(dataset_tasks)))
-        logger.info("These tasks overlap with user input: %s" % (str(active_tasks)))
+        logger.info(f"This dataset contains these tasks: {str(dataset_tasks)}")
+        logger.info(f"These tasks overlap with user input: {str(active_tasks)}")
 
         self.dataset.tasks = active_tasks
         if len(self.dataset.task_output_modes) == 0:

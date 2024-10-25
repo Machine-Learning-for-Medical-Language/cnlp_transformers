@@ -1,5 +1,3 @@
-from typing import Dict, List
-
 import torch
 import torch.nn.functional as F
 from huggingface_hub import PyTorchModelHubMixin
@@ -10,8 +8,8 @@ class CnnSentenceClassifier(nn.Module, PyTorchModelHubMixin):
     def __init__(
         self,
         vocab_size,
-        task_names: List[str],
-        num_labels_dict: Dict[str, int],
+        task_names: list[str],
+        num_labels_dict: dict[str, int],
         embed_dims=100,
         num_filters=25,
         dropout=0.2,
@@ -19,7 +17,7 @@ class CnnSentenceClassifier(nn.Module, PyTorchModelHubMixin):
         use_prior_tasks=False,
         class_weights=None,
     ):
-        super(CnnSentenceClassifier, self).__init__()
+        super().__init__()
         self.dropout = dropout
 
         self.embed = nn.Embedding(num_embeddings=vocab_size, embedding_dim=embed_dims)
@@ -95,7 +93,7 @@ class CnnSentenceClassifier(nn.Module, PyTorchModelHubMixin):
             task_logits = task_fc(fc_in)
             logits.append(task_logits)
 
-            if not labels is None:
+            if labels is not None:
                 if labels.ndim == 2:
                     # if len(self.fcs) == 1:
                     #     task_labels = labels[:,0]
@@ -115,13 +113,13 @@ class LstmSentenceClassifier(nn.Module, PyTorchModelHubMixin):
     def __init__(
         self,
         vocab_size,
-        task_names: List[str],
-        num_labels_dict: Dict[str, int],
+        task_names: list[str],
+        num_labels_dict: dict[str, int],
         embed_dims=100,
         dropout=0.2,
         hidden_size=100,
     ):
-        super(LstmSentenceClassifier, self).__init__()
+        super().__init__()
         self.dropout = dropout
 
         self.embed = nn.Embedding(num_embeddings=vocab_size, embedding_dim=embed_dims)
@@ -156,7 +154,7 @@ class LstmSentenceClassifier(nn.Module, PyTorchModelHubMixin):
             task_logits = task_fc(features)
             logits.append(task_logits)
 
-            if not labels is None:
+            if labels is not None:
                 if labels.ndim == 2:
                     task_labels = labels[:, 0]
                 elif labels.ndim == 3:

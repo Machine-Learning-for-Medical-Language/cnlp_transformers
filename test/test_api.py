@@ -9,6 +9,12 @@ import pytest
 from cnlpt.api import cnlp_rest
 
 
+@pytest.fixture(autouse=True)
+def disable_mps(monkeypatch):
+    """Disable MPS for all tests"""
+    monkeypatch.setattr("torch._C._mps_is_available", lambda: False)
+
+
 class TestNegation:
     @pytest.fixture
     def startup_negation(self):
@@ -44,11 +50,8 @@ class TestTemporal:
 
     def test_temporal_process_sentence(self, startup_temporal):
         from cnlpt.api.temporal_rest import (
-            Event,
-            Relation,
             SentenceDocument,
             TemporalResults,
-            Timex,
         )
         from cnlpt.api.temporal_rest import (
             process_sentence as temporal_process_sentence,

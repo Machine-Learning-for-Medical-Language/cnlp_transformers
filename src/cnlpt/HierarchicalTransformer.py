@@ -4,11 +4,9 @@ Module containing the Hierarchical Transformer module, adapted from Xin Su.
 
 import copy
 import logging
-import random
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, cast
+from typing import Union, cast
 
-import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -29,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class HierarchicalSequenceClassifierOutput(SequenceClassifierOutput):
-    chunk_attentions: Optional[Tuple[torch.FloatTensor]] = None
+    chunk_attentions: Union[tuple[torch.FloatTensor], None] = None
 
 
 class MultiHeadAttention(nn.Module):
@@ -169,7 +167,7 @@ class EncoderLayer(nn.Module):
     """
 
     def __init__(self, d_model, d_inner, n_head, d_k, d_v, dropout=0.1):
-        super(EncoderLayer, self).__init__()
+        super().__init__()
         self.slf_attn = MultiHeadAttention(n_head, d_model, d_k, d_v, dropout=dropout)
         self.pos_ffn = PositionwiseFeedForward(d_model, d_inner, dropout=dropout)
 
@@ -203,10 +201,10 @@ class HierarchicalModel(PreTrainedModel):
         config: config_class,
         *,
         freeze: float = -1.0,
-        class_weights: Optional[List[float]] = None,
+        class_weights: Union[list[float], None] = None,
     ):
         # Initialize common components
-        super(HierarchicalModel, self).__init__(
+        super().__init__(
             config,
         )
 
@@ -282,7 +280,7 @@ class HierarchicalModel(PreTrainedModel):
         self.label_dictionary = config.label_dictionary
         self.set_class_weights(class_weights)
 
-    def remove_task_classifiers(self, tasks: List[str] = None):
+    def remove_task_classifiers(self, tasks: list[str] = None):
         if tasks is None:
             self.classifiers = nn.ModuleDict()
             self.tasks = []
@@ -293,14 +291,14 @@ class HierarchicalModel(PreTrainedModel):
                 self.tasks.remove(task)
                 self.class_weights.pop(task)
 
-    def add_task_classifier(self, task_name: str, label_dictionary: Dict[str, List]):
+    def add_task_classifier(self, task_name: str, label_dictionary: dict[str, list]):
         self.tasks.append(task_name)
         self.classifiers[task_name] = ClassificationHead(
             self.config, len(label_dictionary)
         )
         self.label_dictionary[task_name] = label_dictionary
 
-    def set_class_weights(self, class_weights: Optional[List[float]] = None):
+    def set_class_weights(self, class_weights: Union[list[float], None] = None):
         if class_weights is None:
             self.class_weights = {x: None for x in self.label_dictionary.keys()}
         else:
@@ -428,7 +426,7 @@ class HierarchicalModel(PreTrainedModel):
 
         total_loss = None
         for task_ind, task_name in enumerate(self.tasks):
-            if not self.class_weights[task_name] is None:
+            if self.class_weights[task_name] is not None:
                 class_weights = torch.FloatTensor(self.class_weights[task_name]).to(
                     self.device
                 )

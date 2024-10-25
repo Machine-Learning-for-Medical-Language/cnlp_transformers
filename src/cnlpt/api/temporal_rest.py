@@ -18,7 +18,7 @@
 import logging
 import os
 from time import time
-from typing import Dict, List, Tuple, Union
+from typing import Union
 
 import numpy as np
 from fastapi import FastAPI
@@ -26,8 +26,7 @@ from nltk.tokenize import wordpunct_tokenize as tokenize
 from pydantic import BaseModel
 from seqeval.metrics.sequence_labeling import get_entities
 
-from ..CnlpModelForClassification import CnlpConfig, CnlpModelForClassification
-from .cnlp_rest import create_instance_string, get_dataset, initialize_cnlpt_model
+from .cnlp_rest import get_dataset, initialize_cnlpt_model
 
 app = FastAPI()
 model_name = "mlml-chip/thyme2_colon_e2e"
@@ -85,7 +84,7 @@ class SentenceDocument(BaseModel):
 class TokenizedSentenceDocument(BaseModel):
     """sent_tokens: a list of sentences, where each sentence is a list of tokens"""
 
-    sent_tokens: List[List[str]]
+    sent_tokens: list[list[str]]
     metadata: str
 
 
@@ -114,18 +113,25 @@ class Relation(BaseModel):
 class TemporalResults(BaseModel):
     """lists of timexes, events and relations for list of sentences"""
 
-    timexes: List[List[Timex]]
-    events: List[List[Event]]
-    relations: List[List[Relation]]
+    timexes: list[list[Timex]]
+    events: list[list[Event]]
+    relations: list[list[Relation]]
 
 
-def create_instance_string(tokens: List[str]):
+def create_instance_string(tokens: list[str]):
     return " ".join(tokens)
 
 
 @app.on_event("startup")
 async def startup_event():
-    global timex_label_list, timex_label_dict, event_label_list, event_label_dict, relation_label_list, relation_label_dict, task_order
+    global \
+        timex_label_list, \
+        timex_label_dict, \
+        event_label_list, \
+        event_label_dict, \
+        relation_label_list, \
+        relation_label_dict, \
+        task_order
 
     local_model_name = os.getenv("MODEL_NAME", model_name)
     initialize_cnlpt_model(app, local_model_name)
@@ -138,7 +144,7 @@ async def startup_event():
     if label_dict is not None:
         # some older versions have one label dictionary per dataset, future versions should just
         # have a task-keyed dictionary
-        if type(label_dict) == list:
+        if type(label_dict) is list:
             label_dict = label_dict[0]
 
         if "event" in label_dict:
@@ -194,15 +200,13 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     print(timex_label_list)
     print(relation_label_list)
 
-    logger.warn(
-        "Received document labeled %s with %d sentences" % (metadata, len(sents))
-    )
+    logger.warning(f"Received document labeled {metadata} with {len(sents)} sentences")
     instances = []
     start_time = time()
 
     for sent_ind, token_list in enumerate(sents):
         inst_str = create_instance_string(token_list)
-        logger.debug("Instance string is %s" % (inst_str))
+        logger.debug(f"Instance string is {inst_str}")
         instances.append(inst_str)
 
     dataset = get_dataset(instances, app.state.tokenizer, max_length)
@@ -221,19 +225,19 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     )
     rel_inds = np.where(rel_predictions != relation_label_dict["None"])
 
-    logging.debug("Found relation indices: %s" % (str(rel_inds)))
+    logging.debug(f"Found relation indices: {str(rel_inds)}")
 
     rels_by_sent = {}
     for rel_num in range(len(rel_inds[0])):
         sent_ind = rel_inds[0][rel_num]
-        if not sent_ind in rels_by_sent:
+        if sent_ind not in rels_by_sent:
             rels_by_sent[sent_ind] = []
 
         arg1_ind = rel_inds[1][rel_num]
         arg2_ind = rel_inds[2][rel_num]
         if arg1_ind == arg2_ind:
             # no relations between an entity and itself
-            logger.warn("Found relation between an entity and itself... skipping")
+            logger.warning("Found relation between an entity and itself... skipping")
             continue
 
         rel_cat = rel_predictions[sent_ind, arg1_ind, arg2_ind]
@@ -274,22 +278,21 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
                     event_labels.append(
                         event_label_list[event_predictions[sent_ind][word_pos_idx]]
                     )
-                except:
+                except Exception as e:
                     print(
                         "exception thrown when sent_ind=%d and word_pos_idx=%d"
                         % (sent_ind, word_pos_idx)
                     )
                     print(
-                        "prediction is %s"
-                        % str(event_predictions[sent_ind][word_pos_idx])
+                        f"prediction is {str(event_predictions[sent_ind][word_pos_idx])}"
                     )
-                    raise Exception
+                    raise e
 
             previous_word_idx = word_idx
 
         timex_entities = get_entities(timex_labels)
         logging.info(
-            "Extracted %d timex entities from the sentence" % (len(timex_entities))
+            f"Extracted {len(timex_entities)} timex entities from the sentence"
         )
         timex_results.append(
             [
@@ -299,7 +302,7 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
         )
 
         event_entities = get_entities(event_labels)
-        logging.info("Extracted %d events from the sentence" % (len(event_entities)))
+        logging.info(f"Extracted {len(event_entities)} events from the sentence")
         event_results.append(
             [
                 Event(dtr=label[0], begin=label[1], end=label[2])
@@ -312,7 +315,7 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
             arg1 = None
             arg2 = None
             if rel[0] not in wpind_to_ind or rel[1] not in wpind_to_ind:
-                logging.warn(
+                logging.warning(
                     "Found a relation to a non-leading wordpiece token... ignoring"
                 )
                 continue
@@ -356,8 +359,7 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     postproc_time = postproc_end - pred_end
 
     logging.info(
-        "Pre-processing time: %f, processing time: %f, post-processing time %f"
-        % (preproc_time, pred_time, postproc_time)
+        f"Pre-processing time: {preproc_time:f}, processing time: {pred_time:f}, post-processing time {postproc_time:f}"
     )
 
     return results
