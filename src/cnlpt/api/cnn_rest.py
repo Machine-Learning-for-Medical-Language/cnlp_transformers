@@ -18,63 +18,70 @@ import json
 import logging
 import os
 import sys
+from contextlib import asynccontextmanager
 from os.path import join
+from typing import Any
 
 import numpy as np
 import torch
 from fastapi import FastAPI
 from scipy.special import softmax
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, PreTrainedTokenizer
 
 from ..BaselineModels import CnnSentenceClassifier
-from .cnlp_rest import UnannotatedDocument, get_dataset
+from .cnlp_rest import UnannotatedDocument, create_dataset
 
-app = FastAPI()
-model_name = os.getenv("MODEL_PATH")
-if model_name is None:
+MODEL_NAME = os.getenv("MODEL_PATH")
+if MODEL_NAME is None:
     sys.stderr.write("This REST container requires a MODEL_PATH environment variable\n")
     sys.exit(-1)
 
 logger = logging.getLogger("CNN_REST_Processor")
 logger.setLevel(logging.DEBUG)
 
-max_seq_length = 128
+MAX_SEQ_LENGTH = 128
+
+model: CnnSentenceClassifier
+tokenizer: PreTrainedTokenizer
+conf_dict: dict[str, Any]
 
 
-@app.on_event("startup")
-async def startup_event():
-    conf_file = join(model_name, "config.json")
+@asynccontextmanager
+async def lifetime():
+    global model, tokenizer, conf_dict
+    conf_file = join(MODEL_NAME, "config.json")
     with open(conf_file) as fp:
         conf_dict = json.load(fp)
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     num_labels_dict = {
         task: len(values) for task, values in conf_dict["label_dictionary"].items()
     }
     model = CnnSentenceClassifier.from_pretrained(
-        model_name,
+        MODEL_NAME,
         vocab_size=len(tokenizer),
         task_names=conf_dict["task_names"],
         num_labels_dict=num_labels_dict,
     )
 
-    app.state.model = model.to("cuda")
-    app.state.tokenizer = tokenizer
-    app.state.conf_dict = conf_dict
+    model = model.to("cuda")
+    tokenizer = tokenizer
+    conf_dict = conf_dict
+
+
+app = FastAPI(lifetime=lifetime)
 
 
 @app.post("/cnn/classify")
 async def process(doc: UnannotatedDocument):
     instances = [doc.doc_text]
-    dataset = get_dataset(instances, app.state.tokenizer, max_length=max_seq_length)
-    _, logits = app.state.model.forward(
+    dataset = create_dataset(instances, tokenizer, max_length=MAX_SEQ_LENGTH)
+    _, logits = model.forward(
         input_ids=torch.LongTensor(dataset["input_ids"]).to("cuda"),
         attention_mask=torch.LongTensor(dataset["attention_mask"]).to("cuda"),
     )
     prediction = int(np.argmax(logits[0].cpu().detach().numpy(), axis=1))
-    result = app.state.conf_dict["label_dictionary"][
-        app.state.conf_dict["task_names"][0]
-    ][prediction]
+    result = conf_dict["label_dictionary"][conf_dict["task_names"][0]][prediction]
     probabilities = softmax(logits[0][0].cpu().detach().numpy())
     # for redcap purposes, it might make more sense to only output the probability for the predicted class,
     # but i'm outputting them all, for transparency

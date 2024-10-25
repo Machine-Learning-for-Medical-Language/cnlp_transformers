@@ -1,19 +1,10 @@
-"""
-isort:skip_file
-"""
-
-# Core python imports
 import logging
 import os
 from typing import Literal
 
 import torch
 from datasets import Dataset
-
-# FastAPI imports
 from pydantic import BaseModel
-
-# Modeling imports
 from transformers import (
     AutoConfig,
     AutoModel,
@@ -22,11 +13,10 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
+from transformers.tokenization_utils import PreTrainedTokenizer
 
 from ..cnlp_data import cnlp_preprocess_data
-
-# intra-library imports
-from ..CnlpModelForClassification import CnlpConfig, CnlpModelForClassification
+from ..CnlpModelForClassification import CnlpConfig
 
 
 class UnannotatedDocument(BaseModel):
@@ -42,15 +32,16 @@ class EntityDocument(BaseModel):
     entities: list[list[int]]
 
 
-def get_dataset(
-    inst_list,
-    tokenizer,
+def create_dataset(
+    inst_list: list[str],
+    tokenizer: PreTrainedTokenizer,
     max_length: int = 128,
     hier: bool = False,
     chunk_len: int = 200,
     num_chunks: int = 40,
     insert_empty_chunk_at_beginning: bool = False,
 ):
+    """Use a tokenizer to create a dataset from a list of strings."""
     dataset = Dataset.from_dict({"text": inst_list})
     task_dataset = dataset.map(
         cnlp_preprocess_data,
@@ -110,7 +101,6 @@ def resolve_device(
 
 
 def initialize_cnlpt_model(
-    app,
     model_name,
     device: Literal["cuda", "mps", "cpu", "auto"] = "auto",
     batch_size=8,
@@ -127,44 +117,35 @@ def initialize_cnlpt_model(
     parser = HfArgumentParser((TrainingArguments,))
     (training_args,) = parser.parse_args_into_dataclasses(args=args)
 
-    app.state.training_args = training_args
-
     config = AutoConfig.from_pretrained(model_name)
-    app.state.config = config
-    app.state.tokenizer = AutoTokenizer.from_pretrained(model_name, config=config)
-    model = CnlpModelForClassification.from_pretrained(
+    tokenizer = AutoTokenizer.from_pretrained(model_name, config=config)
+    model = AutoModel.from_pretrained(
         model_name, cache_dir=os.getenv("HF_CACHE"), config=config
     )
 
-    device = resolve_device(device)
+    model = model.to(resolve_device(device))
 
-    model = model.to(device)
-
-    app.state.model = model
-    app.state.trainer = Trainer(
+    trainer = Trainer(
         model=model,
-        args=app.state.training_args,
+        args=training_args,
         compute_metrics=None,
     )
 
+    return tokenizer, trainer
+
 
 def initialize_hier_model(
-    app,
     model_name,
     device: Literal["cuda", "mps", "cpu", "auto"] = "auto",
-    batch_size=1,
 ):
     config: CnlpConfig = AutoConfig.from_pretrained(model_name)
-    app.state.config = config
-    app.state.tokenizer = AutoTokenizer.from_pretrained(model_name, config=config)
+    tokenizer = AutoTokenizer.from_pretrained(model_name, config=config)
 
     model = AutoModel.from_pretrained(
         model_name, cache_dir=os.getenv("HF_CACHE"), config=config
     )
     model.train(False)
 
-    device = resolve_device(device)
+    model = model.to(resolve_device(device))
 
-    model = model.to(device)
-
-    app.state.model = model
+    return tokenizer, model

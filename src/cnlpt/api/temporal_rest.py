@@ -17,6 +17,7 @@
 
 import logging
 import os
+from contextlib import asynccontextmanager
 from time import time
 from typing import Union
 
@@ -25,16 +26,17 @@ from fastapi import FastAPI
 from nltk.tokenize import wordpunct_tokenize as tokenize
 from pydantic import BaseModel
 from seqeval.metrics.sequence_labeling import get_entities
+from transformers import Trainer
+from transformers.tokenization_utils import PreTrainedTokenizer
 
-from .cnlp_rest import get_dataset, initialize_cnlpt_model
+from .cnlp_rest import create_dataset, initialize_cnlpt_model
 
-app = FastAPI()
-model_name = "mlml-chip/thyme2_colon_e2e"
+MODEL_NAME = "mlml-chip/thyme2_colon_e2e"
 logger = logging.getLogger("Temporal_REST_Processor")
 logger.setLevel(logging.INFO)
 
-labels = ["-1", "1"]
-timex_label_list = [
+LABELS = ["-1", "1"]
+TIMEX_LABEL_LIST = [
     "O",
     "B-DATE",
     "B-DURATION",
@@ -53,8 +55,8 @@ timex_label_list = [
     "I-SECTIONTIME",
     "I-DOCTIME",
 ]
-timex_label_dict = {val: ind for ind, val in enumerate(timex_label_list)}
-event_label_list = [
+TIMEX_LABEL_DICT = {val: ind for ind, val in enumerate(TIMEX_LABEL_LIST)}
+EVENT_LABEL_LIST = [
     "O",
     "B-AFTER",
     "B-BEFORE",
@@ -65,16 +67,16 @@ event_label_list = [
     "I-BEFORE/OVERLAP",
     "I-OVERLAP",
 ]
-event_label_dict = {val: ind for ind, val in enumerate(event_label_list)}
+EVENT_LABEL_DICT = {val: ind for ind, val in enumerate(EVENT_LABEL_LIST)}
 
-relation_label_list = ["None", "CONTAINS", "OVERLAP", "BEFORE", "BEGINS-ON", "ENDS-ON"]
-relation_label_dict = {val: ind for ind, val in enumerate(relation_label_list)}
+RELATION_LABEL_LIST = ["None", "CONTAINS", "OVERLAP", "BEFORE", "BEGINS-ON", "ENDS-ON"]
+RELATION_LABEL_DICT = {val: ind for ind, val in enumerate(RELATION_LABEL_LIST)}
 
-dtr_label_list = ["AFTER", "BEFORE", "BEFORE/OVERLAP", "OVERLAP"]
-old_dtr_label_list = ["BEFORE", "OVERLAP", "BEFORE/OVERLAP", "AFTER"]
+DTR_LABEL_LIST = ["AFTER", "BEFORE", "BEFORE/OVERLAP", "OVERLAP"]
+OLD_DTR_LABEL_LIST = ["BEFORE", "OVERLAP", "BEFORE/OVERLAP", "AFTER"]
 
-labels = [timex_label_list, event_label_list, relation_label_list]
-max_length = 128
+LABELS = [TIMEX_LABEL_LIST, EVENT_LABEL_LIST, RELATION_LABEL_LIST]
+MAX_LENGTH = 128
 
 
 class SentenceDocument(BaseModel):
@@ -122,21 +124,30 @@ def create_instance_string(tokens: list[str]):
     return " ".join(tokens)
 
 
-@app.on_event("startup")
-async def startup_event():
+task_order: dict[str, int]
+tasks: list[str]
+tokenizer: PreTrainedTokenizer
+trainer: Trainer
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     global \
-        timex_label_list, \
-        timex_label_dict, \
-        event_label_list, \
-        event_label_dict, \
-        relation_label_list, \
-        relation_label_dict, \
-        task_order
+        TIMEX_LABEL_LIST, \
+        TIMEX_LABEL_DICT, \
+        EVENT_LABEL_LIST, \
+        EVENT_LABEL_DICT, \
+        RELATION_LABEL_LIST, \
+        RELATION_LABEL_DICT, \
+        task_order, \
+        tasks, \
+        tokenizer, \
+        trainer
 
-    local_model_name = os.getenv("MODEL_NAME", model_name)
-    initialize_cnlpt_model(app, local_model_name)
+    local_model_name = os.getenv("MODEL_NAME", MODEL_NAME)
+    tokenizer, trainer = initialize_cnlpt_model(local_model_name)
 
-    config_dict = app.state.trainer.model.config.to_dict()
+    config_dict = trainer.model.config.to_dict()
     # For newer models (version >= 0.6.0), the label dictionary is saved with the model
     # config. we can look for it to preserve backwards compatibility for now but
     # should eventually remove the hardcoded label lists from our inference tools.
@@ -148,31 +159,35 @@ async def startup_event():
             label_dict = label_dict[0]
 
         if "event" in label_dict:
-            event_label_list = label_dict["event"]
-            event_label_dict = {val: ind for ind, val in enumerate(event_label_list)}
-            print(event_label_list)
+            EVENT_LABEL_LIST = label_dict["event"]
+            EVENT_LABEL_DICT = {val: ind for ind, val in enumerate(EVENT_LABEL_LIST)}
+            print(EVENT_LABEL_LIST)
 
         if "timex" in label_dict:
-            timex_label_list = label_dict["timex"]
-            timex_label_dict = {val: ind for ind, val in enumerate(timex_label_list)}
-            print(timex_label_list)
+            TIMEX_LABEL_LIST = label_dict["timex"]
+            TIMEX_LABEL_DICT = {val: ind for ind, val in enumerate(TIMEX_LABEL_LIST)}
+            print(TIMEX_LABEL_LIST)
 
         if "tlinkx" in label_dict:
-            relation_label_list = label_dict["tlinkx"]
-            relation_label_dict = {
-                val: ind for ind, val in enumerate(relation_label_list)
+            RELATION_LABEL_LIST = label_dict["tlinkx"]
+            RELATION_LABEL_DICT = {
+                val: ind for ind, val in enumerate(RELATION_LABEL_LIST)
             }
-            print(relation_label_list)
+            print(RELATION_LABEL_LIST)
 
-    app.state.tasks = config_dict.get("finetuning_task", None)
-    app.state.task_order = {}
-    if app.state.tasks is not None:
+    tasks = config_dict.get("finetuning_task", None)
+    task_order = {}
+    if tasks is not None:
         print("Overwriting finetuning task order")
-        for task_ind, task_name in enumerate(app.state.tasks):
-            app.state.task_order[task_name] = task_ind
-        print(app.state.task_order)
+        for task_ind, task_name in enumerate(tasks):
+            task_order[task_name] = task_ind
+        print(task_order)
     else:
         print("Didn't find a new task ordering in the model config")
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 @app.post("/temporal/process")
@@ -196,9 +211,9 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     sents = doc.sent_tokens
     metadata = doc.metadata
 
-    print(event_label_list)
-    print(timex_label_list)
-    print(relation_label_list)
+    print(EVENT_LABEL_LIST)
+    print(TIMEX_LABEL_LIST)
+    print(RELATION_LABEL_LIST)
 
     logger.warning(f"Received document labeled {metadata} with {len(sents)} sentences")
     instances = []
@@ -209,21 +224,15 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
         logger.debug(f"Instance string is {inst_str}")
         instances.append(inst_str)
 
-    dataset = get_dataset(instances, app.state.tokenizer, max_length)
+    dataset = create_dataset(instances, tokenizer, MAX_LENGTH)
     preproc_end = time()
 
-    output = app.state.trainer.predict(test_dataset=dataset)
+    output = trainer.predict(test_dataset=dataset)
 
-    timex_predictions = np.argmax(
-        output.predictions[app.state.task_order["timex"]], axis=2
-    )
-    event_predictions = np.argmax(
-        output.predictions[app.state.task_order["event"]], axis=2
-    )
-    rel_predictions = np.argmax(
-        output.predictions[app.state.task_order["tlinkx"]], axis=3
-    )
-    rel_inds = np.where(rel_predictions != relation_label_dict["None"])
+    timex_predictions = np.argmax(output.predictions[task_order["timex"]], axis=2)
+    event_predictions = np.argmax(output.predictions[task_order["event"]], axis=2)
+    rel_predictions = np.argmax(output.predictions[task_order["tlinkx"]], axis=3)
+    rel_inds = np.where(rel_predictions != RELATION_LABEL_DICT["None"])
 
     logging.debug(f"Found relation indices: {str(rel_inds)}")
 
@@ -251,12 +260,12 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     rel_results = []
 
     for sent_ind in range(len(dataset)):
-        batch_encoding = app.state.tokenizer.batch_encode_plus(
+        batch_encoding = tokenizer(
             [
                 sents[sent_ind],
             ],
             is_split_into_words=True,
-            max_length=max_length,
+            max_length=MAX_LENGTH,
         )
         word_ids = batch_encoding.word_ids(0)
         wpind_to_ind = {}
@@ -272,11 +281,11 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
                 wpind_to_ind[key] = val
                 # tokeni_to_wpi[val] = key
                 timex_labels.append(
-                    timex_label_list[timex_predictions[sent_ind][word_pos_idx]]
+                    TIMEX_LABEL_LIST[timex_predictions[sent_ind][word_pos_idx]]
                 )
                 try:
                     event_labels.append(
-                        event_label_list[event_predictions[sent_ind][word_pos_idx]]
+                        EVENT_LABEL_LIST[event_predictions[sent_ind][word_pos_idx]]
                     )
                 except Exception as e:
                     print(
@@ -340,7 +349,7 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
             rel = Relation(
                 arg1=arg1,
                 arg2=arg2,
-                category=relation_label_list[rel[2]],
+                category=RELATION_LABEL_LIST[rel[2]],
                 arg1_start=arg1_ind,
                 arg2_start=arg2_ind,
             )
