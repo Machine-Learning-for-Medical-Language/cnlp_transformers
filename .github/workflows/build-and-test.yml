@@ -30,15 +30,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+      - name: Install uv
+        id: setup-uv
+        uses: astral-sh/setup-uv@v3
         with:
-          python-version: ${{ matrix.python-version }}
-          cache: "pip"
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install ".[build,test]"
+          enable-cache: true
       - name: Test with pytest
         run: |
-          pytest test/
+          uv run --frozen --extra test -p ${{ matrix.python-version }} pytest

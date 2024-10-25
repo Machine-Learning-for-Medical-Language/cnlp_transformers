@@ -52,10 +52,7 @@ lint = [
 build = ["build", "pip>=21.3", "twine"]
 test = ["pytest"]
 docs = ["sphinx", "sphinx-autodoc-typehints", "sphinx-rtd-theme", "sphobjinv"]
-dev = [
-    "cnlp-transformers[build,docs,lint,test]",
-    "pre-commit",
-]
+dev = ["cnlp-transformers[build,docs,lint,test]", "pre-commit"]
 
 [project.scripts]
 "cnlpt_current_rest" = "cnlpt.api.current_rest:rest"
@@ -96,6 +93,9 @@ ignore = [
 # a python 3.10 feature they don't expect it in python 3.9.
 # This can be removed if/when we stop supporting python 3.9.
 keep-runtime-typing = true
+
+[tool.uv]
+dev-dependencies = ["cnlp-transformers[dev]"]
 
 [tool.uv.sources]
 cnlp-transformers = { workspace = true }

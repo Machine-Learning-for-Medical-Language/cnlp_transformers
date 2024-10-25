@@ -199,7 +199,7 @@ class CnlpConfig(PretrainedConfig):
     :param use_prior_tasks: whether to use the outputs from the previous tasks as additional inputs for subsequent tasks
     :param hier_head_config: If this is a hierarchical model, this is where the config parameters go
     :param label_dictionary: A mapping from task names to label sets
-    :param \**kwargs: arguments for :class:`transformers.PretrainedConfig`
+    :param **kwargs: arguments for :class:`transformers.PretrainedConfig`
     """
 
     model_type = "cnlpt"
