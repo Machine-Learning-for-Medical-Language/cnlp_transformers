@@ -16,44 +16,55 @@
 # under the License.
 import logging
 import os
+from contextlib import asynccontextmanager
 
 import torch
 from fastapi import FastAPI
+from transformers import PreTrainedModel
+from transformers.tokenization_utils import PreTrainedTokenizer
 
 from .cnlp_rest import (
     UnannotatedDocument,
-    get_dataset,
+    create_dataset,
     initialize_hier_model,
 )
 
-app = FastAPI()
-model_name = os.getenv("MODEL_PATH")
+MODEL_NAME = os.getenv("MODEL_PATH")
 
 logger = logging.getLogger("HierRep_REST_Processor")
 logger.setLevel(logging.DEBUG)
 
+tokenizer: PreTrainedTokenizer
+model: PreTrainedModel
 
-@app.on_event("startup")
-async def startup_event():
-    initialize_hier_model(app, model_name=model_name)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global tokenizer, model
+    tokenizer, model = initialize_hier_model(MODEL_NAME)
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 @app.post("/hier/get_rep")
 async def get_representation(doc: UnannotatedDocument):
     instances = [doc.doc_text]
-    dataset = get_dataset(
+    dataset = create_dataset(
         instances,
-        app.state.tokenizer,
+        tokenizer,
         max_length=16000,
         hier=True,
         chunk_len=200,
         num_chunks=80,
         insert_empty_chunk_at_beginning=False,
     )
-    result = app.state.model.forward(
-        input_ids=torch.LongTensor(dataset["input_ids"]).to("cuda"),
-        token_type_ids=torch.LongTensor(dataset["token_type_ids"]).to("cuda"),
-        attention_mask=torch.LongTensor(dataset["attention_mask"]).to("cuda"),
+
+    result = model.forward(
+        input_ids=torch.LongTensor(dataset["input_ids"]).to(model.device),
+        token_type_ids=torch.LongTensor(dataset["token_type_ids"]).to(model.device),
+        attention_mask=torch.LongTensor(dataset["attention_mask"]).to(model.device),
         output_hidden_states=True,
     )
 
@@ -65,19 +76,19 @@ async def get_representation(doc: UnannotatedDocument):
 @app.post("/hier/classify")
 async def classify(doc: UnannotatedDocument):
     instances = [doc.doc_text]
-    dataset = get_dataset(
+    dataset = create_dataset(
         instances,
-        app.state.tokenizer,
+        tokenizer,
         max_length=16000,
         hier=True,
         chunk_len=200,
         num_chunks=80,
         insert_empty_chunk_at_beginning=False,
     )
-    result = app.state.model.forward(
-        input_ids=torch.LongTensor(dataset["input_ids"]).to("cuda"),
-        token_type_ids=torch.LongTensor(dataset["token_type_ids"]).to("cuda"),
-        attention_mask=torch.LongTensor(dataset["attention_mask"]).to("cuda"),
+    result = model.forward(
+        input_ids=torch.LongTensor(dataset["input_ids"]).to(model.device),
+        token_type_ids=torch.LongTensor(dataset["token_type_ids"]).to(model.device),
+        attention_mask=torch.LongTensor(dataset["attention_mask"]).to(model.device),
         output_hidden_states=False,
     )
 
@@ -85,9 +96,7 @@ async def classify(doc: UnannotatedDocument):
         int(torch.argmax(logits.to("cpu").detach()).numpy())
         for logits in result["logits"]
     ]
-    labels = [
-        list(app.state.model.label_dictionary.values())[0][x] for x in predictions
-    ]
+    labels = [list(model.label_dictionary.values())[0][x] for x in predictions]
     return {"result": labels}
 
 

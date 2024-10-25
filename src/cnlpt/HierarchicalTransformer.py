@@ -464,3 +464,7 @@ class HierarchicalModel(PreTrainedModel):
                 attentions=outputs.attentions,
                 chunk_attentions=chunks_attns,
             )
+
+
+AutoConfig.register("cnlpt", CnlpConfig)
+AutoModel.register(CnlpConfig, HierarchicalModel)

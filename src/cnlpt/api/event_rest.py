@@ -16,34 +16,45 @@
 # under the License.
 
 import logging
+from contextlib import asynccontextmanager
 from time import time
 
 import numpy as np
 from fastapi import FastAPI
 from nltk.tokenize import wordpunct_tokenize as tokenize
 from seqeval.metrics.sequence_labeling import get_entities
+from transformers import Trainer
+from transformers.tokenization_utils import PreTrainedTokenizer
 
-from .cnlp_rest import get_dataset, initialize_cnlpt_model
+from .cnlp_rest import create_dataset, initialize_cnlpt_model
 from .temporal_rest import (
+    EVENT_LABEL_LIST,
     Event,
     SentenceDocument,
     TemporalResults,
     TokenizedSentenceDocument,
     create_instance_string,
-    event_label_list,
 )
 
-app = FastAPI()
-model_name = "tmills/event-thyme-colon-pubmedbert"
+MODEL_NAME = "tmills/event-thyme-colon-pubmedbert"
 logger = logging.getLogger("Event_REST_Processor")
 logger.setLevel(logging.INFO)
 
-max_length = 128
+MAX_LENGTH = 128
 
 
-@app.on_event("startup")
-async def startup_event():
-    initialize_cnlpt_model(app, model_name)
+tokenizer: PreTrainedTokenizer
+trainer: Trainer
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global tokenizer, trainer
+    tokenizer, trainer = initialize_cnlpt_model(MODEL_NAME)
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 @app.post("/temporal/process")
@@ -76,10 +87,10 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
         logger.debug(f"Instance string is {inst_str}")
         instances.append(inst_str)
 
-    dataset = get_dataset(instances, app.state.tokenizer, max_length=max_length)
+    dataset = create_dataset(instances, tokenizer, max_length=MAX_LENGTH)
     preproc_end = time()
 
-    output = app.state.trainer.predict(test_dataset=dataset)
+    output = trainer.predict(test_dataset=dataset)
 
     event_predictions = np.argmax(output.predictions[0], axis=2)
 
@@ -90,12 +101,12 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     rel_results = []
 
     for sent_ind in range(len(dataset)):
-        batch_encoding = app.state.tokenizer.batch_encode_plus(
+        batch_encoding = tokenizer.batch_encode_plus(
             [
                 sents[sent_ind],
             ],
             is_split_into_words=True,
-            max_length=max_length,
+            max_length=MAX_LENGTH,
         )
         word_ids = batch_encoding.word_ids(0)
         wpind_to_ind = {}
@@ -109,7 +120,7 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
 
                 wpind_to_ind[key] = val
                 event_labels.append(
-                    event_label_list[event_predictions[sent_ind][word_pos_idx]]
+                    EVENT_LABEL_LIST[event_predictions[sent_ind][word_pos_idx]]
                 )
             previous_word_idx = word_idx
 
@@ -143,7 +154,8 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
 
 @app.post("/temporal/collection_process_complete")
 async def collection_process_complete():
-    app.state.trainer = None
+    global trainer
+    trainer = None
 
 
 def rest():

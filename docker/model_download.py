@@ -1,16 +1,13 @@
 import os
 
-from transformers import AutoConfig, AutoModel, AutoTokenizer
+from transformers import AutoConfig, AutoTokenizer
 
-from cnlpt.CnlpModelForClassification import CnlpConfig, CnlpModelForClassification
+from cnlpt.CnlpModelForClassification import CnlpModelForClassification
 from cnlpt.HierarchicalTransformer import HierarchicalModel
 from cnlpt.train_system import is_hub_model
 
 
 def pre_initialize_cnlpt_model(model_name, cuda=True, batch_size=8):
-    AutoConfig.register("cnlpt", CnlpConfig)
-    AutoModel.register(CnlpConfig, CnlpModelForClassification)
-
     print("initializing " + model_name)
     print("fetching pretrained configs")
     config = AutoConfig.from_pretrained(model_name)
@@ -23,9 +20,6 @@ def pre_initialize_cnlpt_model(model_name, cuda=True, batch_size=8):
 
 
 def pre_initialize_hier_model(model_name, cuda=True, batch_size=8):
-    AutoConfig.register("cnlpt", CnlpConfig)
-    AutoModel.register(CnlpConfig, HierarchicalModel)
-
     print("initializing " + model_name)
     print("fetching pretrained configs")
     config = AutoConfig.from_pretrained(model_name)

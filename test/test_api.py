@@ -2,9 +2,8 @@
 Test suite for running the API models
 """
 
-import asyncio
-
 import pytest
+from fastapi.testclient import TestClient
 
 from cnlpt.api import cnlp_rest
 
@@ -17,44 +16,45 @@ def disable_mps(monkeypatch):
 
 class TestNegation:
     @pytest.fixture
-    def startup_negation(self):
-        from cnlpt.api.negation_rest import startup_event as negation_startup
+    def test_client(self):
+        from cnlpt.api.negation_rest import app
 
-        asyncio.run(negation_startup())
+        with TestClient(app) as client:
+            yield client
 
-    def test_negation_startup(self, startup_negation):
+    def test_negation_startup(self, test_client):
         pass
 
-    def test_negation_process(self, startup_negation):
+    def test_negation_process(self, test_client: TestClient):
         from cnlpt.api.negation_rest import NegationResults
-        from cnlpt.api.negation_rest import process as negation_process
 
         doc = cnlp_rest.EntityDocument(
             doc_text="The patient has a sore knee and headache "
             "but denies nausea and has no anosmia.",
             entities=[[18, 27], [32, 40], [52, 58], [70, 77]],
         )
-        out = asyncio.run(negation_process(doc))
-        assert out == NegationResults.parse_obj({"statuses": [-1, -1, 1, 1]})
+        response = test_client.post("/negation/process", content=doc.json())
+        response.raise_for_status()
+        assert response.json() == NegationResults.parse_obj(
+            {"statuses": [-1, -1, 1, 1]}
+        )
 
 
 class TestTemporal:
     @pytest.fixture
-    def startup_temporal(self):
-        from cnlpt.api.temporal_rest import startup_event as temporal_startup
+    def test_client(self):
+        from cnlpt.api.temporal_rest import app
 
-        asyncio.run(temporal_startup())
+        with TestClient(app) as client:
+            yield client
 
-    def test_temporal_startup(self, startup_temporal):
+    def test_temporal_startup(self, test_client: TestClient):
         pass
 
-    def test_temporal_process_sentence(self, startup_temporal):
+    def test_temporal_process_sentence(self, test_client: TestClient):
         from cnlpt.api.temporal_rest import (
             SentenceDocument,
             TemporalResults,
-        )
-        from cnlpt.api.temporal_rest import (
-            process_sentence as temporal_process_sentence,
         )
 
         doc = SentenceDocument(
@@ -62,7 +62,9 @@ class TestTemporal:
             "March 3, 2010 and will be returning for "
             "chemotherapy next week."
         )
-        out = asyncio.run(temporal_process_sentence(doc))
+        response = test_client.post("/temporal/process_sentence", content=doc.json())
+        response.raise_for_status()
+        out = response.json()
         expected_out = TemporalResults.parse_obj(
             {
                 "events": [

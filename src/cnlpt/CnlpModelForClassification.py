@@ -588,3 +588,7 @@ class CnlpModelForClassification(PreTrainedModel):
             return SequenceClassifierOutput(
                 loss=state["loss"], logits=logits, attentions=outputs.attentions
             )
+
+
+AutoConfig.register("cnlpt", CnlpConfig)
+AutoModel.register(CnlpConfig, CnlpModelForClassification)

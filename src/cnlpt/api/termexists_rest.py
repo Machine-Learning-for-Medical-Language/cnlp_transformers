@@ -15,28 +15,30 @@
 # specific language governing permissions and limitations
 # under the License.
 import logging
+from contextlib import asynccontextmanager
 from time import time
 
 import numpy as np
 from fastapi import FastAPI
 from pydantic import BaseModel
+from transformers import Trainer
+from transformers.tokenization_utils import PreTrainedTokenizer
 
 from .cnlp_rest import (
     EntityDocument,
+    create_dataset,
     create_instance_string,
-    get_dataset,
     initialize_cnlpt_model,
 )
 
-app = FastAPI()
-model_name = "mlml-chip/sharpseed-termexists"
+MODEL_NAME = "mlml-chip/sharpseed-termexists"
 logger = logging.getLogger("TermExists_REST_Processor")
 logger.setLevel(logging.DEBUG)
 
-task = "TermExists"
-labels = [-1, 1]
+TASK = "TermExists"
+LABELS = [-1, 1]
 
-max_length = 128
+MAX_LENGTH = 128
 
 
 class TermExistsResults(BaseModel):
@@ -45,9 +47,18 @@ class TermExistsResults(BaseModel):
     statuses: list[int]
 
 
-@app.on_event("startup")
-async def startup_event():
-    initialize_cnlpt_model(app, model_name)
+tokenizer: PreTrainedTokenizer
+trainer: Trainer
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global tokenizer, trainer
+    tokenizer, trainer = initialize_cnlpt_model(MODEL_NAME)
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 @app.post("/termexists/process")
@@ -67,10 +78,10 @@ async def process(doc: EntityDocument):
         logger.debug(f"Instance string is {inst_str}")
         instances.append(inst_str)
 
-    dataset = get_dataset(instances, app.state.tokenizer, max_length)
+    dataset = create_dataset(instances, tokenizer, MAX_LENGTH)
     preproc_end = time()
 
-    output = app.state.trainer.predict(test_dataset=dataset)
+    output = trainer.predict(test_dataset=dataset)
     predictions = output.predictions[0]
     predictions = np.argmax(predictions, axis=1)
 
@@ -78,7 +89,7 @@ async def process(doc: EntityDocument):
 
     results = []
     for ent_ind in range(len(dataset)):
-        results.append(labels[predictions[ent_ind]])
+        results.append(LABELS[predictions[ent_ind]])
 
     output = TermExistsResults(statuses=results)
 
