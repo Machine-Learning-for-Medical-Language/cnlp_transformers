@@ -27,7 +27,6 @@ from ..cnlp_data import cnlp_preprocess_data
 
 # intra-library imports
 from ..CnlpModelForClassification import CnlpConfig, CnlpModelForClassification
-from ..HierarchicalTransformer import HierarchicalModel
 
 
 class UnannotatedDocument(BaseModel):
@@ -130,9 +129,6 @@ def initialize_cnlpt_model(
 
     app.state.training_args = training_args
 
-    AutoConfig.register("cnlpt", CnlpConfig)
-    AutoModel.register(CnlpConfig, CnlpModelForClassification)
-
     config = AutoConfig.from_pretrained(model_name)
     app.state.config = config
     app.state.tokenizer = AutoTokenizer.from_pretrained(model_name, config=config)
@@ -158,9 +154,6 @@ def initialize_hier_model(
     device: Literal["cuda", "mps", "cpu", "auto"] = "auto",
     batch_size=1,
 ):
-    AutoConfig.register("cnlpt", CnlpConfig)
-    AutoModel.register(CnlpConfig, HierarchicalModel)
-
     config: CnlpConfig = AutoConfig.from_pretrained(model_name)
     app.state.config = config
     app.state.tokenizer = AutoTokenizer.from_pretrained(model_name, config=config)

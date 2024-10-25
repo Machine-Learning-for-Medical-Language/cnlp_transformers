@@ -54,8 +54,6 @@ from .HierarchicalTransformer import HierarchicalModel
 sys.path.append(os.path.join(os.getcwd()))
 
 
-AutoConfig.register("cnlpt", CnlpConfig)
-
 logger = logging.getLogger(__name__)
 
 
@@ -405,7 +403,6 @@ def main(
                     "For continued training of a cnlpt hierarchical model, one of --keep_existing_classifiers or --ignore_existing_classifiers flags should be selected."
                 )
             # use a checkpoint from an existing model
-            AutoModel.register(CnlpConfig, HierarchicalModel)
 
             config = AutoConfig.from_pretrained(
                 encoder_name, cache_dir=model_args.cache_dir, layer=model_args.layer
@@ -467,7 +464,6 @@ def main(
             # we evaluate or make predictions of our trained models.
             # Both two setting require the registeration of CnlpConfig, and use
             # AutoConfig.from_pretrained() to load the configuration file
-            AutoModel.register(CnlpConfig, CnlpModelForClassification)
 
             # Load the cnlp configuration using AutoConfig, this will not override
             # the arguments from trained cnlp models. While using CnlpConfig will override
