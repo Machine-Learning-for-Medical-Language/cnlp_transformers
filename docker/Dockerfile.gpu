@@ -1,10 +1,13 @@
-FROM nvidia/cuda:11.6.2-cudnn8-runtime-ubi8 as base
+FROM nvidia/cuda:11.7.1-runtime-ubi8 as base
+
+ARG cnlpt_version
 
 RUN yum -y install python39 python39-pip
-#RUN  pip3.9 install cython torch
-RUN pip3.9 install cnlp-transformers
+RUN pip3.9 install cython
+RUN pip3.9 install cnlp-transformers==$cnlpt_version
 
-
+# pytorch can't find the cudnn library with our setup, so just point at it directly
+ENV LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/usr/local/lib/python3.9/site-packages/nvidia/cudnn/lib/"
 
 WORKDIR /opt/cnlp/
 # this copy is to support the preload of train models in the downstream images
@@ -29,6 +32,8 @@ ENTRYPOINT ["cnlpt_negation_rest", "-p", "8000"]
 
 FROM base as termexists
 run /usr/bin/python3.9 -c "import sys;sys.path.append('/home/docker');import model_download; model_download.termexists()"
+# Temporary fix, remove once the released pip package has the new model
+run sed -i 's/sharpseed-termexists/termexists_pubmedbert_ssm/g' /usr/local/lib/python3.9/site-packages/cnlpt/api/termexists_rest.py
 ENTRYPOINT ["cnlpt_termexists_rest", "-p", "8000"]
 
 FROM base as temporal

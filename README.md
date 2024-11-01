@@ -11,16 +11,14 @@ Primary use cases include
 This library is _not_ intended to serve as a place for clinical NLP applications to live. If you build something cool that uses transformer models that take advantage of our model definitions, the best practice is probably to rely on it as a library rather than treating it as your workspace. This library is also not intended as a deployment-ready tool for _scalable_ clinical NLP. There is a lot of interest in developing methods and tools that are smaller and can process millions of records, and this library can potentially be used for research along those line. But it will probably never be extremely optimized or shrink-wrapped for applications. However, there should be plenty of examples and useful code for people who are interested in that type of deployment.
 
 ## Install
+> [!WARNING]
+macOS support is currently experimental. We recommend using python3.10 for macOS installations.
 
-**Note: due to some dependency issues, this package does not officially
-support macOS on Apple Silicon. If you want to install it on Apple Silicon,
-you are on your own; we unofficially recommend trying it with Python 3.10, or using
-the docker CPU image**
-
-**Note:** When installing the library's dependencies, `pip` will probably install
-PyTorch with CUDA 10.2 support by default. If you would like to run the
-library in CPU-only mode or with a newer version of CUDA, [install PyTorch
-to your desired specifications](https://pytorch.org/get-started/locally/)
+> [!NOTE] 
+When installing the library's dependencies, `pip` will probably install 
+PyTorch with CUDA 10.2 support by default. If you would like to run the 
+library in CPU-only mode or with a newer version of CUDA, [install PyTorch 
+to your desired specifications](https://pytorch.org/get-started/locally/) 
 in your virtual environment first before installing `cnlp-transformers`.
 
 ### Static installation
@@ -112,7 +110,7 @@ To use the library for fine-tuning, you'll need to take the following steps:
 
 We provided the following step-by-step examples how to finetune in clinical NLP tasks:
 
-#### 1. [Classification task](examples/uci_drug/): using [Drug Review Dataset (Drugs.com) Data Set](https://archive.ics.uci.edu/ml/datasets/Drug+Review+Dataset+%28Drugs.com%29)
+#### 1. [Classification task](examples/uci_drug/): using [Drug Review Dataset (Drugs.com) Data Set](https://archive.ics.uci.edu/dataset/462/drug+review+dataset+drugs+com)
 
 #### 2. [Sequence tagging task](examples/chemprot/): using [ChemProt website](https://biocreative.bioinformatics.udel.edu/news/corpora/chemprot-corpus-biocreative-vi/)
 

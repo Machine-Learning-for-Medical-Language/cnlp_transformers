@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Data Download Source:
-https://archive.ics.uci.edu/ml/datasets/Drug+Review+Dataset+%28Drugs.com%29
+https://archive.ics.uci.edu/dataset/462/drug+review+dataset+drugs+com
 
 Data Source:
 Surya Kallumadi

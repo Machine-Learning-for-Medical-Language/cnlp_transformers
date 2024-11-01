@@ -1,25 +1,32 @@
-To deploy images to dockerhub, first auth with docker with an account that
-has access to the smartonfhir organization. Then, the following commands
-should build and publish images (in the CPU case, for multiple architectures).
+# Creating cNLPT Docker Images
 
+## Setup
+- First authenticate with Docker with an account that has access to the
+  [smartonfhir](https://hub.docker.com/u/smartonfhir/) organization.
+- Make sure you have a local docker buildx setup that supports both amd64 and arm64.
+  - Run `docker buildx ls` to see your current setup.
+  - If you don't have a multi-platform instance already, you can create a new default one with:
+    `docker buildx create --driver docker-container --name cross-builder --platform linux/amd64,linux/arm64 --use`
 
-MODEL should be one of: [base, dtr, event, negation, temporal, timex]
-PROCESSOR should be one of: [cpu, gpu]
-PLATFORMS should be linux/amd64 for GPU, and linux/amd64,linux/arm64 for CPU
+## Building
+Use the `./build.py` script to build new images.
+Pass `--help` to see all your options.
+
+### Local Testing
+Use the `./build.py` script to build the image you care about,
+and then run something like one of the following, depending on your model and processor:
+
 ```
-export MAJOR=0
-export MINOR=4
-export PATCH=0
-export MODEL=negation
-export PROCESSOR=cpu
-export PLATFORMS=linux/amd64,linux/arm64
-
-docker buildx build \
---push --platform $PLATFORMS \
---tag smartonfhir/cnlp-transformers:$MODEL-latest-$PROCESSOR \
---tag smartonfhir/cnlp-transformers:$MODEL-$MAJOR-$PROCESSOR \
---tag smartonfhir/cnlp-transformers:$MODEL-$MAJOR.$MINOR-$PROCESSOR \
---tag smartonfhir/cnlp-transformers:$MODEL-$MAJOR.$MINOR.$PATCH-$PROCESSOR \
--f Dockerfile.$PROCESSOR \
---target $MODEL . 
+docker run --rm -p 8000:8000 smartonfhir/cnlp-transformers:termexists-latest-cpu
+docker run --rm -p 8000:8000 --gpus all smartonfhir/cnlp-transformers:termexists-latest-gpu
 ```
+
+With that specific example of the `termexists` model, you could smoke test it like so:
+```shell
+curl http://localhost:8000/termexists/process -H "Content-Type: application/json" -d '{"doc_text": "Patient has no cough", "entities": [[0, 6], [15, 19]]}'; echo
+```
+Which should print `{"statuses":[1,-1]}` (the word `cough` was negated, but `Patient` was not).
+
+### Publishing to Docker Hub
+Run the same `./build.py` command you tested with, but add the `--push` flag.
+The built images will be pushed to Docker Hub.

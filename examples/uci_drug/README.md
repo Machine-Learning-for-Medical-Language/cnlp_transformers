@@ -1,5 +1,5 @@
 ### Fine-tuning for classification: End-to-end example
-1. Download data from [Drug Review Dataset (Drugs.com) Data Set](https://archive.ics.uci.edu/ml/datasets/Drug+Review+Dataset+%28Drugs.com%29) to `data` folder and extract. Pay attention to their terms:
+1. Download data from [Drug Review Dataset (Drugs.com) Data Set](https://archive.ics.uci.edu/dataset/462/drug+review+dataset+drugs+com) to `data` folder and extract. Pay attention to their terms:
    1. only use the data for research purposes
    2. don't use the data for any commerical purposes
    3. don't distribute the data to anyone else
