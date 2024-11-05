@@ -22,30 +22,22 @@ from contextlib import asynccontextmanager
 from os.path import join
 from typing import Any
 
-from transformers import AutoTokenizer, Trainer
-import torch
-import torch.backends.mps
 import numpy as np
 import torch
+import torch.backends.mps
 from fastapi import FastAPI
 from scipy.special import softmax
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
 from ..BaselineModels import CnnSentenceClassifier
-from .cnlp_rest import UnannotatedDocument, create_dataset
+from .cnlp_rest import UnannotatedDocument, create_dataset, resolve_device
 
 MODEL_NAME = os.getenv("MODEL_PATH")
 if MODEL_NAME is None:
     sys.stderr.write("This REST container requires a MODEL_PATH environment variable\n")
     sys.exit(-1)
-device = os.getenv('MODEL_DEVICE', 'auto')
-if device == 'auto':
-    if torch.cuda.is_available():
-        device = 'cuda'
-    elif torch.backends.mps.is_available():
-        device = 'mps'
-    else:
-        device = 'cpu'
+device = os.getenv("MODEL_DEVICE", "auto")
+device = resolve_device(device)
 
 logger = logging.getLogger("CNN_REST_Processor")
 logger.setLevel(logging.DEBUG)
@@ -58,7 +50,7 @@ conf_dict: dict[str, Any]
 
 
 @asynccontextmanager
-async def lifetime():
+async def lifespan():
     global model, tokenizer, conf_dict
     conf_file = join(MODEL_NAME, "config.json")
     with open(conf_file) as fp:
@@ -79,18 +71,23 @@ async def lifetime():
     tokenizer = tokenizer
     conf_dict = conf_dict
 
+    yield
 
-app = FastAPI(lifetime=lifetime)
+
+app = FastAPI(lifespan=lifespan)
 
 
 @app.post("/cnn/classify")
 async def process(doc: UnannotatedDocument):
     instances = [doc.doc_text]
-    dataset = get_dataset(instances, app.state.tokenizer, max_length=app.state.conf_dict['max_seq_length'])
-    _, logits = app.state.model.forward(input_ids=torch.LongTensor(dataset['input_ids']).to('cuda'),
-                                        attention_mask = torch.LongTensor(dataset['attention_mask']).to('cuda'),
-                                     )
-    
+    dataset = create_dataset(
+        instances, app.state.tokenizer, max_length=app.state.conf_dict["max_seq_length"]
+    )
+    _, logits = app.state.model.forward(
+        input_ids=torch.LongTensor(dataset["input_ids"]).to(device),
+        attention_mask=torch.LongTensor(dataset["attention_mask"]).to(device),
+    )
+
     prediction = int(np.argmax(logits[0].cpu().detach().numpy(), axis=1))
     result = conf_dict["label_dictionary"][conf_dict["task_names"][0]][prediction]
     probabilities = softmax(logits[0][0].cpu().detach().numpy())
