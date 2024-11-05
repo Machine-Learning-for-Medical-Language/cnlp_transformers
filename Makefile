@@ -19,7 +19,7 @@ check:
 
 .PHONY: test
 test:
-	pytest
+	pytest test/
 
 .PHONY: docs
 docs:

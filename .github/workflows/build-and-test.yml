@@ -37,4 +37,4 @@ jobs:
           enable-cache: true
       - name: Test with pytest
         run: |
-          uv run --frozen --extra test -p ${{ matrix.python-version }} pytest
+          uv run --frozen --extra test -p ${{ matrix.python-version }} pytest test/
