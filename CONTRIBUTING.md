@@ -2,138 +2,150 @@
 
 ## Developing `cnlp-transformers`
 
-The first things to do when contributing to the code base here are to
-clone this repository and set up your Python environment.
+To contribute to the development of cnlp-transformers, please follow these steps.
 
-1. Follow the [editable installation instructions](README.md#editable-installation) from the README.
+### Fork the repository
 
-2. Install pre-commit hooks:
+1. Fork this project on GitHub. (Click "Fork" near the top of the project homepage.)
+
+   Leave the repository name the same, and select "Copy the default branch only".
+
+2. Clone your fork to your local machine.
+
+   ```bash
+   git clone https://github.com/{your username}/cnlp_transformers.git
+   cd cnlp_transformers
+   ```
+
+3. Add this repository as your upstream remote.
+
+   ```bash
+   git remote add upstream https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers.git
+   ```
+
+   Now running `git remote -v` should show:
+
+   ```txt
+   origin  https://github.com/{your username}/cnlp_transformers.git (fetch)
+   origin  https://github.com/{your username}/cnlp_transformers.git (push)
+   upstream        https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers.git (fetch)
+   upstream        https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers.git (push)
+   ```
+
+### Set up your Python environment
+
+You can set a python development environment using a number of tools,
+we have instructions for using [uv](https://github.com/astral-sh/uv)
+(recommended) or conda.
+
+#### Using uv (recommended)
+
+1. [Install uv](https://docs.astral.sh/uv/getting-started/installation/).
+
+2. From the project's base directory, run:
+
+   ```bash
+   uv venv # create a virtual environment
+   uv sync # install dependencies (includes dev dependencies by default)
+
+   source .venv/bin/activate # activate the virtual environment
+   ```
+
+#### Using conda
+
+1. Install conda or [miniconda](https://docs.anaconda.com/miniconda/).
+
+2. Create a new conda environment:
+
+   ```bash
+   conda create -n cnlpt python=3.11 # 3.9 and 3.10 are also supported
+   conda activate cnlpt
+   ```
+
+3. From the project's base directory, install dependencies:
+
+   ```bash
+   pip install -e ".[dev]"
+   ```
+
+### Development tools
+
+#### Pre-commit hooks
+
+   Install the pre-commit hooks with:
 
    ```sh
    make hooks
    ```
+
+   This will automatically double check the code style before you make any
+   commit, and warn you if there are any linting or formatting errors.
+
+#### Linting and formatting
+
+We use [Ruff](https://docs.astral.sh/ruff/) for linting and formatting.
+
+Run `make check` to lint and format your code.
+
+If you use VSCode, there is a [ruff extension](https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff)
+that might be handy for development (e.g., format on save).
+
+#### Testing your code
+
+You can run the pytest test suite with `make test`.
+
+#### CI
+
+This repository has GitHub Actions set up to automatically ensure the
+codebase is linted and formatted and that the test suite in `test/` is
+passing.
+
+These actions will run whenever a commit is pushed or a pull request is
+opened that makes changes to any of the following files:
+
+- `src/**`
+- `test/**`
+- `pyproject.toml`
+
+The `lint-and-format` workflow should always pass if `make check` reports
+that everything is correct.
+
+The `build-and-test` workflow will run `pytest` on Linux, MacOS, and Windows,
+for each Python version this project supports (currently 3.9, 3.10, and 3.11).
+
+You can see the structure of these CI runs in the
+[**Actions**](https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers/actions)
+tab of this repository.
 
 ### Proposing changes
 
 If you have changes to the code that you wish to contribute to the
 repository, please follow these steps.
 
-1. Fork the project on GitHub.
+1. Create and checkout a new branch on your fork for the changes. For example:
 
-2. Add your fork as a remote to push your work to. Replace
-   `{username}` with your username. This names the remote "fork", the
-   default Machine-Learning-for-Medical-Language remote is "origin".
-
-   ```sh
-   # Either the HTTPS method...
-   $ git remote add fork https://github.com/{username}/cnlp_transformers.git
-   # ...or the SSH method
-   $ git remote add fork git@github.com:{username}/cnlp_transformers.git
+   ```bash
+   git checkout -b my-new-feature
    ```
 
-3. Switch to the correct base branch:
-   * If you are not making changes to source files or project configuration
-     files (`pyproject.toml`), stay on `main`
-   * Otherwise, **switch to the branch for the next release**.
-     * This will be a branch named `dev-vX.Y.Z` for version X.Y.Z.
-     * If there is no such branch, create it by branching off of `main`
-       and push it upstream to this repository:
+2. Start developing! Commit your changes to your new branch.
 
-       ```sh
-       git switch -c dev-vX.Y.Z
-       git push --set-upstream origin dev-vX.Y.Z
-       ```
+3. When you're ready, run `make check` and `make test` to make sure the
+   linter and formatter like your code, and that the test suite passes.
 
-       * You can also ask a maintainer to create this branch for you.
+4. When this is done and all your changes are pushed to your fork,
+   you can open a pull request for us to review your changes.
+   Link any related issues that your PR addresses.
 
-4. Make a new branch from the base branch selected above and set your
-   fork as the upstream remote:
-   > **Note:** see the section on testing below for information
-   > on how you may want to name your branch.
+## Instructions for maintainers
 
-   ```sh
-   git switch -c your-branch-name  # or git checkout -b
-   git push --set-upstream fork your-branch-name
-   ```
+### Updating the changelog
 
-5. Open an issue that motivates the change you are making if there is
-   not one already.
-
-6. Make your changes in `your-branch-name` on your fork.
-
-7. Open a PR to close the issue.
-   * If you are not making changes to source files or project configuration
-     files (`pyproject.toml`), you can target `main`
-   * Otherwise, **have your PR target the branch for the next release**.
-     * This will be a branch named `dev-vX.Y.Z` for version X.Y.Z.
-     * If there is no such branch, create it by branching off of `main`, then
-       target your new branch.
-       * You can also ask a maintainer to create this branch for you.
-
-### Linting and formatting
-
-We use [Ruff](https://docs.astral.sh/ruff/) for linting and formatting.
-
-Run `make check` to lint and format your code.
-
-There is also a pre-commit hook that will make sure that your code is
-linted and formatted properly before you commit. If you haven't already done so,
-you can install the pre-commit hooks with `make hooks`.
-
-If you use VSCode, there is a [ruff extension](https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff)
-that might be handy for development.
-
-### Testing your code
-
-You can run the pytest test suite with `make test`.
-
-This repository also has GitHub Actions set up to automatically run the test
-suite in `test` whenever a commit is pushed or a pull request is opened
-in certain circumstances.
-
-Tests will run if changes are made to any of the following files:
-
-* `src/**`
-* `test/**`
-* `pyproject.toml`
-
-AND the changes are in any of the following:
-
-* Pull requests targeting either of the following:
-  * the `main` branch
-  * a branch name starting with `dev-vX`, where `X` is a digit (e.g. `dev-v0.6.0`)
-* Further commits pushed to the source branch of such a pull request
-* Commits pushed to a branch name starting with `testable/`, e.g. `testable/my-special-feature`
-
-You can see the structure of these test runs in the
-[**Actions**](https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers/actions)
-tab of this repository. In short, they will build and test the project
-on Python 3.8, 3.9, and 3.10; these will always run at least on
-Linux, and in the case of commits or pull requests targeting `main`,
-they will run on Linux, macOS, and Windows.
-
-If you are developing in a public fork of the repository, you can use
-the `testable/` naming convention for your branch to have the forked
-actions run as you push to your fork. We recommend not tweaking the
-actions in your fork as this may cause unexpected behavior when opening
-a pull request.
-
-> **Note:** for collaborators, the same applies for work done directly
-> in branches in this repository that follow this naming convention.
-
-Once you open a pull request targeting `main` or a version branch in
-this repository, the test runs will be triggered on creation and any
-time you add new commits to the base branch in your fork. You do not
-need to name your branch anything special in this case.
-
-## For Maintainers: Making a new package version
+All new features and changes should be added to [`CHANGELOG.md`](CHANGELOG.md)
+under the "Unreleased" heading. A new heading will be added on every release to
+absorb all the unreleased changes.
 
 ### Developing the next version
-
-When it is time to start development on a new major, minor, or patch
-version, create a new branch off of `main` in this repository.
-
-This new branch should be named `dev-vX.Y.Z` for version X.Y.Z.
 
 When deciding whether to create a major, minor, or patch version, follow
 the Semantic Versioning guidelines. The key points are as follows:
@@ -189,7 +201,7 @@ it is time to merge the development branch and release the new version.
 
 7. **Double check that the version number in `src/cnlpt/__init__.py:__version__`
    has been incremented from the previous version on PyPI.**
-   * If it hasn't been, do so, commit it, and proceed with that commit
+   - If it hasn't been, do so, commit it, and proceed with that commit
      instead of the merge commit from the previous step.
 
 8. Delete the contents of the `./dist/` directory if it exists.
@@ -219,7 +231,7 @@ it is time to merge the development branch and release the new version.
 
 Here are some pointers for updating the Sphinx configuration. This is not exhaustive.
 
-* Whenever a new class from a third party package (usually Transformers) is added
+- Whenever a new class from a third party package (usually Transformers) is added
   to a type annotation, a link will need to be added to the Intersphinx mappings.
   For Transformers, you will have to add an entry for every namespace path you use
   in the code; for instance, if you import `InputExample` from `transformers` and
@@ -238,10 +250,10 @@ Here are some pointers for updating the Sphinx configuration. This is not exhaus
   per the instructions
   [here](https://www.sphinx-doc.org/en/master/usage/extensions/intersphinx.html#confval-intersphinx_mapping).
 
-* To rebuild the autodoc toctrees and the `transformers` Intersphinx
+- To rebuild the autodoc toctrees and the `transformers` Intersphinx
   mappings, run `build_doc_source.sh`.
 
-* ReadTheDocs should automatically begin building documentation for the latest
+- ReadTheDocs should automatically begin building documentation for the latest
   version upon the creation of the release in GitHub. To build the docs locally
   for testing documentation changes before uploading to readthedocs, first
   **uncomment lines 36 and 65 on `docs/conf.py`,** then execute the following:

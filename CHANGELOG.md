@@ -1,6 +1,7 @@
 # Changelog
 
 ## 0.7.0 (Nov 2024)
+
 * Updated dependencies to recent versions of Huggingface Transformer and Pytorch
 * Improved speed of continuous integration by switching from pip to uv
 * Change from black and isort to ruff
