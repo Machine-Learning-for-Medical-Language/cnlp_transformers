@@ -84,8 +84,8 @@ async def process(doc: UnannotatedDocument):
         instances, app.state.tokenizer, max_length=app.state.conf_dict["max_seq_length"]
     )
     _, logits = app.state.model.forward(
-        input_ids=torch.LongTensor(dataset["input_ids"]).to("cuda"),
-        attention_mask=torch.LongTensor(dataset["attention_mask"]).to("cuda"),
+        input_ids=torch.LongTensor(dataset["input_ids"]).to(device),
+        attention_mask=torch.LongTensor(dataset["attention_mask"]).to(device),
     )
 
     prediction = int(np.argmax(logits[0].cpu().detach().numpy(), axis=1))
