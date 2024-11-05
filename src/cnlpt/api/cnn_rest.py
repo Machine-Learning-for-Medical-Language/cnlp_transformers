@@ -30,20 +30,14 @@ from scipy.special import softmax
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
 from ..BaselineModels import CnnSentenceClassifier
-from .cnlp_rest import UnannotatedDocument, create_dataset
+from .cnlp_rest import UnannotatedDocument, create_dataset, resolve_device
 
 MODEL_NAME = os.getenv("MODEL_PATH")
 if MODEL_NAME is None:
     sys.stderr.write("This REST container requires a MODEL_PATH environment variable\n")
     sys.exit(-1)
 device = os.getenv("MODEL_DEVICE", "auto")
-if device == "auto":
-    if torch.cuda.is_available():
-        device = "cuda"
-    elif torch.backends.mps.is_available():
-        device = "mps"
-    else:
-        device = "cpu"
+device = resolve_device(device)
 
 logger = logging.getLogger("CNN_REST_Processor")
 logger.setLevel(logging.DEBUG)
@@ -56,7 +50,7 @@ conf_dict: dict[str, Any]
 
 
 @asynccontextmanager
-async def lifetime():
+async def lifespan():
     global model, tokenizer, conf_dict
     conf_file = join(MODEL_NAME, "config.json")
     with open(conf_file) as fp:
@@ -77,8 +71,10 @@ async def lifetime():
     tokenizer = tokenizer
     conf_dict = conf_dict
 
+    yield
 
-app = FastAPI(lifetime=lifetime)
+
+app = FastAPI(lifespan=lifespan)
 
 
 @app.post("/cnn/classify")
