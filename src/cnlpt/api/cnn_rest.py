@@ -22,11 +22,9 @@ from contextlib import asynccontextmanager
 from os.path import join
 from typing import Any
 
-from transformers import AutoTokenizer, Trainer
-import torch
-import torch.backends.mps
 import numpy as np
 import torch
+import torch.backends.mps
 from fastapi import FastAPI
 from scipy.special import softmax
 from transformers import AutoTokenizer, PreTrainedTokenizer
@@ -38,14 +36,14 @@ MODEL_NAME = os.getenv("MODEL_PATH")
 if MODEL_NAME is None:
     sys.stderr.write("This REST container requires a MODEL_PATH environment variable\n")
     sys.exit(-1)
-device = os.getenv('MODEL_DEVICE', 'auto')
-if device == 'auto':
+device = os.getenv("MODEL_DEVICE", "auto")
+if device == "auto":
     if torch.cuda.is_available():
-        device = 'cuda'
+        device = "cuda"
     elif torch.backends.mps.is_available():
-        device = 'mps'
+        device = "mps"
     else:
-        device = 'cpu'
+        device = "cpu"
 
 logger = logging.getLogger("CNN_REST_Processor")
 logger.setLevel(logging.DEBUG)
@@ -86,11 +84,14 @@ app = FastAPI(lifetime=lifetime)
 @app.post("/cnn/classify")
 async def process(doc: UnannotatedDocument):
     instances = [doc.doc_text]
-    dataset = get_dataset(instances, app.state.tokenizer, max_length=app.state.conf_dict['max_seq_length'])
-    _, logits = app.state.model.forward(input_ids=torch.LongTensor(dataset['input_ids']).to('cuda'),
-                                        attention_mask = torch.LongTensor(dataset['attention_mask']).to('cuda'),
-                                     )
-    
+    dataset = create_dataset(
+        instances, app.state.tokenizer, max_length=app.state.conf_dict["max_seq_length"]
+    )
+    _, logits = app.state.model.forward(
+        input_ids=torch.LongTensor(dataset["input_ids"]).to("cuda"),
+        attention_mask=torch.LongTensor(dataset["attention_mask"]).to("cuda"),
+    )
+
     prediction = int(np.argmax(logits[0].cpu().detach().numpy(), axis=1))
     result = conf_dict["label_dictionary"][conf_dict["task_names"][0]][prediction]
     probabilities = softmax(logits[0][0].cpu().detach().numpy())

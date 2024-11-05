@@ -1,10 +1,12 @@
 import logging
 import os
+from typing import Literal
 
 import torch
+import torch.backends
+import torch.backends.mps
 from datasets import Dataset
 from pydantic import BaseModel
-from typing import List, Literal
 
 # Modeling imports
 from transformers import (
@@ -15,11 +17,6 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
-from datasets import Dataset
-import torch
-import torch.backends
-import torch.backends.mps
-import logging
 from transformers.tokenization_utils import PreTrainedTokenizer
 
 from ..cnlp_data import cnlp_preprocess_data

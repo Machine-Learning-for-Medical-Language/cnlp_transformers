@@ -31,16 +31,16 @@ from .cnlp_rest import (
 
 MODEL_NAME = os.getenv("MODEL_PATH")
 
-device = os.getenv('MODEL_DEVICE', 'auto')
-if device == 'auto':
+device = os.getenv("MODEL_DEVICE", "auto")
+if device == "auto":
     if torch.cuda.is_available():
-        device = 'cuda'
+        device = "cuda"
     elif torch.backends.mps.is_available():
-        device = 'mps'
+        device = "mps"
     else:
-        device = 'cpu'
+        device = "cpu"
 
-logger = logging.getLogger('HierRep_REST_Processor')
+logger = logging.getLogger("HierRep_REST_Processor")
 logger.setLevel(logging.DEBUG)
 
 tokenizer: PreTrainedTokenizer

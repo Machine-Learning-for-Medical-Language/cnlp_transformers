@@ -48,7 +48,9 @@ def build_one(model: str, processor: str, *, version: str, push: bool = False) -
     patch = version_parts[2]
 
     platforms = "linux/amd64"
-    if processor == "cpu" and push:  # only build extra platforms on push because --load can't do multi-platforms
+
+    # only build extra platforms on push because --load can't do multi-platforms
+    if processor == "cpu" and push:
         platforms += ",linux/arm64"
 
     build_args = [
@@ -70,7 +72,7 @@ def build_one(model: str, processor: str, *, version: str, push: bool = False) -
     subprocess.run(["docker", "buildx", "build"] + build_args, check=True)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     if args.processor == "all":
         processors = ["cpu", "gpu"]
     else:
