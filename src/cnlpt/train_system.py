@@ -152,7 +152,7 @@ def is_external_encoder(model_name_or_path: str) -> bool:
     :param model_name_or_path: specified model
     :return: whether the encoder is an external (non-cnlpt) model
     """
-    return is_hub_model(model_name_or_path) or not is_cnlpt_model(model_name_or_path)
+    return not is_cnlpt_model(model_name_or_path)
 
 
 def main(
