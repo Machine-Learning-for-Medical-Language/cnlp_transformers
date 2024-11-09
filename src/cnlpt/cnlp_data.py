@@ -311,13 +311,13 @@ def cnlp_preprocess_data(
     else:
         padding = "max_length"
 
-        result = tokenizer(
-            sentences,
-            max_length=max_length,
-            padding=padding,
-            truncation=True,
-            is_split_into_words=not character_level,
-        )
+    result = tokenizer(
+        sentences,
+        max_length=max_length,
+        padding=padding,
+        truncation=True,
+        is_split_into_words=not character_level,
+    )
 
     special_token_ids = {
         tokenizer.bos_token_id,
@@ -558,7 +558,7 @@ def get_tagging_labels(
         for word_idx in word_ids:
             # Special tokens have a word id that is None. We set the label to -100 so they are automatically
             # ignored in the loss function.
-            if word_idx is None:
+            if word_idx is None or labels[sent_ind][task_ind] == [-100]:
                 label_ids.append(-100)
                 # We set the label for the first token of each word.
             elif word_idx != previous_word_idx:

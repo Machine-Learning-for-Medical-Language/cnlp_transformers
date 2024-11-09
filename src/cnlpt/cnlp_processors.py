@@ -53,7 +53,11 @@ def get_unique_labels(
             unique_labels = list(unique_tags)
         elif output_mode == relex:
             unique_relations = set()
-            for label in unique_labels:
+            for label_ind, label in enumerate(unique_labels):
+                if label is None:
+                    # Fix for updates to datasets/arrow that infer None from 'None' string
+                    unique_relations.add("None")
+                    continue
                 inst_rels = label.split(" , ")
                 for rel in inst_rels:
                     rel_cat = rel.split(",")[-1]
