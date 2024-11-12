@@ -167,7 +167,7 @@ class AutoProcessor(DataProcessor):
             else:
                 sep = "\t"
 
-            self.dataset = load_dataset("csv", sep=sep, data_files=data_files)
+            self.dataset = load_dataset("csv", sep=sep, data_files=data_files, keep_default_na=False)
 
             ## find out what tasks are available to this dataset, and see the overlap with what the
             ## user specified at the cli, remove those tasks so we don't also get them from other datasets
