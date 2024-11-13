@@ -309,7 +309,10 @@ def main(
                 dataset.tasks_to_labels[task] = dataset.tasks_to_labels[task][1:] + [
                     dataset.tasks_to_labels[task][0]
                 ]
-            labels = dataset.processed_dataset["train"][task]
+            if tagger[task]:
+                labels = [token_label for sent in dataset.processed_dataset["train"][task] for token_label in sent.split()]
+            else:
+                labels = dataset.processed_dataset["train"][task]
             weights = []
             label_counts = Counter(labels)
             for label in dataset.tasks_to_labels[task]:
