@@ -478,25 +478,13 @@ def main(
                 # in this case we're looking at a fine-tuned model (?)
                 character_level=data_args.character_level,
             )
-
             if training_args.do_train:
                 # Setting 1) only load weights from the encoder
-                raise NotImplementedError(
-                    "This functionality has not been restored yet"
-                )
                 model = CnlpModelForClassification(
-                    model_path=model_args.encoder_name,
                     config=config,
-                    cache_dir=model_args.cache_dir,
-                    tagger=tagger,
-                    relations=relations,
                     class_weights=dataset.class_weights,
                     final_task_weight=training_args.final_task_weight,
-                    use_prior_tasks=model_args.use_prior_tasks,
-                    argument_regularization=model_args.arg_reg,
                 )
-                delattr(model, "classifiers")
-                delattr(model, "feature_extractors")
                 if training_args.do_train:
                     tempmodel = tempfile.NamedTemporaryFile(dir=model_args.cache_dir)
                     torch.save(model.state_dict(), tempmodel)
@@ -511,7 +499,6 @@ def main(
                     freeze=training_args.freeze,
                     bias_fit=training_args.bias_fit,
                 )
-
         else:
             # This only works when model_args.encoder_name is one of the
             # model card from https://huggingface.co/models
@@ -675,7 +662,7 @@ def main(
                     model.best_eval_results = metrics
                     if trainer.is_world_process_zero():
                         if training_args.do_train:
-                            trainer.save_model()
+                            trainer.save_model()  # NOTE: a RobertaConfig is loaded here. why?
                             tokenizer.save_pretrained(training_args.output_dir)
                             if model_name == "cnn" or model_name == "lstm":
                                 with open(
@@ -884,7 +871,7 @@ def main(
 
                 out_table = process_prediction(
                     task_names=dataset.tasks,
-                    error_analysis=False,
+                    error_analysis=training_args.error_analysis,
                     output_prob=training_args.output_prob,
                     character_level=data_args.character_level,
                     task_to_label_packet=task_to_label_packet,
