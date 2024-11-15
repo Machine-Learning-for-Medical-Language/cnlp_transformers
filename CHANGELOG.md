@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 0.7.0 (Nov 2024)
 
 * Updated dependencies to recent versions of Huggingface Transformer and Pytorch
