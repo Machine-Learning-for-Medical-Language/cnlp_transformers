@@ -32,6 +32,8 @@ docs:
 
 .PHONY: build
 build:
+	@printf "Are you sure? This will remove everything currently in dist/ and create a new build. [y/N] " && read ans && [ $${ans:-N} = y ]
+	rm -f dist/*
 	@if python -m build; then\
 		echo 'To upload to PyPI run: `python -m twine upload dist/*`';\
 	fi
