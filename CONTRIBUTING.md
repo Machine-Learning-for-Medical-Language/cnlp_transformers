@@ -45,9 +45,7 @@ we have instructions for using [uv](https://github.com/astral-sh/uv)
 2. From the project's base directory, run:
 
    ```bash
-   uv venv # create a virtual environment
-   uv sync # install dependencies (includes dev dependencies by default)
-
+   uv sync --python 3.11 # 3.9 and 3.10 are also supported. uv will install dev dependencies by default.
    source .venv/bin/activate # activate the virtual environment
    ```
 
@@ -65,7 +63,9 @@ we have instructions for using [uv](https://github.com/astral-sh/uv)
 3. From the project's base directory, install dependencies:
 
    ```bash
-   pip install -e ".[dev]"
+   # editable install with dev dependencies
+   pip install dependency-groups
+   dependency-groups dev | xargs pip install -e.
    ```
 
 ### Development tools
