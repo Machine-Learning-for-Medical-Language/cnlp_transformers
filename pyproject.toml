@@ -58,6 +58,7 @@ docs = ["sphinx", "sphinx-autodoc-typehints", "sphinx-rtd-theme", "sphobjinv"]
 dev = ["cnlp-transformers[build,docs,lint,test]", "pre-commit"]
 
 [project.scripts]
+"cnlpt" = "cnlpt.__main__:main"
 "cnlpt_current_rest" = "cnlpt.api.current_rest:rest"
 "cnlpt_dtr_rest" = "cnlpt.api.dtr_rest:rest"
 "cnlpt_event_rest" = "cnlpt.api.event_rest:rest"
