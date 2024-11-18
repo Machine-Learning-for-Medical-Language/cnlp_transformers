@@ -145,27 +145,39 @@ All new features and changes should be added to [`CHANGELOG.md`](CHANGELOG.md)
 under the "Unreleased" heading. A new heading will be added on every release to
 absorb all the unreleased changes.
 
-### Developing the next version
+### Releasing the next version
+
+#### 1. Choosing a version number
 
 When deciding whether to create a major, minor, or patch version, follow
 the Semantic Versioning guidelines. The key points are as follows:
 
 > Given a version number MAJOR.MINOR.PATCH, increment the:
 >
-> 1. MAJOR version when you make incompatible API changes*
+> 1. MAJOR version when you make incompatible API changes
 > 2. MINOR version when you add functionality in a backwards compatible manner
 > 3. PATCH version when you make backwards compatible bug fixes
 
-*At time of writing we are still in major version 0, meaning we are
-in the initial development stage. For major version 0, both incompatible
-API changes and backwards compatible feature adds fall under the MINOR
-version, and the API is not considered stable.
+> [!NOTE]
+> At time of writing we are still in major version 0, meaning we are
+> in the initial development stage. For major version 0, both incompatible
+> API changes and backwards compatible feature adds fall under the MINOR
+> version, and the API is not considered stable.
 
-When you have picked the appropriate version number and checked out
-the new branch, change the version number in `src/cnlpt/__init__.py:__version__`
-to the new version number.
+Add a new heading to [`CHANGELOG.md`](CHANGELOG.md) with the new version number
+and the release date, absorbing all the unreleased changes. The "Unreleased"
+section should be left empty.
 
-### Setting up your PyPI API key
+#### 2. Creating a release with GitHub
+
+Go to the [releases](https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers/releases)
+page, and click "Draft a new release". Create a new tag with the new version
+number (e.g., `v0.7.0`), and set the release title to be the same as the tag.
+Click "Generate release notes" to automatically generate release notes from the
+commit history. You can edit these release notes as necessary. When you're ready,
+click "Publish release".
+
+#### 3. Setting up your PyPI API key
 
 1. Log into your PyPI account
 
@@ -180,52 +192,24 @@ to the new version number.
    password = <the token value, including the `pypi-` prefix>
    ```
 
-### Building and uploading a new version
+#### 4. Building and uploading to PyPI
 
-Once development is finished on the new version of cnlp-transformers,
-it is time to merge the development branch and release the new version.
-
-1. Make sure the version number in `src/cnlpt/__init__.py:__version__`
-   has been incremented from the previous version on PyPI.
-2. Make sure all tests are passing for the latest commit in the development branch.
-3. Open a pull request for the development branch targeting `main`.
-4. Make sure all tests are passing for this pull request (this will run
-   test workflows for all supported platforms)
-5. Merge the pull request into `main` and proceed to step 6.
-
-   **Only follow these steps after merging the new version branch into
-   `main`.**
-
-6. Checkout the merge commit for the new version; this will usually
+1. Checkout the commit for the new version; this will usually
    be the latest commit in `main`.
 
-7. **Double check that the version number in `src/cnlpt/__init__.py:__version__`
+2. **Double check that the version number shown by `cnlpt --version`
    has been incremented from the previous version on PyPI.**
-   - If it hasn't been, do so, commit it, and proceed with that commit
-     instead of the merge commit from the previous step.
 
-8. Delete the contents of the `./dist/` directory if it exists.
-
-9. Build the package using `make build`:
+3. Build the package using `make build`:
 
    This will build the package in the `./dist/` directory, creating it if
    it does not exist.
 
-10. Upload to PyPI with `twine`:
+4. Upload to PyPI with `twine`:
 
     ```sh
     python -m twine upload dist/*
     ```
-
-11. On GitHub, make a new release:
-    1. Navigate to the [Releases](https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers/releases) page
-    2. Click "Draft a new release"
-    3. Click "Choose a tag"
-    4. Type the new version number in the format “vX.Y.Z” in the “Find or
-       create a new tag” field, and click “+ Create new tag: vX.Y.Z on publish”
-    5. Click “Generate release notes” and edit as necessary
-    6. Make sure “Set as latest release” is checked
-    7. Click "Publish"
 
 ### Building the documentation
 
