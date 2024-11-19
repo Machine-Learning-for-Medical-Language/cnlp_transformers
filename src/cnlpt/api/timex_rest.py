@@ -26,7 +26,6 @@ from seqeval.metrics.sequence_labeling import get_entities
 from transformers import Trainer
 from transformers.tokenization_utils import PreTrainedTokenizer
 
-from .cnlp_rest import create_dataset, initialize_cnlpt_model
 from .temporal_rest import (
     TIMEX_LABEL_LIST,
     SentenceDocument,
@@ -35,6 +34,7 @@ from .temporal_rest import (
     TokenizedSentenceDocument,
     create_instance_string,
 )
+from .utils import create_dataset, initialize_cnlpt_model
 
 MODEL_NAME = "tmills/timex-thyme-colon-pubmedbert"
 logger = logging.getLogger("Timex_REST_Processor")
@@ -154,26 +154,3 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     )
 
     return results
-
-
-def rest():
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Run the http server for temporal")
-    parser.add_argument(
-        "-p",
-        "--port",
-        type=int,
-        help="The port number to run the server on",
-        default=8000,
-    )
-
-    args = parser.parse_args()
-
-    import uvicorn
-
-    uvicorn.run("cnlpt.api.timex_rest:app", host="0.0.0.0", port=args.port, reload=True)
-
-
-if __name__ == "__main__":
-    rest()

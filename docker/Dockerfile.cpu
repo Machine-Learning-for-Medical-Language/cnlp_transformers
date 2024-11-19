@@ -14,30 +14,30 @@ ENTRYPOINT ["/bin/bash"]
 
 FROM base as current
 run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.current()"
-ENTRYPOINT ["cnlpt_current_rest", "-p", "8000"]
+ENTRYPOINT ["cnlpt","rest", "--model", "current", "-p", "8000"]
 
 FROM base as dtr
 run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.dtr()"
-ENTRYPOINT ["cnlpt_dtr_rest", "-p", "8000"]
+ENTRYPOINT ["cnlpt", "rest", "--model", "dtr", "-p", "8000"]
 
 FROM base as event
 run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.event()"
-ENTRYPOINT ["cnlpt_event_rest", "-p", "8000"]
+ENTRYPOINT ["cnlpt", "rest", "--model", "event", "-p", "8000"]
 
 FROM base as negation
 run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.negation()"
-ENTRYPOINT ["cnlpt_negation_rest", "-p", "8000"]
+ENTRYPOINT ["cnlpt", "rest", "--model", "negation", "-p", "8000"]
 
 FROM base as termexists
 run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.termexists()"
 # Temporary fix, remove once the released pip package has the new model
 run sed -i 's/sharpseed-termexists/termexists_pubmedbert_ssm/g' /usr/local/lib/python3.9/site-packages/cnlpt/api/termexists_rest.py
-ENTRYPOINT ["cnlpt_termexists_rest", "-p", "8000"]
+ENTRYPOINT ["cnlpt", "rest", "--model", "termexists", "-p", "8000"]
 
 FROM base as temporal
 run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.temporal()"
-ENTRYPOINT ["cnlpt_temporal_rest", "-p", "8000"]
+ENTRYPOINT ["cnlpt", "rest", "--model", "temporal", "-p", "8000"]
 
 FROM base as timex
 run python -c "import sys;sys.path.append('/home/docker');import model_download; model_download.timex()"
-ENTRYPOINT ["cnlpt_timex_rest", "-p", "8000"]
+ENTRYPOINT ["cnlpt", "rest", "--model", "timex", "-p", "8000"]

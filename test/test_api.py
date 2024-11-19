@@ -5,7 +5,7 @@ Test suite for running the API models
 import pytest
 from fastapi.testclient import TestClient
 
-from cnlpt.api import cnlp_rest
+from cnlpt.api.utils import EntityDocument
 
 
 @pytest.fixture(autouse=True)
@@ -28,7 +28,7 @@ class TestNegation:
     def test_negation_process(self, test_client: TestClient):
         from cnlpt.api.negation_rest import NegationResults
 
-        doc = cnlp_rest.EntityDocument(
+        doc = EntityDocument(
             doc_text="The patient has a sore knee and headache "
             "but denies nausea and has no anosmia.",
             entities=[[18, 27], [32, 40], [52, 58], [70, 77]],

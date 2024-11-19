@@ -312,10 +312,11 @@ wheels = [
 
 [[package]]
 name = "cnlp-transformers"
-version = "0.6.2.dev441+g543aa31.d20241118"
+version = "0.6.2.dev446+g4851b52.d20241119"
 source = { editable = "." }
 dependencies = [
     { name = "anaforatools" },
+    { name = "click" },
     { name = "datasets" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -366,6 +367,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "anaforatools", specifier = "~=1.1.0" },
+    { name = "click" },
     { name = "datasets", specifier = "~=2.21.0" },
     { name = "fastapi", specifier = "~=0.115.2" },
     { name = "httpx", specifier = ">=0.27.2" },

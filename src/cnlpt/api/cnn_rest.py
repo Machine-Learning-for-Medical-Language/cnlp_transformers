@@ -30,12 +30,9 @@ from scipy.special import softmax
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
 from ..BaselineModels import CnnSentenceClassifier
-from .cnlp_rest import UnannotatedDocument, create_dataset, resolve_device
+from .utils import UnannotatedDocument, create_dataset, resolve_device
 
 MODEL_NAME = os.getenv("MODEL_PATH")
-if MODEL_NAME is None:
-    sys.stderr.write("This REST container requires a MODEL_PATH environment variable\n")
-    sys.exit(-1)
 device = os.getenv("MODEL_DEVICE", "auto")
 device = resolve_device(device)
 
@@ -52,6 +49,11 @@ conf_dict: dict[str, Any]
 @asynccontextmanager
 async def lifespan():
     global model, tokenizer, conf_dict
+    if MODEL_NAME is None:
+        sys.stderr.write(
+            "This REST container requires a MODEL_PATH environment variable\n"
+        )
+        sys.exit(-1)
     conf_file = join(MODEL_NAME, "config.json")
     with open(conf_file) as fp:
         conf_dict = json.load(fp)
@@ -95,27 +97,3 @@ async def process(doc: UnannotatedDocument):
     # but i'm outputting them all, for transparency
     out_probabilities = [str(prob) for prob in probabilities]
     return {"result": result, "probabilities": out_probabilities}
-
-
-def rest():
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Run the http server for serving CNN model outputs."
-    )
-    parser.add_argument(
-        "-p",
-        "--port",
-        type=int,
-        help="The port number to run the server on",
-        default=8000,
-    )
-    args = parser.parse_args()
-
-    import uvicorn
-
-    uvicorn.run("cnlpt.api.cnn_rest:app", host="0.0.0.0", port=args.port, reload=False)
-
-
-if __name__ == "__main__":
-    rest()
