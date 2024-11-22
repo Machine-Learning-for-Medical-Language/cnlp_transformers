@@ -16,42 +16,42 @@ ENTRYPOINT ["/bin/bash"]
 
 FROM base as current
 run /usr/bin/python3.9 -c "import sys;sys.path.append('/home/docker');import model_download; model_download.current()"
-ENTRYPOINT ["cnlpt_current_rest", "-p", "8000"]
+ENTRYPOINT ["cnlpt", "rest", "--model-type", "current", "-p", "8000"]
 
 FROM base as dtr
 run /usr/bin/python3.9 -c "import sys;sys.path.append('/home/docker');import model_download; model_download.dtr()"
-ENTRYPOINT ["cnlpt_dtr_rest", "-p", "8000"]
+ENTRYPOINT ["cnlpt", "rest", "--model-type", "dtr", "-p", "8000"]
 
 FROM base as event
 run /usr/bin/python3.9 -c "import sys;sys.path.append('/home/docker');import model_download; model_download.event()"
-ENTRYPOINT ["cnlpt_event_rest", "-p", "8000"]
+ENTRYPOINT ["cnlpt", "rest", "--model-type", "event", "-p", "8000"]
 
 FROM base as negation
 run /usr/bin/python3.9 -c "import sys;sys.path.append('/home/docker');import model_download; model_download.negation()"
-ENTRYPOINT ["cnlpt_negation_rest", "-p", "8000"]
+ENTRYPOINT ["cnlpt", "rest", "--model-type", "negation", "-p", "8000"]
 
 FROM base as termexists
 run /usr/bin/python3.9 -c "import sys;sys.path.append('/home/docker');import model_download; model_download.termexists()"
 # Temporary fix, remove once the released pip package has the new model
 run sed -i 's/sharpseed-termexists/termexists_pubmedbert_ssm/g' /usr/local/lib/python3.9/site-packages/cnlpt/api/termexists_rest.py
-ENTRYPOINT ["cnlpt_termexists_rest", "-p", "8000"]
+ENTRYPOINT ["cnlpt", "rest", "--model-type", "termexists", "-p", "8000"]
 
 FROM base as temporal
 run /usr/bin/python3.9 -c "import sys;sys.path.append('/home/docker');import model_download; model_download.temporal()"
-ENTRYPOINT ["cnlpt_temporal_rest", "-p", "8000"]
+ENTRYPOINT ["cnlpt", "rest", "--model-type", "temporal", "-p", "8000"]
 
 FROM base as timex
 run /usr/bin/python3.9 -c "import sys;sys.path.append('/home/docker');import model_download; model_download.timex()"
-ENTRYPOINT ["cnlpt_timex_rest", "-p", "8000"]
+ENTRYPOINT ["cnlpt", "rest", "--model-type", "timex", "-p", "8000"]
 
 FROM base as hier_local
 ENV MODEL_PATH /opt/cnlp/model
-ENTRYPOINT ["python3.9", "-m", "cnlpt.api.hier_rest", "-p", "8000"]
+ENTRYPOINT ["cnlpt", "rest", "--model-type", "hier", "-p", "8000"]
 
 FROM base as hier
 run /usr/bin/python3.9 -c "import sys;sys.path.append('/home/docker'); import model_download; print('$model_loc'); model_download.hier('$model_loc')"
-ENTRYPOINT ["python3.9", "-m", "cnlpt.api.hier_rest", "-p", "8000"]
+ENTRYPOINT ["cnlpt", "rest", "--model-type", "hier", "-p", "8000"]
 
 FROM base as cnn
 ENV MODEL_PATH /opt/cnlp/model
-ENTRYPOINT ["python3.9", "-m", "cnlpt.api.cnn_rest", "-p", "8000"]
+ENTRYPOINT ["cnlpt", "rest", "--model-type", "cnn", "-p", "8000"]

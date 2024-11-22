@@ -24,13 +24,13 @@ from pydantic import BaseModel
 from transformers import Trainer
 from transformers.tokenization_utils import PreTrainedTokenizer
 
-from .cnlp_rest import (
+from .temporal_rest import OLD_DTR_LABEL_LIST
+from .utils import (
     EntityDocument,
     create_dataset,
     create_instance_string,
     initialize_cnlpt_model,
 )
-from .temporal_rest import OLD_DTR_LABEL_LIST
 
 MODEL_NAME = "tmills/tiny-dtr"
 logger = logging.getLogger("DocTimeRel Processor with xtremedistil encoder")
@@ -104,26 +104,3 @@ async def process(doc: EntityDocument):
     )
 
     return output
-
-
-def rest():
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Run the http server for negation")
-    parser.add_argument(
-        "-p",
-        "--port",
-        type=int,
-        help="The port number to run the server on",
-        default=8000,
-    )
-
-    args = parser.parse_args()
-
-    import uvicorn
-
-    uvicorn.run("cnlpt.api.dtr_rest:app", host="0.0.0.0", port=args.port, reload=True)
-
-
-if __name__ == "__main__":
-    rest()

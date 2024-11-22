@@ -23,7 +23,7 @@ from fastapi import FastAPI
 from transformers import PreTrainedModel
 from transformers.tokenization_utils import PreTrainedTokenizer
 
-from .cnlp_rest import (
+from .utils import (
     UnannotatedDocument,
     create_dataset,
     initialize_hier_model,
@@ -102,27 +102,3 @@ async def classify(doc: UnannotatedDocument):
     ]
     labels = [list(model.label_dictionary.values())[0][x] for x in predictions]
     return {"result": labels}
-
-
-def rest():
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Run the http server for serving hierarchical model outputs."
-    )
-    parser.add_argument(
-        "-p",
-        "--port",
-        type=int,
-        help="The port number to run the server on",
-        default=8000,
-    )
-    args = parser.parse_args()
-
-    import uvicorn
-
-    uvicorn.run("cnlpt.api.hier_rest:app", host="0.0.0.0", port=args.port, reload=False)
-
-
-if __name__ == "__main__":
-    rest()

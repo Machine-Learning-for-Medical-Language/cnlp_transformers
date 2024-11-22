@@ -26,7 +26,6 @@ from seqeval.metrics.sequence_labeling import get_entities
 from transformers import Trainer
 from transformers.tokenization_utils import PreTrainedTokenizer
 
-from .cnlp_rest import create_dataset, initialize_cnlpt_model
 from .temporal_rest import (
     EVENT_LABEL_LIST,
     Event,
@@ -35,6 +34,7 @@ from .temporal_rest import (
     TokenizedSentenceDocument,
     create_instance_string,
 )
+from .utils import create_dataset, initialize_cnlpt_model
 
 MODEL_NAME = "tmills/event-thyme-colon-pubmedbert"
 logger = logging.getLogger("Event_REST_Processor")
@@ -156,28 +156,3 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
 async def collection_process_complete():
     global trainer
     trainer = None
-
-
-def rest():
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Run the http server for temporal event extraction"
-    )
-    parser.add_argument(
-        "-p",
-        "--port",
-        type=int,
-        help="The port number to run the server on",
-        default=8000,
-    )
-
-    args = parser.parse_args()
-
-    import uvicorn
-
-    uvicorn.run("cnlpt.api.event_rest:app", host="0.0.0.0", port=args.port, reload=True)
-
-
-if __name__ == "__main__":
-    rest()

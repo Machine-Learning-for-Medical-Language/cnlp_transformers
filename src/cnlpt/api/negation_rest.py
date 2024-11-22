@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from transformers import Trainer
 from transformers.tokenization_utils import PreTrainedTokenizer
 
-from .cnlp_rest import (
+from .utils import (
     EntityDocument,
     create_dataset,
     create_instance_string,
@@ -110,28 +110,3 @@ async def process(doc: EntityDocument):
 @app.get("/negation/{test_str}")
 async def test(test_str: str):
     return {"argument": test_str}
-
-
-def rest():
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Run the http server for negation")
-    parser.add_argument(
-        "-p",
-        "--port",
-        type=int,
-        help="The port number to run the server on",
-        default=8000,
-    )
-
-    args = parser.parse_args()
-
-    import uvicorn
-
-    uvicorn.run(
-        "cnlpt.api.negation_rest:app", host="0.0.0.0", port=args.port, reload=True
-    )
-
-
-if __name__ == "__main__":
-    rest()
