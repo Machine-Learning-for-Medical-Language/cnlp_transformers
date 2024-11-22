@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=64", "setuptools-scm>=8", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -42,19 +42,29 @@ classifiers = [
 Homepage = "https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers/"
 "Bug Tracker" = "https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers/issues"
 
-[tool.setuptools.dynamic]
-version = { attr = "cnlpt.__version__" }
+[tool.setuptools_scm]
 
-[project.optional-dependencies]
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["cnlpt*"]
+
+[dependency-groups]
 lint = [
     "ruff==0.7.0", # same as in pre-commit hooks
 ]
 build = ["build", "pip>=21.3", "twine"]
 test = ["pytest"]
 docs = ["sphinx", "sphinx-autodoc-typehints", "sphinx-rtd-theme", "sphobjinv"]
-dev = ["cnlp-transformers[build,docs,lint,test]", "pre-commit"]
+dev = [
+    { include-group = "build" },
+    { include-group = "docs" },
+    { include-group = "lint" },
+    { include-group = "test" },
+    "pre-commit",
+]
 
 [project.scripts]
+"cnlpt" = "cnlpt.__main__:main"
 "cnlpt_current_rest" = "cnlpt.api.current_rest:rest"
 "cnlpt_dtr_rest" = "cnlpt.api.dtr_rest:rest"
 "cnlpt_event_rest" = "cnlpt.api.event_rest:rest"
@@ -95,7 +105,4 @@ ignore = [
 keep-runtime-typing = true
 
 [tool.uv]
-dev-dependencies = ["cnlp-transformers[dev]"]
-
-[tool.uv.sources]
-cnlp-transformers = { workspace = true }
+cache-keys = [{ git = { commit = true, tags = true } }]
