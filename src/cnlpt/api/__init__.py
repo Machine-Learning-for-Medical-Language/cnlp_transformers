@@ -2,12 +2,12 @@ MODEL_TYPES = (
     "cnn",
     "current",
     "dtr",
-    "event",
+    # "event",
     "hier",
     "negation",
     "temporal",
-    "termexists",
-    "timex",
+    # "termexists",
+    # "timex",
 )
 
 
@@ -24,10 +24,10 @@ def get_rest_app(model_type: str):
         from .dtr_rest import app
 
         return app
-    elif model_type == "event":
-        from .event_rest import app
+    # elif model_type == "event":
+    #     from .event_rest import app
 
-        return app
+    #     return app
     elif model_type == "hier":
         from .hier_rest import app
 
@@ -40,13 +40,13 @@ def get_rest_app(model_type: str):
         from .temporal_rest import app
 
         return app
-    elif model_type == "termexists":
-        from .termexists_rest import app
+    # elif model_type == "termexists":
+    #     from .termexists_rest import app
 
-        return app
-    elif model_type == "timex":
-        from .timex_rest import app
+    #     return app
+    # elif model_type == "timex":
+    #     from .timex_rest import app
 
-        return app
+    #     return app
     else:
         raise ValueError(f"unknown model type: {model_type}")
