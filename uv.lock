@@ -312,7 +312,7 @@ wheels = [
 
 [[package]]
 name = "cnlp-transformers"
-version = "0.7.1"
+version = "0.7.1.dev1+gc609988.d20241127"
 source = { editable = "." }
 dependencies = [
     { name = "anaforatools" },
