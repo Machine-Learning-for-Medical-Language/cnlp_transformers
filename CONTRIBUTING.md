@@ -168,6 +168,9 @@ Add a new heading to [`CHANGELOG.md`](CHANGELOG.md) with the new version number
 and the release date, absorbing all the unreleased changes. The "Unreleased"
 section should be left empty.
 
+Create a locked version of the uv lock file with:
+```SETUPTOOLS_SCM_PRETEND_VERSION=<desired version number> uv lock``` and push the updated lockfile to main.
+
 #### 2. Creating a release with GitHub
 
 Go to the [releases](https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers/releases)
