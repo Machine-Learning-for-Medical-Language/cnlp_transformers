@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.7.1 (Nov 2024)
+* Update release build instructions to fix versioning issue.
+
 ## 0.7.0 (Nov 2024)
 
 * Updated dependencies to recent versions of Huggingface Transformer and Pytorch
