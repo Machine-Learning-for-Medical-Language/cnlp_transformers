@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers/blob/main/dataset.schema.json",
+  "title": "Dataset",
+  "description": "JSON file containing a CNLPT Dataset",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "data": {
+      "description": "Array of data instances",
+      "type": "array",
+      "items": {
+        "description": "One data instance",
+        "type": "object",
+        "properties": {
+          "text": {
+            "description": "The raw text of the instance",
+            "type": "string"
+          },
+          "id": {
+            "description": "The identifier of the instance",
+            "type": "string"
+          }
+        },
+        "additionalProperties": {
+          "description": "The label for the subtask given by the name of this property",
+          "type": "string"
+        },
+        "required": ["text", "id"],
+        "minProperties": 3
+      }
+    },
+    "metadata": {
+      "description": "Optional in-file metadata specification; must be included if a metadata.json file is absent",
+      "$ref": "metadata.schema.json"
+    }
+  }
+}
