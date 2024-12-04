@@ -491,6 +491,30 @@ class CnlpModelForClassification(PreTrainedModel):
             )
             state["loss"] += task_weight * task_loss
 
+    def remove_task_classifiers(self, tasks: list[str] = None):
+        if tasks is None:
+            self.classifiers = nn.ModuleDict()
+            self.tasks = []
+            self.class_weights = {}
+        else:
+            for task in tasks:
+                self.classifiers.pop(task)
+                self.tasks.remove(task)
+                self.class_weights.pop(task)
+    
+    def add_task_classifier(self, task_name: str, label_dictionary: dict[str, list]):
+        self.tasks.append(task_name)
+        self.classifiers[task_name] = ClassificationHead(
+            self.config, len(label_dictionary)
+        )
+        self.label_dictionary[task_name] = label_dictionary
+
+    def set_class_weights(self, class_weights: Union[list[float], None] = None):
+        if class_weights is None:
+            self.class_weights = {x: None for x in self.label_dictionary.keys()}
+        else:
+            self.class_weights = class_weights
+
     def forward(
         self,
         input_ids=None,
