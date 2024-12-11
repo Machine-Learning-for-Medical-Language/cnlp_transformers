@@ -504,9 +504,19 @@ class CnlpModelForClassification(PreTrainedModel):
     
     def add_task_classifier(self, task_name: str, label_dictionary: dict[str, list]):
         self.tasks.append(task_name)
+        task_num_labels = len(label_dictionary)
         self.classifiers[task_name] = ClassificationHead(
             self.config, len(label_dictionary)
         )
+        if self.config.relations[task_name]:
+            hidden_size = self.config.num_rel_attention_heads
+            self.classifiers[task_name] = ClassificationHead(
+                self.config, task_num_labels, hidden_size=hidden_size
+            )
+        else:
+            self.classifiers[task_name] = ClassificationHead(
+                self.config, task_num_labels
+            )
         self.label_dictionary[task_name] = label_dictionary
 
     def set_class_weights(self, class_weights: Union[list[float], None] = None):
