@@ -12,7 +12,6 @@ import numpy.typing as npt
 import pandas as pd
 import tqdm
 from transformers import EvalPrediction
-
 from .cnlp_processors import classification, relex, tagging
 
 logger = logging.getLogger(__name__)
@@ -254,9 +253,9 @@ def process_prediction(
         out_table["text"] = list(eval_dataset["text"])
     out_table["text"] = out_table["text"].apply(remove_newline)
 
-    out_table["text"] = out_table["text"].str.replace('"', "")
-    out_table["text"] = out_table["text"].str.replace("//", "")
-    out_table["text"] = out_table["text"].str.replace("\\", "")
+    out_table["text"] = out_table["text"].str.replace('"', "'")
+    # out_table["text"] = out_table["text"].str.replace("//", "")
+    # out_table["text"] = out_table["text"].str.replace("\\", "")
     word_ids = eval_dataset["word_ids"]
     for task_name, packet in tqdm.tqdm(
         task_to_label_packet.items(), desc="getting human readable labels"
@@ -334,6 +333,13 @@ def get_outputs(
         )
 
     elif task_type == tagging:
+        out = [
+            " ".join([task_labels[pred] for pred, label in zip(sent, truth) if label > -100])
+            for sent, truth in zip(task_prediction, ground_truth)
+        ]
+        
+        return pd.Series(out)
+
         return get_tagging_prints(
             character_level,
             pred_task,

@@ -507,18 +507,19 @@ def main(
                             "that you set the settings the same as those used in the"
                             "previous training run."
                         )
-                
+
                 model = CnlpModelForClassification(
                     config=config,
-                    class_weights=dataset.class_weights,
+                    # class_weights=dataset.class_weights,
+                    class_weights=class_weights,
                     final_task_weight=training_args.final_task_weight,
                 )
-
                 if model_args.ignore_existing_classifiers:
                     model.remove_task_classifiers()
                     for task in data_args.task_name:
                         model.add_task_classifier(task, dataset.get_labels()[task])
                 model.set_class_weights(dataset.class_weights)
+
                 if training_args.do_train:
                     tempmodel = tempfile.NamedTemporaryFile(dir=model_args.cache_dir)
                     torch.save(model.state_dict(), tempmodel)
@@ -528,11 +529,12 @@ def main(
                 model = CnlpModelForClassification.from_pretrained(
                     model_args.encoder_name,
                     config=config,
-                    class_weights=dataset.class_weights,
+                    class_weights=class_weights,
                     final_task_weight=training_args.final_task_weight,
                     freeze=training_args.freeze,
                     bias_fit=training_args.bias_fit,
                 )
+            model.tasks = data_args.task_name
         else:
             # This only works when model_args.encoder_name is one of the
             # model card from https://huggingface.co/models
@@ -562,7 +564,7 @@ def main(
             config.vocab_size = len(tokenizer)
             model = CnlpModelForClassification(
                 config=config,
-                class_weights=dataset.class_weights,
+                class_weights=class_weights,
                 final_task_weight=training_args.final_task_weight,
                 freeze=training_args.freeze,
                 bias_fit=training_args.bias_fit,
@@ -677,10 +679,16 @@ def main(
                         raise RuntimeError(
                             f"Unrecognized label type: {type(training_args.model_selection_label)}"
                         )
-                else:  # same default as in 0.6.0
+                elif dataset.output_modes[task] == relex:
                     task_scores.append(
                         metrics[task_name].get(
                             "one_score", np.mean(metrics[task_name].get("f1"))
+                        )
+                    )
+                else:
+                    task_scores.append(
+                        metrics[task_name].get(
+                            "one_score", np.mean(metrics[task_name].get("token_f1"))
                         )
                     )
                 # task_scores.append(processor.get_one_score(metrics.get(task_name, metrics.get(task_name.split('-')[0], None))))
