@@ -47,7 +47,7 @@ conf_dict: dict[str, Any]
 
 
 @asynccontextmanager
-async def lifespan():
+async def lifespan(app: FastAPI):
     global model, tokenizer, conf_dict
     if MODEL_NAME is None:
         sys.stderr.write(
