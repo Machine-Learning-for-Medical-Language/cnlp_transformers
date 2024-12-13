@@ -83,9 +83,9 @@ app = FastAPI(lifespan=lifespan)
 async def process(doc: UnannotatedDocument):
     instances = [doc.doc_text]
     dataset = create_dataset(
-        instances, app.state.tokenizer, max_length=app.state.conf_dict["max_seq_length"]
+        instances, tokenizer, max_length=conf_dict["max_seq_length"]
     )
-    _, logits = app.state.model.forward(
+    _, logits = model.forward(
         input_ids=torch.LongTensor(dataset["input_ids"]).to(device),
         attention_mask=torch.LongTensor(dataset["attention_mask"]).to(device),
     )
