@@ -67,6 +67,9 @@ async def lifespan(app: FastAPI):
         vocab_size=len(tokenizer),
         task_names=conf_dict["task_names"],
         num_labels_dict=num_labels_dict,
+        embed_dims=conf_dict["cnn_embed_dim"],
+        num_filters=conf_dict["cnn_num_filters"],
+        filters=conf_dict["cnn_filter_sizes"],
     )
 
     model = model.to(device)
