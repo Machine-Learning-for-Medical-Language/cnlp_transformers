@@ -67,6 +67,9 @@ async def lifespan(app: FastAPI):
         vocab_size=len(tokenizer),
         task_names=conf_dict["task_names"],
         num_labels_dict=num_labels_dict,
+        embed_dims=conf_dict["cnn_embed_dim"],
+        num_filters=conf_dict["cnn_num_filters"],
+        filters=conf_dict["cnn_filter_sizes"],
     )
 
     model = model.to(device)
@@ -83,9 +86,9 @@ app = FastAPI(lifespan=lifespan)
 async def process(doc: UnannotatedDocument):
     instances = [doc.doc_text]
     dataset = create_dataset(
-        instances, app.state.tokenizer, max_length=app.state.conf_dict["max_seq_length"]
+        instances, tokenizer, max_length=conf_dict["max_seq_length"]
     )
-    _, logits = app.state.model.forward(
+    _, logits = model.forward(
         input_ids=torch.LongTensor(dataset["input_ids"]).to(device),
         attention_mask=torch.LongTensor(dataset["attention_mask"]).to(device),
     )
