@@ -164,23 +164,30 @@ the Semantic Versioning guidelines. The key points are as follows:
 > API changes and backwards compatible feature adds fall under the MINOR
 > version, and the API is not considered stable.
 
-Add a new heading to [`CHANGELOG.md`](CHANGELOG.md) with the new version number
-and the release date, absorbing all the unreleased changes. The "Unreleased"
-section should be left empty.
+#### 2. Creating a PR for the release
 
-Create a locked version of the uv lock file with:
-```SETUPTOOLS_SCM_PRETEND_VERSION=<desired version number> uv lock``` and push the updated lockfile to main.
+When the codebase is ready for release, run `python scripts/prepare_release.py <new version number>`.
+This will walk you through the last few changes that need to be made before release,
+including updating the changelog and setting the setuptools_scm fallback version,
+and will also update the lockfile and your venv with the new package version.
 
-#### 2. Creating a release with GitHub
+> [!WARNING]
+> `prepare_release.py` requires uv to update the lockfile.
+> It will not work if uv is not installed on your machine.
+
+Once you're done, commit your changes and open a PR on `main` with a title like "Release 0.7.0".
+Make sure the CI passes, then you can merge and continue to step 3.
+
+#### 3. Creating a release with GitHub
 
 Go to the [releases](https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers/releases)
 page, and click "Draft a new release". Create a new tag with the new version
-number (e.g., `v0.7.0`), and set the release title to be the same as the tag.
+number preceded by a `v` (e.g. `v0.7.0`), and set the release title to be the same as the tag.
 Click "Generate release notes" to automatically generate release notes from the
 commit history. You can edit these release notes as necessary. When you're ready,
 click "Publish release".
 
-#### 3. Setting up your PyPI API key
+#### 4. Setting up your PyPI API key
 
 1. Log into your PyPI account
 
@@ -195,7 +202,7 @@ click "Publish release".
    password = <the token value, including the `pypi-` prefix>
    ```
 
-#### 4. Building and uploading to PyPI
+#### 5. Building and uploading to PyPI
 
 1. Checkout the commit for the new version; this will usually
    be the latest commit in `main`.
