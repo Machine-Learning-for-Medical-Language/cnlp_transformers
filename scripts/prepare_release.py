@@ -25,6 +25,7 @@ def prepare_release_interactive(version: str):
     version = validate_version_str(version)
     print(f"Preparing to release {version}\n")
 
+    # Update changelog
     print(
         "Update the changelog:\n",
         f"  In CHANGELOG.md, move everything in 'Unreleased' to a new header for {version}.",
@@ -34,7 +35,8 @@ def prepare_release_interactive(version: str):
     input("  Press enter to continue.")
     print()
 
-    if (current := get_fallback_version()) != version:
+    # Update setuptools_scm fallback version
+    if get_fallback_version() != version:
         print("Update the setuptools_scm fallback version:\n")
     while (current := get_fallback_version()) != version:
         print(
@@ -43,6 +45,7 @@ def prepare_release_interactive(version: str):
         input("  Press enter to continue.")
     print()
 
+    # Update lockfile
     print(
         "Updating lockfile and venv with `uv sync --reinstall-package cnlp_transformers`..."
     )
@@ -57,7 +60,9 @@ def prepare_release_interactive(version: str):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Error: please provide a version for the release")
+        print(
+            "Error: please provide a version for the release (e.g., `python prepare_release.py 1.2.3`)`"
+        )
         exit(1)
     elif len(sys.argv) > 2:
         print("Error: too many arguments")
