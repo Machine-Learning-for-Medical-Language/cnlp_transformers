@@ -44,6 +44,7 @@ Homepage = "https://github.com/Machine-Learning-for-Medical-Language/cnlp_transf
 "Bug Tracker" = "https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers/issues"
 
 [tool.setuptools_scm]
+fallback_version = "0.7.1"
 
 [tool.setuptools.packages.find]
 where = ["src"]
