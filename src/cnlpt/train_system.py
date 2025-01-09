@@ -42,11 +42,11 @@ from transformers import (
 from transformers.file_utils import CONFIG_NAME
 from transformers.training_args import IntervalStrategy
 
-from .cnlp_args import CnlpTrainingArguments, ModelArguments
-from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments, get_dataset_segment
+from .args import CnlpTrainingArguments, DataTrainingArguments, ModelArguments
 from .cnlp_metrics import cnlp_compute_metrics
 from .cnlp_predict import process_prediction, restructure_prediction, structure_labels
-from .cnlp_processors import relex, tagging
+from .data.cnlp_datasets import ClinicalNlpDataset, relex, tagging
+from .data.utils import get_dataset_segment
 from .models import CnlpConfig, CnlpModelForClassification, HierarchicalModel
 from .models.baseline import CnnSentenceClassifier, LstmSentenceClassifier
 

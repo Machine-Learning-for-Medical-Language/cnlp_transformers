@@ -12,7 +12,7 @@ from sklearn.metrics import (
     recall_score,
 )
 
-from .cnlp_processors import classification, relex, tagging
+from .data.tasks import classification, relex, tagging
 
 logger = logging.getLogger(__name__)
 

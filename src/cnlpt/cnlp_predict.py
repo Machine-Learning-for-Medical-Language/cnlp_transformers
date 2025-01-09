@@ -13,7 +13,7 @@ import pandas as pd
 import tqdm
 from transformers import EvalPrediction
 
-from .cnlp_processors import classification, relex, tagging
+from .data.tasks import classification, relex, tagging
 
 logger = logging.getLogger(__name__)
 
