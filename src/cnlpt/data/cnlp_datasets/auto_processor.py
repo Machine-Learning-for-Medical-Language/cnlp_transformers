@@ -14,12 +14,9 @@ from datasets import load_dataset
 from tqdm import tqdm
 from transformers.data.processors.utils import DataProcessor
 
-logger = logging.getLogger(__name__)
+from ..tasks import classification, relex, tagging
 
-mtl = "mtl"
-classification = "classification"
-tagging = "tagging"
-relex = "relations"
+logger = logging.getLogger(__name__)
 
 
 def get_unique_labels(
