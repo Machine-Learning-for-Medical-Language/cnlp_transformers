@@ -19,7 +19,7 @@ from transformers.configuration_utils import PretrainedConfig
 from transformers.modeling_outputs import SequenceClassifierOutput
 from transformers.modeling_utils import PreTrainedModel
 
-from . import __version__ as cnlpt_version
+from .. import __version__ as cnlpt_version
 
 logger = logging.getLogger(__name__)
 
@@ -608,7 +608,3 @@ class CnlpModelForClassification(PreTrainedModel):
             return SequenceClassifierOutput(
                 loss=state["loss"], logits=logits, attentions=outputs.attentions
             )
-
-
-AutoConfig.register("cnlpt", CnlpConfig)
-AutoModel.register(CnlpConfig, CnlpModelForClassification)

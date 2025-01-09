@@ -29,7 +29,7 @@ from fastapi import FastAPI
 from scipy.special import softmax
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
-from ..BaselineModels import CnnSentenceClassifier
+from ..models.baseline import CnnSentenceClassifier
 from .utils import UnannotatedDocument, create_dataset, resolve_device
 
 MODEL_NAME = os.getenv("MODEL_PATH")

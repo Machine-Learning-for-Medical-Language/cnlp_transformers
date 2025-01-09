@@ -15,7 +15,7 @@ from transformers import AutoConfig, AutoModel
 from transformers.modeling_outputs import SequenceClassifierOutput
 from transformers.modeling_utils import PreTrainedModel
 
-from .CnlpModelForClassification import (
+from .cnlp import (
     ClassificationHead,
     CnlpConfig,
     freeze_encoder_weights,
@@ -464,7 +464,3 @@ class HierarchicalModel(PreTrainedModel):
                 attentions=outputs.attentions,
                 chunk_attentions=chunks_attns,
             )
-
-
-AutoConfig.register("cnlpt", CnlpConfig)
-AutoModel.register(CnlpConfig, HierarchicalModel)

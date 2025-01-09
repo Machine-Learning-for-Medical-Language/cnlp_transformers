@@ -20,7 +20,7 @@ from transformers import (
 from transformers.tokenization_utils import PreTrainedTokenizer
 
 from ..cnlp_data import cnlp_preprocess_data
-from ..CnlpModelForClassification import CnlpConfig
+from ..models import CnlpConfig
 
 
 class UnannotatedDocument(BaseModel):
