@@ -2,6 +2,7 @@ import click
 
 from .. import __version__
 from .rest import rest_command
+from .train import train_command
 
 
 @click.group(invoke_without_command=True)
@@ -26,3 +27,4 @@ def cli(ctx: click.Context, version: bool):
 
 
 cli.add_command(rest_command)
+cli.add_command(train_command)
