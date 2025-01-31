@@ -104,7 +104,7 @@ To use the library for fine-tuning, you'll need to take the following steps:
 
 We provided the following step-by-step examples how to finetune in clinical NLP tasks:
 
-#### 1. [Classification task](examples/uci_drug/): using [Drug Review Dataset (Drugs.com) Data Set](https://archive.ics.uci.edu/dataset/462/drug+review+dataset+drugs+com)
+#### 1. [Classification task](examples/uci_drug/): using [Drug Reviews (Druglib.com) Data Set](https://archive.ics.uci.edu/dataset/461/drug+review+dataset+druglib+com)
 
 #### 2. [Sequence tagging task](examples/chemprot/): using [ChemProt website](https://biocreative.bioinformatics.udel.edu/news/corpora/chemprot-corpus-biocreative-vi/)
 
