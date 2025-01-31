@@ -92,7 +92,7 @@ def main():
         + df["benefits"].str.replace('"', "")
         + " <cr> Side effects: <cr> "
         + df["sideEffects"].str.replace('"', "")
-        + " <cr> Overall comments: <cr "
+        + " <cr> Overall comments: <cr> "
         + df["comments"].str.replace('"', "")
     )
     test["text"] = (
@@ -100,7 +100,7 @@ def main():
         + test["benefits"].str.replace('"', "")
         + " <cr> Side effects: <cr> "
         + test["sideEffects"].str.replace('"', "")
-        + " <cr> Overall comments: <cr "
+        + " <cr> Overall comments: <cr> "
         + test["comments"].str.replace('"', "")
     )
 
