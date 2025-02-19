@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers/blob/main/metadata.schema.json",
+  "title": "Metadata",
+  "description": "Metadata for a CNLPT Dataset",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "description": "The version of this specific dataset",
+      "type": "string"
+    },
+    "task": {
+      "description": "Name of the task this dataset contains",
+      "type": "string"
+    },
+    "subtasks": {
+      "description": "List of individual subtasks this dataset has labels for",
+      "type": "array",
+      "items": {
+        "description": "A subtask with a specific output mode",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "task_name": {
+            "description": "Name of this subtask",
+            "type": "string"
+          },
+          "output_mode": {
+            "description": "The type of classification that this subtask has labels for",
+            "type": "string",
+            "enum": ["tagging", "relations", "classification", "conceptnorm"]
+          }
+        },
+        "required": ["task_name", "output_mode"]
+      },
+      "minItems": 1,
+      "uniqueItems": true,
+      "$comment": "FIXME: what is uniqueness here"
+    }
+  },
+  "required": ["task", "subtasks"]
+}
