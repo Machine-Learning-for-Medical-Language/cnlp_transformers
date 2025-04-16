@@ -427,14 +427,17 @@ class CnlpModelForClassification(PreTrainedModel):
             loss_fct = MSELoss()
             task_loss = loss_fct(task_logits.view(-1), labels.view(-1))
         else:
-            if self.class_weights[task_name] is not None:
-                class_weights = torch.FloatTensor(self.class_weights[task_name]).to(
-                    self.device
-                )
+            if isinstance(self.class_weights, torch.Tensor):
+                class_weights = self.class_weights
             else:
-                class_weights = None
-            loss_fct = CrossEntropyLoss(weight=class_weights)
+                if self.class_weights[task_name] is not None:
+                    class_weights = torch.FloatTensor(self.class_weights[task_name]).to(
+                        self.device
+                    )
+                else:
+                    class_weights = None
 
+            loss_fct = CrossEntropyLoss(weight=class_weights)
             if self.relations[task_name]:
                 task_labels = labels[
                     :, :, state["task_label_ind"] : state["task_label_ind"] + seq_len
@@ -453,7 +456,7 @@ class CnlpModelForClassification(PreTrainedModel):
                     task_labels = labels[:, :, state["task_label_ind"]]
                 else:
                     task_labels = labels[:, 0, state["task_label_ind"], :]
-
+                
                 state["task_label_ind"] += 1
                 task_loss = loss_fct(
                     task_logits.view(-1, task_num_labels),
@@ -477,7 +480,7 @@ class CnlpModelForClassification(PreTrainedModel):
                         "Have not implemented the case where a classification task "
                         "is part of an MTL setup with relations and sequence tagging"
                     )
-
+                
                 state["task_label_ind"] += 1
                 task_loss = loss_fct(
                     task_logits, task_labels.type(torch.LongTensor).to(labels.device)
