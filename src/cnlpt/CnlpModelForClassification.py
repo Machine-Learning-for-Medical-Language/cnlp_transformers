@@ -240,6 +240,16 @@ class CnlpConfig(PretrainedConfig):
         if encoder_name.startswith("distilbert"):
             self.hidden_dropout_prob = self.encoder_config["dropout"]
             self.hidden_size = self.encoder_config["dim"]
+        elif self.encoder_config["model_type"] == "modernbert":
+            self.hidden_size = self.encoder_config["hidden_size"]
+            # downstream uses hidden dropout prob for additional layers, modernbert splits into different dropouts for different
+            # parts of the encoder -- mlp dropout is probably generally good
+            self.hidden_dropout_prob = self.encoder_config["mlp_dropout"]
+            # don't need these in my code but keep them around just in case
+            self.attention_dropout = self.encoder_config["attention_dropout"]
+            self.embedding_dropout = self.encoder_config["embedding_dropout"]
+            self.mlp_dropout = self.encoder_config["mlp_dropout"]
+            self.classifier_dropout = self.encoder_config["classifier_dropout"]
         else:
             try:
                 self.hidden_dropout_prob = self.encoder_config["hidden_dropout_prob"]
@@ -285,6 +295,7 @@ class CnlpModelForClassification(PreTrainedModel):
         config.encoder_config = encoder_config.to_dict()
         encoder_model = AutoModel.from_config(encoder_config)
         self.encoder = encoder_model.from_pretrained(config.encoder_name)
+
         # part of the motivation for leaving this
         # logic alone for character level models is that
         # at the time of writing,  CANINE and Flair are the only game in town.
@@ -299,10 +310,10 @@ class CnlpModelForClassification(PreTrainedModel):
         # It also will be used as the canonical order of returning results/logits
         self.tasks = config.finetuning_task
 
-        if config.layer > len(encoder_model.encoder.layer):
+        if config.layer > self.num_layers:
             raise ValueError(
                 "The layer specified (%d) is too big for the specified encoder which has %d layers"
-                % (config.layer, len(encoder_model.encoder.layer))
+                % (config.layer, self.num_layers)
             )
 
         if freeze > 0:
@@ -357,6 +368,13 @@ class CnlpModelForClassification(PreTrainedModel):
         self.reg_temperature = 1.0
 
         # self.init_weights()
+
+    @property
+    def num_layers(self):
+        if self.encoder.config.model_type == "modernbert":
+            return len(self.encoder.base_model.layers)
+        else:
+            return len(self.encoder.encoder.layer)
 
     def predict_relations_with_previous_logits(
         self, features: torch.Tensor, logits: torch.Tensor
