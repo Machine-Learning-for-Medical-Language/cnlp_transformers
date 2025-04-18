@@ -42,29 +42,29 @@ class TestSubmodulesPresent:
     """
 
     def test_BaselineModels_present(self):
-        import cnlpt.BaselineModels
+        import cnlpt.models.baseline
 
-        assert cnlpt.BaselineModels.__package__ == "cnlpt"
+        assert cnlpt.models.baseline.__package__ == "cnlpt"
 
     def test_cnlp_data_present(self):
-        import cnlpt.cnlp_data
+        import cnlpt.data
 
-        assert cnlpt.cnlp_data.__package__ == "cnlpt"
+        assert cnlpt.data.__package__ == "cnlpt"
 
     def test_cnlp_processors_present(self):
-        import cnlpt.cnlp_processors
+        import cnlpt.data.cnlp_datasets
 
-        assert cnlpt.cnlp_processors.__package__ == "cnlpt"
+        assert cnlpt.data.cnlp_datasets.__package__ == "cnlpt"
 
     def test_CnlpModelForClassification_present(self):
-        import cnlpt.CnlpModelForClassification
+        import cnlpt.models.cnlp
 
-        assert cnlpt.CnlpModelForClassification.__package__ == "cnlpt"
+        assert cnlpt.models.cnlp.__package__ == "cnlpt"
 
     def test_HierarchicalTransformer_present(self):
-        import cnlpt.HierarchicalTransformer
+        import cnlpt.models.hierarchical
 
-        assert cnlpt.HierarchicalTransformer.__package__ == "cnlpt"
+        assert cnlpt.models.hierarchical.__package__ == "cnlpt"
 
     def test_thyme_eval_present(self):
         import cnlpt.thyme_eval
