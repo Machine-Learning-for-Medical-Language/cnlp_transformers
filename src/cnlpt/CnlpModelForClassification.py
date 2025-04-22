@@ -296,14 +296,6 @@ class CnlpModelForClassification(PreTrainedModel):
         encoder_model = AutoModel.from_config(encoder_config)
         self.encoder = encoder_model.from_pretrained(config.encoder_name)
 
-        # part of the motivation for leaving this
-        # logic alone for character level models is that
-        # at the time of writing,  CANINE and Flair are the only game in town.
-        # CANINE's hashable embeddings for unicode codepoints allows for
-        # additional parameterization, which rn doesn't seem so relevant
-        if not config.character_level:
-            self.encoder.resize_token_embeddings(encoder_config.vocab_size)
-
         # This would seem to be redundant with the label list, which maps from tasks to labels,
         # but this version is ordered. This will allow the user to specify an order for any methods
         # where we feed the output of one task into the next.
@@ -368,6 +360,20 @@ class CnlpModelForClassification(PreTrainedModel):
         self.reg_temperature = 1.0
 
         # self.init_weights()
+
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
+        model = super().from_pretrained(
+            pretrained_model_name_or_path, *model_args, **kwargs
+        )
+
+        tokenizer = kwargs.get("tokenizer", None)
+        if tokenizer is not None:
+            model.encoder.resize_token_embeddings(len(tokenizer))
+        elif hasattr(model, "config") and hasattr(model.config, "vocab_size"):
+            model.encoder.resize_token_embeddings(model.config.vocab_size)
+
+        return model
 
     @property
     def num_layers(self):
