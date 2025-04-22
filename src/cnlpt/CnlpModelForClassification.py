@@ -296,6 +296,10 @@ class CnlpModelForClassification(PreTrainedModel):
         encoder_model = AutoModel.from_config(encoder_config)
         self.encoder = encoder_model.from_pretrained(config.encoder_name)
 
+        embeddings = self.encoder.get_input_embeddings()
+        if not embeddings.weight.is_meta:
+            self.encoder.resize_token_embeddings(encoder_config.vocab_size)
+
         # This would seem to be redundant with the label list, which maps from tasks to labels,
         # but this version is ordered. This will allow the user to specify an order for any methods
         # where we feed the output of one task into the next.
@@ -366,12 +370,13 @@ class CnlpModelForClassification(PreTrainedModel):
         model = super().from_pretrained(
             pretrained_model_name_or_path, *model_args, **kwargs
         )
-
-        tokenizer = kwargs.get("tokenizer", None)
-        if tokenizer is not None:
-            model.encoder.resize_token_embeddings(len(tokenizer))
-        elif hasattr(model, "config") and hasattr(model.config, "vocab_size"):
-            model.encoder.resize_token_embeddings(model.config.vocab_size)
+        embeddings = model.encoder.get_input_embeddings()
+        if embeddings.weight.is_meta:
+            tokenizer = kwargs.get("tokenizer", None)
+            if tokenizer is not None:
+                model.encoder.resize_token_embeddings(len(tokenizer))
+            elif hasattr(model, "config") and hasattr(model.config, "vocab_size"):
+                model.encoder.resize_token_embeddings(model.config.vocab_size)
 
         return model
 
