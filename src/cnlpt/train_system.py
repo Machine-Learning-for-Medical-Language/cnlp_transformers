@@ -715,6 +715,7 @@ def main(
                             )
                         )
 
+            metrics["one_score"] = one_score
             return metrics
 
         return compute_metrics_fn
