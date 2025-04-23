@@ -39,7 +39,7 @@ logger = logging.getLogger("DoNotAnnotate_REST_Processor")
 logger.setLevel(logging.DEBUG)
 
 
-MODEL_PATH = "/my_trained_model"  # path to saved model with model.safetensors
+MODEL_PATH = "/temp"  
 TASK = "DoNotAnnotate"
 LABELS = [0, 1]  # Do not annotate = 0, Annotate = 1
 
@@ -93,7 +93,7 @@ async def process(doc: UnannotatedDocument):
     pred_time = pred_end - preproc_end
     postproc_time = postproc_end - pred_end
 
-     logging.info(
+    logging.info(
         f"Pre-processing time: {preproc_time:f}, processing time: {pred_time:f}, post-processing time {postproc_time:f}"
     )
 
