@@ -714,7 +714,7 @@ def main(
                                 task_label_to_boundaries,
                             )
                         )
-
+            metrics["one_score"] = one_score
             return metrics
 
         return compute_metrics_fn

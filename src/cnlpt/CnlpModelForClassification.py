@@ -302,7 +302,9 @@ class CnlpModelForClassification(PreTrainedModel):
         # CANINE's hashable embeddings for unicode codepoints allows for
         # additional parameterization, which rn doesn't seem so relevant
         if not config.character_level:
-            self.encoder.resize_token_embeddings(encoder_config.vocab_size)
+            self.encoder.resize_token_embeddings(
+                encoder_config.vocab_size, mean_resizing=False
+            )
 
         # This would seem to be redundant with the label list, which maps from tasks to labels,
         # but this version is ordered. This will allow the user to specify an order for any methods
