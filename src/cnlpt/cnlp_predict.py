@@ -13,7 +13,14 @@ import pandas as pd
 import tqdm
 from transformers import EvalPrediction
 
-from .data.tasks import classification, relex, tagging
+from .data.tasks import (
+    RELEX,
+    TAGGING,
+    TaskType,
+    classification,
+    relex,
+    tagging,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +55,7 @@ def restructure_prediction(
     task_names: list[str],
     raw_prediction: EvalPrediction,
     max_seq_length: int,
-    tagger: dict[str, bool],
-    relations: dict[str, bool],
+    output_modes: dict[str, TaskType],
     output_prob: bool,
 ) -> tuple[
     dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]],
@@ -65,15 +71,14 @@ def restructure_prediction(
 
     for task_ind, task_name in enumerate(task_names):
         preds, labels, pad, prob_values = structure_labels(
-            raw_prediction,
-            task_name,
-            task_ind,
-            task_label_ind,
-            max_seq_length,
-            tagger,
-            relations,
-            task_label_to_boundaries,
-            output_prob,
+            p=raw_prediction,
+            task_name=task_name,
+            task_type=output_modes[task_name],
+            task_ind=task_ind,
+            task_label_ind=task_label_ind,
+            max_seq_length=max_seq_length,
+            task_label_to_boundaries=task_label_to_boundaries,
+            output_prob=output_prob,
         )
         task_label_ind += pad
 
@@ -87,11 +92,10 @@ def restructure_prediction(
 def structure_labels(
     p: EvalPrediction,
     task_name: str,
+    task_type: TaskType,
     task_ind: int,
     task_label_ind: int,
     max_seq_length: int,
-    tagger: dict[str, bool],
-    relations: dict[str, bool],
     task_label_to_boundaries: dict[str, tuple[int, int]],
     output_prob: bool,
 ) -> tuple[np.ndarray, np.ndarray, int, np.ndarray]:
@@ -100,10 +104,10 @@ def structure_labels(
     pad = 0
     prob_values: npt.NDArray[np.float64] = np.ndarray([])
     labels: npt.NDArray[np.int64] = np.ndarray([])
-    if tagger[task_name]:
+    if task_type == TAGGING:
         preds = np.argmax(p.predictions[task_ind], axis=2)
         # labels will be -100 where we don't need to tag
-    elif relations[task_name]:
+    elif task_type == RELEX:
         preds = np.argmax(p.predictions[task_ind], axis=3)
     else:
         preds = np.argmax(p.predictions[task_ind], axis=1)
@@ -115,7 +119,7 @@ def structure_labels(
     # for inference
     if not hasattr(p, "label_ids") or p.label_ids is None:
         return preds, np.array([]), pad, np.array([])
-    if relations[task_name]:
+    if task_type == RELEX:
         # relation labels
         labels = p.label_ids[
             :, :, task_label_ind : task_label_ind + max_seq_length
@@ -126,7 +130,7 @@ def structure_labels(
         )
         pad = max_seq_length
     elif p.label_ids.ndim == 3:
-        if tagger[task_name]:
+        if task_type == TAGGING:
             labels = p.label_ids[:, :, task_label_ind : task_label_ind + 1].squeeze()
         else:
             labels = p.label_ids[:, 0, task_label_ind].squeeze()
