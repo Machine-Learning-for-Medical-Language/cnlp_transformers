@@ -6,9 +6,10 @@ from torch.utils.data.dataset import Dataset
 from transformers.tokenization_utils import PreTrainedTokenizer
 
 from ...args import DataTrainingArguments
+from ...data.cnlp_datasets import AutoProcessor
+from ...data.tasks import CLASSIFICATION, RELEX, TAGGING, TaskType
 from ..features import HierarchicalInputFeatures, InputFeatures
 from ..preprocess import cnlp_preprocess_data, none_column
-from .auto_processor import AutoProcessor, classification, relex, tagging
 
 text_columns = ["text", "text_a", "text_b"]
 
@@ -48,7 +49,7 @@ class ClinicalNlpDataset(Dataset):
         self.hierarchical = hierarchical
         self.datasets = []
         self.processed_dataset = []
-        self.output_modes = {}
+        self.output_modes: dict[str, TaskType] = {}
 
         # Load data features from cache or dataset file
         self.label_lists = []
@@ -64,7 +65,7 @@ class ClinicalNlpDataset(Dataset):
         # if cli supplies no tasks, the processor will assume we want all the tasks, but we do need to have a conventional order
         # for the model to use, so we need to still create a tasks variable.
         tasks = None if args.task_name is None else list(args.task_name)
-        for data_dir_ind, data_dir in enumerate(args.data_dir):
+        for data_dir in args.data_dir:
             dataset_processor = AutoProcessor(
                 data_dir, tasks, max_train_items=args.max_train_items
             )
@@ -187,13 +188,13 @@ class ClinicalNlpDataset(Dataset):
             for split_name in dataset.keys():
                 for task in tasks:
                     if task not in dataset[split_name].column_names:
-                        if self.output_modes[task] == tagging:
+                        if self.output_modes[task] == TAGGING:
                             dataset[split_name] = dataset[split_name].add_column(
                                 task, [none_column] * len(dataset[split_name])
                             )
-                        elif self.output_modes[task] == relex:
+                        elif self.output_modes[task] == RELEX:
                             pass
-                        elif self.output_modes[task] == classification:
+                        elif self.output_modes[task] == CLASSIFICATION:
                             dataset[split_name] = dataset[split_name].add_column(
                                 task, [none_column] * len(dataset[split_name])
                             )

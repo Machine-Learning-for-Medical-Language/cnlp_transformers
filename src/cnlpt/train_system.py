@@ -48,7 +48,8 @@ from transformers.training_args import IntervalStrategy
 from .args import CnlpTrainingArguments, DataTrainingArguments, ModelArguments
 from .cnlp_metrics import cnlp_compute_metrics
 from .cnlp_predict import process_prediction, restructure_prediction, structure_labels
-from .data.cnlp_datasets import ClinicalNlpDataset, relex, tagging
+from .data.cnlp_datasets import ClinicalNlpDataset
+from .data.tasks import RELEX, TAGGING, TaskType
 from .data.utils import get_dataset_segment
 from .models import CnlpConfig, CnlpModelForClassification, HierarchicalModel
 from .models.baseline import CnnSentenceClassifier, LstmSentenceClassifier
@@ -259,7 +260,7 @@ def init_tokenizer(
 class TaskMaps:
     task_names: list[str]
     num_labels: dict[str, int]
-    output_mode: dict[str, str]
+    output_mode: dict[str, TaskType]
     tagger: dict[str, bool]
     relations: dict[str, bool]
 
@@ -277,10 +278,10 @@ def extract_task_maps(
         relations: dict[str, bool] = {}
         for task in dataset.tasks_to_labels.keys():
             num_labels[task] = len(dataset.tasks_to_labels[task])
-            task_output_mode: str = dataset.output_modes[task]
+            task_output_mode: TaskType = dataset.output_modes[task]
             output_mode[task] = task_output_mode
-            tagger[task] = task_output_mode == tagging
-            relations[task] = task_output_mode == relex
+            tagger[task] = task_output_mode == TAGGING
+            relations[task] = task_output_mode == RELEX
     except KeyError:
         raise ValueError(f"Task not found: {data_args.task_name}")
 
@@ -671,11 +672,10 @@ def main(
                 preds, labels, pad, prob_values = structure_labels(
                     p,
                     task_name,
+                    task_maps.output_mode[task_name],
                     task_ind,
                     task_label_ind,
                     data_args.max_seq_length,
-                    task_maps.tagger,
-                    task_maps.relations,
                     task_label_to_boundaries,
                     training_args.output_prob,
                 )
@@ -684,7 +684,6 @@ def main(
                 task_label_to_label_packet[task_name] = (preds, labels, prob_values)
 
                 metrics[task_name] = cnlp_compute_metrics(
-                    task_name,
                     preds,
                     labels,
                     dataset.output_modes[task_name],
@@ -886,9 +885,7 @@ def main(
                     args=training_args,
                     train_dataset=dataset.processed_dataset.get("train", None),
                     eval_dataset=dataset.processed_dataset.get("validation", None),
-                    compute_metrics=build_compute_metrics_fn(
-                        task_maps.task_names, model, dataset
-                    ),
+                    compute_metrics=build_compute_metrics_fn(model, dataset),
                 )
                 # use trainer to predict
 
@@ -960,8 +957,7 @@ def main(
                     task_names=dataset.tasks,
                     raw_prediction=raw_test_predictions,
                     max_seq_length=data_args.max_seq_length,
-                    tagger=task_maps.tagger,
-                    relations=task_maps.relations,
+                    output_modes=task_maps.output_mode,
                     output_prob=training_args.output_prob,
                 )
 
