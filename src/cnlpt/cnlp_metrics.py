@@ -10,12 +10,13 @@ from sklearn.metrics import (
     f1_score,
     precision_score,
     recall_score,
+    precision_recall_fscore_support,
 )
 
 from .cnlp_processors import classification, relex, tagging
 
 logger = logging.getLogger(__name__)
-
+import pdb
 
 def fix_np_types(input_variable):
     """
@@ -29,6 +30,10 @@ def fix_np_types(input_variable):
         return list(input_variable)
 
     return input_variable
+
+
+def is_tagged(input_tag, task_name):
+    return "O" if input_tag == "O" else f"B-{task_name}"
 
 
 def tagging_metrics(
@@ -69,6 +74,9 @@ def tagging_metrics(
     pred_seq = [label_set[x] for x in preds]
     label_seq = [label_set[x] for x in labels]
 
+    is_pred_entity = [is_tagged(p, task_name.upper()) for p in pred_seq]
+    is_label_entity = [is_tagged(l, task_name.upper()) for l in label_seq]
+
     num_correct = (preds == labels).sum()
 
     acc = num_correct / len(preds)
@@ -78,7 +86,7 @@ def tagging_metrics(
         "acc": acc,
         "token_f1": fix_np_types(f1),
         "f1": fix_np_types(seq_f1([label_seq], [pred_seq])),
-        "report": "\n" + seq_cls([label_seq], [pred_seq]),
+        "report": "\n" + seq_cls([is_label_entity], [is_pred_entity]) + "\n" + seq_cls([label_seq], [pred_seq]),
     }
 
 

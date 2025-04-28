@@ -12,7 +12,6 @@ import numpy.typing as npt
 import pandas as pd
 import tqdm
 from transformers import EvalPrediction
-
 from .cnlp_processors import classification, relex, tagging
 
 logger = logging.getLogger(__name__)
@@ -178,7 +177,7 @@ def compute_disagreements(
 
 def classification_disagreements(preds: np.ndarray, labels: np.ndarray) -> np.ndarray:
     (indices,) = np.where(np.not_equal(preds, labels))
-    return indices
+    return [i for i in range(len(preds))]
 
 
 def relation_or_tagging_disagreements(
@@ -190,7 +189,7 @@ def relation_or_tagging_disagreements(
             for pred, label in zip(preds.astype(int), labels.astype(int))
         ]
     )
-    return indices
+    return [i for i in range(len(preds))]
 
 
 def process_prediction(
@@ -254,9 +253,9 @@ def process_prediction(
         out_table["text"] = list(eval_dataset["text"])
     out_table["text"] = out_table["text"].apply(remove_newline)
 
-    out_table["text"] = out_table["text"].str.replace('"', "")
-    out_table["text"] = out_table["text"].str.replace("//", "")
-    out_table["text"] = out_table["text"].str.replace("\\", "")
+    out_table["text"] = out_table["text"].str.replace('"', "'")
+    # out_table["text"] = out_table["text"].str.replace("//", "")
+    # out_table["text"] = out_table["text"].str.replace("\\", "")
     word_ids = eval_dataset["word_ids"]
     for task_name, packet in tqdm.tqdm(
         task_to_label_packet.items(), desc="getting human readable labels"
@@ -308,14 +307,13 @@ def get_outputs(
     if error_analysis:
         if len(error_inds) > 0:
             relevant_prob_values = (
-                prob_values[error_inds]
+                prob_values#[error_inds]
                 if output_mode[pred_task] == classification and len(prob_values) > 0
                 else np.array([])
             )
-            ground_truth = labels[error_inds].astype(int)
-            task_prediction = prediction[error_inds].astype(int)
-            text_samples = pd.Series(text_column[error_inds])
-            word_ids = [word_ids[error_ind] for error_ind in error_inds]
+            ground_truth = labels.astype(int)
+            task_prediction = prediction.astype(int)
+            text_samples = pd.Series(text_column)
         else:
             return pd.Series([])
     else:
@@ -334,6 +332,13 @@ def get_outputs(
         )
 
     elif task_type == tagging:
+        out = [
+            " ".join([task_labels[pred] for pred, label in zip(sent, truth) if label > -100])
+            for sent, truth in zip(task_prediction, ground_truth)
+        ]
+        
+        return pd.Series(out)
+
         return get_tagging_prints(
             character_level,
             pred_task,
@@ -362,8 +367,6 @@ def get_classification_prints(
 
     def clean_string(gp: tuple[str, str]) -> str:
         ground, predicted = gp
-        if ground == predicted:
-            return f"_{task_name}_error_detection_bug_"
         return f"Ground: {ground} Predicted: {predicted}"
 
     pred_list = predicted_labels
@@ -514,11 +517,12 @@ def get_tagging_prints(
     ) -> str:
         instance_tokens = get_tokens(instance)
         ground_string = dict_to_str(disagreements["ground"], instance_tokens)
+        if len(ground_string) == 0:
+            ground_string = "None"
 
         predicted_string = dict_to_str(disagreements["predicted"], instance_tokens)
-
-        if len(ground_string) == 0 == len(predicted_string):
-            return f"_{task_name}_error_detection_bug_"
+        if len(predicted_string) == 0:
+            predicted_string = "None"
 
         return f"Ground: {ground_string} Predicted: {predicted_string}"
 
