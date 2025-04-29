@@ -300,7 +300,7 @@ def main(
     if data_args.weight_classes:
         from collections import Counter
 
-        class_weights = []
+        class_weights = {}
         for task in task_names:
             # get labels in the right order ([0, 1])
             if isinstance(
@@ -309,17 +309,21 @@ def main(
                 dataset.tasks_to_labels[task] = dataset.tasks_to_labels[task][1:] + [
                     dataset.tasks_to_labels[task][0]
                 ]
-            labels = dataset.processed_dataset["train"][task]
+            if tagger[task]:
+                labels = [token_label for sent in dataset.processed_dataset["train"][task] for token_label in sent.split()]
+            else:
+                labels = dataset.processed_dataset["train"][task]
             weights = []
             label_counts = Counter(labels)
             for label in dataset.tasks_to_labels[task]:
-                weights.append(len(labels) / (num_labels[task] * label_counts[label]))
+                count = max(label_counts[label], 1)
+                weights.append(len(labels) / (num_labels[task] * count))
                 # class weights are determined by severity of class imbalance
             if len(task_names) > 1:
-                class_weights.append(weights)
+                class_weights[task] = torch.tensor(weights).to(training_args.device)
             else:
-                class_weights = weights  # if we just have the one class, simplify the tensor or pytorch will be mad
-        class_weights = torch.tensor(class_weights).to(training_args.device)
+                class_weights = torch.tensor(weights).to(training_args.device)  # if we just have the one class, simplify the tensor or pytorch will be mad
+        # class_weights = torch.tensor(class_weights).to(training_args.device)
         # sm = torch.nn.Softmax(dim=class_weights.ndim - 1)
         # class_weights = sm(class_weights)
 
@@ -446,6 +450,7 @@ def main(
 
         # TODO check when download any pretrained language model to local disk, if
         # the following condition "is_hub_model(encoder_name)" works or not.
+        # ^ is_hub_model and is_external_encoder both return False, as long as "model_type": "cnlpt" is in config.json
         if not is_external_encoder(encoder_name):
             # we are loading one of our own trained models as a starting point.
             #
@@ -459,7 +464,6 @@ def main(
             # the model file to be loaded down below the normal way. since that temp file
             # doesn't have a stored classifier it will use the randomly-inited classifier head
             # with the size of the supplied config (for the new task).
-            # TODO This setting 1) is not tested yet.
             # 2) if training_args.do_train is false:
             # we evaluate or make predictions of our trained models.
             # Both two setting require the registeration of CnlpConfig, and use
@@ -468,6 +472,11 @@ def main(
             # Load the cnlp configuration using AutoConfig, this will not override
             # the arguments from trained cnlp models. While using CnlpConfig will override
             # the model_type and model_name of the encoder.
+            if model_args.keep_existing_classifiers == model_args.ignore_existing_classifiers:  # XNOR
+                raise ValueError(
+                    "For continued training of a cnlpt model, one of --keep_existing_classifiers or --ignore_existing_classifiers flags should be selected."
+                )
+            
             config = AutoConfig.from_pretrained(
                 (
                     model_args.config_name
@@ -477,41 +486,56 @@ def main(
                 cache_dir=model_args.cache_dir,
                 # in this case we're looking at a fine-tuned model (?)
                 character_level=data_args.character_level,
+                layer=model_args.layer,
             )
-
             if training_args.do_train:
                 # Setting 1) only load weights from the encoder
-                raise NotImplementedError(
-                    "This functionality has not been restored yet"
-                )
+                if model_args.ignore_existing_classifiers:
+                    config.finetuning_task = (
+                        data_args.task_name
+                        if data_args.task_name is not None
+                        else dataset.tasks
+                    )
+                elif model_args.keep_existing_classifiers:
+                    # setting 2) evaluate or make predictions  
+                    if (
+                        config.finetuning_task != data_args.task_name
+                        or config.relations != relations
+                        or config.tagger != tagger
+                    ):
+                        raise ValueError(
+                            "When --keep_existing_classifiers is selected, please ensure"
+                            "that you set the settings the same as those used in the"
+                            "previous training run."
+                        )
+
                 model = CnlpModelForClassification(
-                    model_path=model_args.encoder_name,
                     config=config,
-                    cache_dir=model_args.cache_dir,
-                    tagger=tagger,
-                    relations=relations,
-                    class_weights=dataset.class_weights,
+                    # class_weights=dataset.class_weights,
+                    class_weights=class_weights,
                     final_task_weight=training_args.final_task_weight,
-                    use_prior_tasks=model_args.use_prior_tasks,
-                    argument_regularization=model_args.arg_reg,
                 )
-                delattr(model, "classifiers")
-                delattr(model, "feature_extractors")
+                if model_args.ignore_existing_classifiers:
+                    model.remove_task_classifiers()
+                    for task in data_args.task_name:
+                        model.add_task_classifier(task, dataset.get_labels()[task])
+                model.set_class_weights(dataset.class_weights)
+
                 if training_args.do_train:
                     tempmodel = tempfile.NamedTemporaryFile(dir=model_args.cache_dir)
                     torch.save(model.state_dict(), tempmodel)
                     model_name = tempmodel.name
-            else:
+            else:  # load existing head
                 # setting 2) evaluate or make predictions
                 model = CnlpModelForClassification.from_pretrained(
                     model_args.encoder_name,
                     config=config,
-                    class_weights=dataset.class_weights,
+                    class_weights=class_weights,
                     final_task_weight=training_args.final_task_weight,
                     freeze=training_args.freeze,
                     bias_fit=training_args.bias_fit,
                 )
-
+            model.tasks = data_args.task_name
         else:
             # This only works when model_args.encoder_name is one of the
             # model card from https://huggingface.co/models
@@ -541,7 +565,7 @@ def main(
             config.vocab_size = len(tokenizer)
             model = CnlpModelForClassification(
                 config=config,
-                class_weights=dataset.class_weights,
+                class_weights=class_weights,
                 final_task_weight=training_args.final_task_weight,
                 freeze=training_args.freeze,
                 bias_fit=training_args.bias_fit,
@@ -656,15 +680,22 @@ def main(
                         raise RuntimeError(
                             f"Unrecognized label type: {type(training_args.model_selection_label)}"
                         )
-                else:  # same default as in 0.6.0
+                elif dataset.output_modes[task] == relex:
                     task_scores.append(
                         metrics[task_name].get(
                             "one_score", np.mean(metrics[task_name].get("f1"))
                         )
                     )
+                else:
+                    task_scores.append(
+                        metrics[task_name].get(
+                            "one_score", np.mean(metrics[task_name].get("token_f1"))
+                        )
+                    )
                 # task_scores.append(processor.get_one_score(metrics.get(task_name, metrics.get(task_name.split('-')[0], None))))
 
             one_score = sum(task_scores) / len(task_scores)
+            metrics["one_score"] = one_score
 
             if model is not None:
                 if not hasattr(model, "best_score") or one_score > model.best_score:
@@ -675,7 +706,7 @@ def main(
                     model.best_eval_results = metrics
                     if trainer.is_world_process_zero():
                         if training_args.do_train:
-                            trainer.save_model()
+                            trainer.save_model()  # NOTE: a RobertaConfig is loaded here. why?
                             tokenizer.save_pretrained(training_args.output_dir)
                             if model_name == "cnn" or model_name == "lstm":
                                 with open(
@@ -690,7 +721,7 @@ def main(
                                     )
                                     config_dict["task_names"] = task_names
                                     json.dump(config_dict, f)
-                        for task_ind, task_name in enumerate(metrics):
+                        for task_ind, task_name in enumerate(task_names):
                             with open(output_eval_file, "a") as writer:
                                 logger.info(
                                     f"***** Eval results for task {task_name} *****"
@@ -720,7 +751,8 @@ def main(
         return compute_metrics_fn
 
     # Initialize our Trainer
-    training_args.load_best_model_at_end = True
+    # training_args.load_best_model_at_end = True
+    # TODO the argument in CnlpTrainingArguments is `model_selection_score`. reconcile this with `metric_for_best_model`?
     training_args.metric_for_best_model = "one_score"
     trainer = Trainer(
         model=model,
@@ -884,7 +916,7 @@ def main(
 
                 out_table = process_prediction(
                     task_names=dataset.tasks,
-                    error_analysis=False,
+                    error_analysis=training_args.error_analysis,
                     output_prob=training_args.output_prob,
                     character_level=data_args.character_level,
                     task_to_label_packet=task_to_label_packet,

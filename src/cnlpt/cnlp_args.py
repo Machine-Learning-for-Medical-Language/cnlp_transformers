@@ -298,18 +298,18 @@ class DaptArguments:
             "help": "Pretrained tokenizer name or path if not the same as model_name"
         },
     )
-    output_dir: Union[str, None] = field(
-        default=None, metadata={"help": "Directory path to write trained model to."}
-    )
-    overwrite_output_dir: bool = field(
-        default=False,
-        metadata={
-            "help": (
-                "Overwrite the content of the output directory. "
-                "Use this to continue training if output_dir points to a checkpoint directory."
-            )
-        },
-    )
+    # output_dir: Union[str, None] = field(
+    #     default=None, metadata={"help": "Directory path to write trained model to."}
+    # )
+    # overwrite_output_dir: bool = field(
+    #     default=False,
+    #     metadata={
+    #         "help": (
+    #             "Overwrite the content of the output directory. "
+    #             "Use this to continue training if output_dir points to a checkpoint directory."
+    #         )
+    #     },
+    # )
     data_dir: Union[str, None] = field(
         default=None, metadata={"help": "The data dir for domain-adaptive pretraining."}
     )
@@ -333,12 +333,12 @@ class DaptArguments:
         default=0.2,
         metadata={"help": "The test split proportion for domain-adaptive pretraining."},
     )
-    seed: int = field(
-        default=42,
-        metadata={
-            "help": "The random seed to use for a train/test split for domain-adaptive pretraining (requires --dapt-encoder)."
-        },
-    )
+    # seed: int = field(
+    #     default=42,
+    #     metadata={
+    #         "help": "The random seed to use for a train/test split for domain-adaptive pretraining (requires --dapt-encoder)."
+    #     },
+    # )
     no_eval: bool = field(
         default=False,
         metadata={"help": "Don't split into train and test; just pretrain."},

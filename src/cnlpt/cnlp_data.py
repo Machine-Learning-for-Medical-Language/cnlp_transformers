@@ -7,6 +7,8 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Union
 
+import pdb
+
 import datasets
 import numpy as np
 from datasets import Dataset as HFDataset
@@ -15,8 +17,8 @@ from torch.utils.data.dataset import Dataset
 from transformers import BatchEncoding, DataCollatorForLanguageModeling
 from transformers.tokenization_utils import PreTrainedTokenizer
 
-from .cnlp_args import DaptArguments
-from .cnlp_processors import AutoProcessor, classification, relex, tagging
+from cnlp_args import DaptArguments
+from cnlp_processors import AutoProcessor, classification, relex, tagging
 
 special_tokens = ["<e>", "</e>", "<a1>", "</a1>", "<a2>", "</a2>", "<cr>", "<neg>"]
 text_columns = ["text", "text_a", "text_b"]
@@ -1155,10 +1157,14 @@ class DaptDataset(Dataset):
             batched=True,
             remove_columns=list(remove_columns),
         )
-        dataset = dataset.map(
-            functools.partial(group_texts, self.args.chunk_size),
-            batched=True,
-        )
+
+        dataset = dataset.remove_columns("word_ids")
+        # dataset = dataset.map(
+        #     functools.partial(group_texts, self.args.chunk_size),
+        #     batched=True,
+        # )
+
+        
 
         if isinstance(dataset, (DatasetDict, IterableDatasetDict)) or args.no_eval:
             self.dataset = dataset
