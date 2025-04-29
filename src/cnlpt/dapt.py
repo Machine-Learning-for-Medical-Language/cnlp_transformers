@@ -22,7 +22,7 @@ from transformers.modeling_outputs import MaskedLMOutput
 from transformers.modeling_utils import PreTrainedModel
 
 from .CnlpModelForClassification import CnlpConfig, generalize_encoder_forward_kwargs
-from .cnlp_args import DaptArguments
+from .cnlp_args import DaptArguments, CnlpTrainingArguments
 from .cnlp_data import DaptDataset
 
 logger = logging.getLogger(__name__)
@@ -92,9 +92,9 @@ def main(
     :rtype: typing.Dict[str, typing.Dict[str, typing.Any]]
     :return: the evaluation results (will be empty if ``--do_eval`` not passed)
     """
-    parser = HfArgumentParser((DaptArguments, TrainingArguments))
+    parser = HfArgumentParser((DaptArguments, CnlpTrainingArguments))
     dapt_args: DaptArguments
-    training_args: TrainingArguments
+    training_args: CnlpTrainingArguments
 
     if json_file is not None and json_obj is not None:
         raise ValueError("cannot specify json_file and json_obj")
