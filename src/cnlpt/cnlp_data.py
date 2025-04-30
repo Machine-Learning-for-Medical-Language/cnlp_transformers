@@ -17,8 +17,8 @@ from torch.utils.data.dataset import Dataset
 from transformers import BatchEncoding, DataCollatorForLanguageModeling
 from transformers.tokenization_utils import PreTrainedTokenizer
 
-from cnlp_args import DaptArguments
-from cnlp_processors import AutoProcessor, classification, relex, tagging
+from .cnlp_args import DaptArguments
+from .cnlp_processors import AutoProcessor, classification, relex, tagging
 
 special_tokens = ["<e>", "</e>", "<a1>", "</a1>", "<a2>", "</a2>", "<cr>", "<neg>"]
 text_columns = ["text", "text_a", "text_b"]
