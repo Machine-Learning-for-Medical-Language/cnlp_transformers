@@ -514,6 +514,7 @@ def main(
                     # class_weights=dataset.class_weights,
                     class_weights=class_weights,
                     final_task_weight=training_args.final_task_weight,
+                    freeze=training_args.freeze,
                 )
                 if model_args.ignore_existing_classifiers:
                     model.remove_task_classifiers()

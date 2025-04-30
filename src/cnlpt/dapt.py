@@ -21,7 +21,7 @@ from torch.nn import CrossEntropyLoss
 from transformers.modeling_outputs import MaskedLMOutput
 from transformers.modeling_utils import PreTrainedModel
 
-from .CnlpModelForClassification import CnlpConfig, generalize_encoder_forward_kwargs
+from .CnlpModelForClassification import CnlpConfig, freeze_encoder_weights, generalize_encoder_forward_kwargs
 from .cnlp_args import DaptArguments, CnlpTrainingArguments
 from .cnlp_data import DaptDataset
 
@@ -35,6 +35,7 @@ class DaptModel(PreTrainedModel):
     def __init__(
         self,
         config: config_class,
+        freeze: float = -1.0,
     ):
         super().__init__(config)
         encoder_config = AutoConfig.from_pretrained(config._name_or_path)
@@ -44,6 +45,9 @@ class DaptModel(PreTrainedModel):
         self.encoder = model.from_pretrained(config._name_or_path)
         # if not config.character_level:
         self.encoder.resize_token_embeddings(encoder_config.vocab_size)
+
+        if freeze > 0:
+            freeze_encoder_weights(self.encoder.bert.encoder, freeze)
 
     def forward(
             self,
@@ -158,7 +162,7 @@ def main(
 
     # model = AutoModelForMaskedLM.from_pretrained(dapt_args.encoder_name)
     config = AutoConfig.from_pretrained(dapt_args.encoder_name)
-    model = DaptModel(config)
+    model = DaptModel(config, freeze=training_args.freeze)
 
     dataset = DaptDataset(dapt_args, tokenizer=tokenizer)
 
