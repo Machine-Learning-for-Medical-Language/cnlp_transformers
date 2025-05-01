@@ -39,7 +39,7 @@ class ModelArguments:
             "help": "Where do you want to store the pretrained models downloaded from s3"
         },
     )
-    layer: Union[int, None] = field(
+    layer: int = field(
         default=-1, metadata={"help": "Which layer's CLS ('<s>') token to use"}
     )
     token: bool = field(
@@ -50,13 +50,13 @@ class ModelArguments:
     )
 
     # NxN relation classifier-specific arguments
-    num_rel_feats: Union[int, None] = field(
+    num_rel_feats: int = field(
         default=12,
         metadata={
             "help": "Number of features/attention heads to use in the NxN relation classifier"
         },
     )
-    head_features: Union[int, None] = field(
+    head_features: int = field(
         default=64,
         metadata={
             "help": "Number of parameters in each attention head in the NxN relation classifier"
@@ -64,13 +64,13 @@ class ModelArguments:
     )
 
     # CNN-specific arguments
-    cnn_embed_dim: Union[int, None] = field(
+    cnn_embed_dim: int = field(
         default=100,
         metadata={
             "help": "For the CNN baseline model, the size of the word embedding space."
         },
     )
-    cnn_num_filters: Union[int, None] = field(
+    cnn_num_filters: int = field(
         default=25,
         metadata={
             "help": (
@@ -80,7 +80,7 @@ class ModelArguments:
         },
     )
 
-    cnn_filter_sizes: Union[list[int], None] = field(
+    cnn_filter_sizes: list[int] = field(
         default_factory=lambda: [1, 2, 3],
         metadata={
             "help": (
@@ -91,13 +91,13 @@ class ModelArguments:
     )
 
     # LSTM-specific arguments
-    lstm_embed_dim: Union[int, None] = field(
+    lstm_embed_dim: int = field(
         default=100,
         metadata={
             "help": "For the LSTM baseline model, the size of the word embedding space."
         },
     )
-    lstm_hidden_size: Union[int, None] = field(
+    lstm_hidden_size: int = field(
         default=100,
         metadata={
             "help": "For the LSTM baseline model, the hidden size of the LSTM layer"
@@ -113,7 +113,7 @@ class ModelArguments:
     )
 
     # Hierarchical Transformer-specific arguments
-    hier_num_layers: Union[int, None] = field(
+    hier_num_layers: int = field(
         default=2,
         metadata={
             "help": (
@@ -122,7 +122,7 @@ class ModelArguments:
             )
         },
     )
-    hier_hidden_dim: Union[int, None] = field(
+    hier_hidden_dim: int = field(
         default=2048,
         metadata={
             "help": (
@@ -131,7 +131,7 @@ class ModelArguments:
             )
         },
     )
-    hier_n_head: Union[int, None] = field(
+    hier_n_head: int = field(
         default=8,
         metadata={
             "help": (
@@ -140,7 +140,7 @@ class ModelArguments:
             )
         },
     )
-    hier_d_k: Union[int, None] = field(
+    hier_d_k: int = field(
         default=8,
         metadata={
             "help": (
@@ -149,7 +149,7 @@ class ModelArguments:
             )
         },
     )
-    hier_d_v: Union[int, None] = field(
+    hier_d_v: int = field(
         default=96,
         metadata={
             "help": (
@@ -158,7 +158,7 @@ class ModelArguments:
             )
         },
     )
-    hier_dropout: Union[float, None] = field(
+    hier_dropout: float = field(
         default=0.1,
         metadata={
             "help": "For the hierarchical model, the dropout probability for the "

@@ -12,13 +12,13 @@ class CnlpTrainingArguments(TrainingArguments):
     or by passing the ``--help`` flag to this script.
     """
 
-    evals_per_epoch: Union[int, None] = field(
+    evals_per_epoch: int = field(
         default=-1,
         metadata={
             "help": "Number of times to evaluate and possibly save model per training epoch (allows for a lazy kind of early stopping)"
         },
     )
-    final_task_weight: Union[float, None] = field(
+    final_task_weight: float = field(
         default=1.0,
         metadata={
             "help": "Amount to up/down-weight final task in task list (other tasks weighted 1.0)"
@@ -38,25 +38,25 @@ class CnlpTrainingArguments(TrainingArguments):
             "help": "Only optimize the bias parameters of the encoder (and the weights of the classifier heads), as proposed in the BitFit paper by Ben Zaken et al. 2021 (https://arxiv.org/abs/2106.10199)"
         },
     )
-    model_selection_score: str = field(
+    model_selection_score: Union[str, None] = field(
         default=None,
         metadata={
             "help": "Score to use in evaluation. Should be one of acc, f1, acc_and_f1, recall, or precision."
         },
     )
-    model_selection_label: Union[int, str, list[int], list[str]] = field(
+    model_selection_label: Union[int, str, list[int], list[str], None] = field(
         default=None,
         metadata={
             "help": "Class whose score should be used in evalutation. Should be an integer if scores are indexed, or a string if they are labeled by name."
         },
     )
-    output_prob: Union[bool, None] = field(
+    output_prob: bool = field(
         default=False,
         metadata={
             "help": "If selected, probability scores will be added to the output prediction file for test data when used with --do_predict, and to the evaluation file for dev data when used with --error_analysis.  Currently implemented for classification tasks only."
         },
     )
-    truncation_side_left: Union[bool, None] = field(
+    truncation_side_left: bool = field(
         default=False,
         metadata={
             "help": "Truncate samples from left. Note that hier model do not support this setting."
@@ -69,3 +69,5 @@ class CnlpTrainingArguments(TrainingArguments):
             "help": "Pretty printing for instances where at least one ground truth label for any of the tasks disagrees with the model's prediction"
         },
     )
+
+    logging_strategy: str = field(default="epoch")

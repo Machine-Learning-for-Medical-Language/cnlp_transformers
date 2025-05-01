@@ -147,27 +147,21 @@ class AutoProcessor(DataProcessor):
 
         train_file = dev_file = test_file = None
         data_files = {}
-        for fn in os.listdir(data_dir):
-            if fn.startswith("train"):
-                train_file = fn
+        for filename in os.listdir(data_dir):
+            if filename.startswith("train"):
+                train_file = filename
                 data_files["train"] = join(data_dir, train_file)
-            elif fn.startswith(("dev", "valid")):
-                dev_file = fn
+            elif filename.startswith(("dev", "valid")):
+                dev_file = filename
                 data_files["validation"] = join(data_dir, dev_file)
-            elif fn.startswith("test"):
-                test_file = fn
+            elif filename.startswith("test"):
+                test_file = filename
                 data_files["test"] = join(data_dir, test_file)
 
-        if train_file is None and dev_file is None and test_file is None:
-            raise ValueError("This dataset doesn't have train, dev, or test files")
-
         metadata = None
-        if train_file is not None:
-            ext_check_file = train_file
-        elif dev_file is not None:
-            ext_check_file = dev_file
-        else:
-            ext_check_file = test_file
+        ext_check_file = train_file or dev_file or test_file
+        if not ext_check_file:
+            raise ValueError("This dataset doesn't have train, dev, or test files")
 
         if ext_check_file.endswith(("csv", "tsv")):
             if ext_check_file.endswith("csv"):
@@ -221,7 +215,7 @@ class AutoProcessor(DataProcessor):
             self.dataset.task_output_modes = dataset_task2output
         else:
             raise ValueError(
-                f"Data file {train_file} has an extension that we cannot handle (tried csv and json)"
+                f"Data file {ext_check_file} has an extension that we cannot handle (tried csv and json)"
             )
 
         logger.info(f"This dataset contains these tasks: {str(dataset_tasks)}")

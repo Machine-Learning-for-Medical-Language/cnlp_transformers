@@ -209,7 +209,7 @@ def parse_training_arguments(
             logger.warning(
                 "truncation_side_left flag is not available for the hierarchical model -- setting to right"
             )
-            training_args.truncation_size_left = False
+            training_args.truncation_side_left = False
 
     return model_args, data_args, training_args
 
@@ -273,7 +273,7 @@ def extract_task_maps(
             data_args.task_name if data_args.task_name is not None else dataset.tasks
         )
         num_labels: dict[str, int] = {}
-        output_mode: dict[str, str] = {}
+        output_mode: dict[str, TaskType] = {}
         tagger: dict[str, bool] = {}
         relations: dict[str, bool] = {}
         for task in dataset.tasks_to_labels.keys():
@@ -931,7 +931,7 @@ def main(
     ## CHUNK - prediction
 
     if training_args.do_predict:
-        logging.info("*** Test ***")
+        logger.info("*** Test ***")
         trainer.compute_metrics = None
         # FIXME: this part hasn't been updated for the MTL setup so it doesn't work anymore since
         # predictions is generalized to be a list of predictions and the output needs to be different for each kin.

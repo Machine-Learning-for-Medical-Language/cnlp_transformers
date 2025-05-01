@@ -12,6 +12,7 @@ from os import PathLike
 from typing import Any, Union
 
 import torch
+import transformers
 from torch import nn
 from torch.nn import CrossEntropyLoss, MSELoss
 from transformers import AutoConfig, AutoModel
@@ -136,51 +137,78 @@ class RepresentationProjectionLayer(nn.Module):
             )
 
     def transpose_for_scores(self, x):
+        # x: (batch x seq x all_head)
+
         new_x_shape = x.size()[:-1] + (
             self.num_attention_heads,
             self.attention_head_size,
         )
+        # (batch x seq x n_heads x head_size)
         x = x.view(*new_x_shape)
+
+        # (batch x n_heads x seq x head_size)
         return x.permute(0, 2, 1, 3)
 
-    def forward(self, features, event_tokens, **kwargs):
+    def forward(self, features, event_tokens: torch.Tensor, **kwargs):
+        # features: (layers x batch x seq x hidden)
+        # event_tokens: (batch x seq)
+
         seq_length = features[0].shape[1]
         if self.tokens:
             # grab the average over the tokens of the thing we want to classify
             # probably involved passing in some sub-sequence of interest so we know what tokens to grab,
             # then we average across those tokens.
-            token_lens = event_tokens.sum(1)
+
+            # (batch)
+            event_toks_per_seq = event_tokens.sum(1)
+
+            # (batch x seq x hidden)
             expanded_tokens = event_tokens.unsqueeze(2).expand(
                 features[0].shape[0], seq_length, self.hidden_size
             )
+
+            # (batch x seq x hidden)
             filtered_features = features[self.layer_to_use] * expanded_tokens
-            x = filtered_features.sum(1) / token_lens.unsqueeze(1).expand(
+
+            # (batch x hidden)
+            x = filtered_features.sum(1) / event_toks_per_seq.unsqueeze(1).expand(
                 features[0].shape[0], self.hidden_size
             )
         elif self.tagger:
+            # (batch x seq x hidden)
             x = features[self.layer_to_use]
         elif self.relations:
             # something like multi-headed attention but without the weighted sum at the end, so i get (num_heads) features for each of N x N grid, which feads into NxN softmax (with the same parameters)
+            # (batch x seq x hidden)
             hidden_states = features[self.layer_to_use]
-            key_layer = self.transpose_for_scores(
-                self.key(hidden_states)
-            )  # Batch X num_heads X seq len X head_size
+
+            # (batch x n_heads x seq x head_size)
+            key_layer = self.transpose_for_scores(self.key(hidden_states))
+            # (batch x n_heads x seq x head_size)
             query_layer = self.transpose_for_scores(self.query(hidden_states))
-            attention_scores = torch.matmul(
-                query_layer, key_layer.transpose(-1, -2)
-            )  # Batch X num_heads X seq_len X seq_len
+
+            # (batch x n_heads x seq x seq)
+            attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+
             # Now we have num_heads features for each N X N relations.
             x = attention_scores / math.sqrt(self.attention_head_size)
             # move the 12 dimension to the end for easier classification
+
+            # (batch x seq x seq x n_heads)
             x = x.permute(0, 2, 3, 1)
 
         else:
             # take <s> token (equiv. to [CLS])
+            # (batch x hidden)
             x = features[self.layer_to_use][..., 0, :]
 
         x = self.dropout(x)
         x = self.dense(x)
         x = torch.tanh(x)
+
+        # for classification (including event tokens mode): (batch x hidden)
+        # for tagging: (batch x seq x hidden)
+        # for relations: (batch x seq x seq x n_heads)
         return x
 
 
@@ -294,6 +322,8 @@ class CnlpModelForClassification(PreTrainedModel):
         encoder_config.vocab_size = config.vocab_size
         config.encoder_config = encoder_config.to_dict()
         encoder_model = AutoModel.from_config(encoder_config)
+
+        transformers.logging.set_verbosity_error()
         self.encoder = encoder_model.from_pretrained(config.encoder_name)
 
         # part of the motivation for leaving this
@@ -305,7 +335,7 @@ class CnlpModelForClassification(PreTrainedModel):
             self.encoder.resize_token_embeddings(
                 encoder_config.vocab_size, mean_resizing=False
             )
-
+        transformers.logging.set_verbosity_warning()
         # This would seem to be redundant with the label list, which maps from tasks to labels,
         # but this version is ordered. This will allow the user to specify an order for any methods
         # where we feed the output of one task into the next.
@@ -379,7 +409,7 @@ class CnlpModelForClassification(PreTrainedModel):
             return len(self.encoder.encoder.layer)
 
     def predict_relations_with_previous_logits(
-        self, features: torch.Tensor, logits: torch.Tensor
+        self, features: torch.Tensor, logits: list[torch.Tensor]
     ) -> torch.Tensor:
         """
         For the relation prediction task, use previous predictions of the tagging task as additional features in the
@@ -388,13 +418,13 @@ class CnlpModelForClassification(PreTrainedModel):
         :param logits: The predicted logits from the tagging task
         :return: The augmented feature tensor
         """
+        # features is (batch x seq x seq x n_heads)
         seq_len = features.shape[1]
         for prior_task_logits in logits:
             if len(features.shape) == 4:
-                # relations - batch x len x len x dim
                 if len(prior_task_logits.shape) == 3:
                     # prior task is sequence tagging:
-                    # we have batch x len x num_classes.
+                    # we have batch x seq x num_classes.
                     # we want to concatenate the num_classes to the variables at each element of the sequence,
                     # but then need to broadcast it down all the rows of the matrix.
                     aug = prior_task_logits.unsqueeze(
@@ -407,12 +437,12 @@ class CnlpModelForClassification(PreTrainedModel):
                         (features, aug), 3
                     )  # concatenate the  relation matrix with the sequence matrix
                 else:
-                    logging.warning(
+                    logger.warning(
                         f"It is not implemented to add a task of shape {str(prior_task_logits.shape)} to a relation matrix"
                     )
             elif len(features.shape) == 3:
                 # sequence
-                logging.warning(
+                logger.warning(
                     "It is not implemented to add previous task of any type to a sequence task"
                 )
 
@@ -574,6 +604,12 @@ class CnlpModelForClassification(PreTrainedModel):
 
         for task_ind, task_name in enumerate(self.tasks):
             task_labels = self.label_dictionary[task_name]
+            # hidden_states has shape (layers x batch x seq x hidden)
+
+            # features shape:
+            # for classification (including event tokens mode): (batch x hidden)
+            # for tagging: (batch x seq x hidden)
+            # for relations: (batch x seq x seq x n_heads)
             features = self.feature_extractors[task_name](
                 outputs.hidden_states, event_tokens
             )

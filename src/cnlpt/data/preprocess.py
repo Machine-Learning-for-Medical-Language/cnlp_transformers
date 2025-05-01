@@ -8,7 +8,7 @@ from transformers import BatchEncoding
 from transformers.tokenization_utils import PreTrainedTokenizer
 
 from .features import HierarchicalInputFeatures, InputFeatures
-from .tasks import classification, relex, tagging
+from .tasks import CLASSIFICATION, RELEX, TAGGING
 
 logger = logging.getLogger(__name__)
 none_column = "__None__"
@@ -305,16 +305,16 @@ def cnlp_preprocess_data(
             task_labels = []
             raw_labels.append(examples[task])
 
-            if output_modes[task] == classification:
+            if output_modes[task] == CLASSIFICATION:
                 task_labels = [label_map[task][label] for label in raw_labels[task_ind]]
                 # labels is just a list of one label for each instance
-            elif output_modes[task] == tagging:
+            elif output_modes[task] == TAGGING:
                 task_labels = [
                     [label_map[task][label] for label in inst_labels.split()]
                     for inst_labels in raw_labels[task_ind]
                 ]
                 # labels is a list of lists, where each internal list is the set of tags for that instance.
-            elif output_modes[task] == relex:
+            elif output_modes[task] == RELEX:
                 for inst_rels in raw_labels[task_ind]:
                     if inst_rels is None or inst_rels == "None":
                         task_labels.append(["None"])
@@ -438,10 +438,10 @@ def _build_pytorch_labels(
     # labels_out = []
     # TODO -- also adapt to character level
     pad_classification = False
-    if relex in output_modes.values() or tagging in output_modes.values():
+    if RELEX in output_modes.values() or TAGGING in output_modes.values():
         # we have tagging as the highest dimensional output
         max_dims = 2
-        if classification in output_modes.values():
+        if CLASSIFICATION in output_modes.values():
             pad_classification = True
     else:
         # classification only
@@ -488,9 +488,9 @@ def _build_labels_for_task(
     label_lists: dict[str, list[str]],
     pad_classification: bool,
 ) -> Union[np.ndarray, list[np.ndarray]]:
-    if output_mode[task] == tagging:
+    if output_mode[task] == TAGGING:
         return get_tagging_labels(task_ind, result, labels, num_instances)
-    elif output_mode[task] == relex:
+    elif output_mode[task] == RELEX:
         return get_relex_labels(
             task,
             task_ind,
@@ -500,7 +500,7 @@ def _build_labels_for_task(
             max_length,
             label_lists,
         )
-    elif output_mode[task] == classification:
+    elif output_mode[task] == CLASSIFICATION:
         return get_classification_labels(
             task_ind,
             labels,
