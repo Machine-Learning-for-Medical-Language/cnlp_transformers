@@ -1,3 +1,4 @@
+import numpy as np
 from transformers import AutoConfig
 
 
@@ -21,3 +22,8 @@ def is_external_encoder(model_name_or_path: str) -> bool:
     :return: whether the encoder is an external (non-cnlpt) model
     """
     return not is_cnlpt_model(model_name_or_path)
+
+
+def simple_softmax(x: list):
+    """Softmax values for 1-D score array"""
+    return np.exp(x) / np.sum(np.exp(x), axis=0)

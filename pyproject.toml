@@ -87,6 +87,7 @@ select = [
 ]
 
 ignore = [
+    "G003", # string concatenation logging statements
     "G004", # f-strings in logging statements
 ]
 

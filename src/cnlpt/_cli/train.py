@@ -2,8 +2,9 @@ import sys
 
 import click
 
-from ..train_system import __file__ as train_system_file
-from ..train_system import main as train_system
+# from ..train_system import __file__ as train_system_file
+# from ..train_system import main as train_system
+from ..new_train_system.cnlp_train_system import main as train_system
 
 
 @click.command(
@@ -16,6 +17,5 @@ from ..train_system import main as train_system
 def train_command(train_args):
     "Fine-tune models for clinical NLP."
 
-    sys.argv = [train_system_file] + list(train_args)
-
+    sys.argv = list(train_args)
     train_system()

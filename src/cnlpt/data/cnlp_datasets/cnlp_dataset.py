@@ -43,7 +43,6 @@ class ClinicalNlpDataset(Dataset):
         hierarchical: bool = False,
     ):
         self.args = args
-        self.processors = []
         self.class_weights = None
         self.tasks_to_labels = {}
         self.hierarchical = hierarchical
@@ -56,6 +55,7 @@ class ClinicalNlpDataset(Dataset):
         self.num_train_instances = 0
 
         if self.hierarchical:
+            assert self.args.chunk_len is not None and self.args.num_chunks is not None
             implicit_max_len = self.args.chunk_len * self.args.num_chunks
             if self.args.max_seq_length < implicit_max_len:
                 raise ValueError(
@@ -69,7 +69,6 @@ class ClinicalNlpDataset(Dataset):
             dataset_processor = AutoProcessor(
                 data_dir, tasks, max_train_items=args.max_train_items
             )
-            self.processors.append(dataset_processor)
 
             # Make sure that any overlapping task names have the same label sets and output mode definitions
             self._reconcile_labels_lists(dataset_processor)
@@ -101,7 +100,7 @@ class ClinicalNlpDataset(Dataset):
         self.tasks = tasks
 
         if self.args.character_level:
-            logging.warning(
+            logger.warning(
                 "No real implementation for character level event masking yet, using a placeholder"
             )
         self.processed_dataset = combined_dataset.map(

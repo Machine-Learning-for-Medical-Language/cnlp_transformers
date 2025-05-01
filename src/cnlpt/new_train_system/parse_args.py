@@ -1,34 +1,42 @@
 import os
 import sys
-from typing import Any, Union
+from typing import Any, Union, cast
 
 from transformers.hf_argparser import HfArgumentParser
 
 from ..args import CnlpTrainingArguments, DataTrainingArguments, ModelArguments
-from .log import logger
+from .logging import logger
+
+
+def _cast_dataclasses_to_args(
+    dataclasses: tuple[Any, ...],
+) -> tuple[ModelArguments, DataTrainingArguments, CnlpTrainingArguments]:
+    return cast(
+        tuple[ModelArguments, DataTrainingArguments, CnlpTrainingArguments], dataclasses
+    )
 
 
 def _get_args_parser():
     return HfArgumentParser(
-        (ModelArguments, DataTrainingArguments, CnlpTrainingArguments)
+        (ModelArguments, DataTrainingArguments, CnlpTrainingArguments)  # pyright: ignore[reportArgumentType]
     )
 
 
 def parse_args_dict(
     args: dict[str, Any],
-) -> tuple[ModelArguments, DataTrainingArguments, CnlpTrainingArguments]:
-    return _get_args_parser().parse_dict(args)
+):
+    return _cast_dataclasses_to_args(_get_args_parser().parse_dict(args))
 
 
 def parse_args_json_file(
     json_file: Union[str, os.PathLike],
-) -> tuple[ModelArguments, DataTrainingArguments, CnlpTrainingArguments]:
-    return _get_args_parser().parse_json_file(json_file)
+):
+    return _cast_dataclasses_to_args(_get_args_parser().parse_json_file(json_file))
 
 
 def parse_args_from_argv(
     argv: Union[list[str], None] = None,
-) -> tuple[ModelArguments, DataTrainingArguments, CnlpTrainingArguments]:
+):
     if argv is None:
         argv = sys.argv
     if len(argv) == 2 and argv[1].endswith(".json"):
@@ -36,7 +44,9 @@ def parse_args_from_argv(
         # let's parse it to get our arguments.
         return parse_args_json_file(argv[1])
     else:
-        return _get_args_parser().parse_args_into_dataclasses(argv)
+        return _cast_dataclasses_to_args(
+            _get_args_parser().parse_args_into_dataclasses(argv)
+        )
 
 
 def validate_args(
@@ -54,7 +64,7 @@ def validate_args(
             f"Output directory ({training_args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overcome."
         )
 
-    if training_args.model_selection_label is not None and any(
+    if isinstance(training_args.model_selection_label, list) and any(
         isinstance(item, int) for item in training_args.model_selection_label
     ):
         logger.warning(
@@ -64,8 +74,8 @@ def validate_args(
     if training_args.truncation_side_left:
         if model_args.model == "hier":
             logger.warning(
-                "truncation_side_left flag is not available for the hierarchical model -- setting to right"
+                "truncation_side_left flag is not available for the hierarchical model -- setting to false"
             )
-            training_args.truncation_size_left = False
+            training_args.truncation_side_left = False
 
     return model_args, data_args, training_args

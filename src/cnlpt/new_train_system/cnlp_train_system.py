@@ -1,40 +1,52 @@
+import contextlib
 import math
 import os
 from collections import Counter
 from dataclasses import dataclass
-from typing import Any, Union
+from typing import Any, Union, cast
 
+import numpy as np
+import numpy.typing as npt
 import torch
 from transformers import (
     AutoConfig,
     AutoModel,
     AutoTokenizer,
+    EvalPrediction,
     IntervalStrategy,
+    PrinterCallback,
+    Trainer,
     set_seed,
 )
 
 from ..args import CnlpTrainingArguments, DataTrainingArguments, ModelArguments
-from ..data.cnlp_datasets import ClinicalNlpDataset
-from ..data.tasks import RELEX, TAGGING
 from ..models import CnlpConfig, CnlpModelForClassification, HierarchicalModel
 from ..models.baseline import CnnSentenceClassifier, LstmSentenceClassifier
-from .args import (
+from ..new_data.cnlp_dataset import CnlpDataset
+from ..new_data.task_info import RELATIONS, TAGGING, TaskInfo
+from .display import TrainSystemDisplay
+from .logging import configure_logger_for_training, logger
+from .metrics import cnlp_compute_metrics
+from .parse_args import (
     parse_args_dict,
     parse_args_from_argv,
     parse_args_json_file,
     validate_args,
 )
-from .log import configure_logger_for_training, logger
-from .utils import is_external_encoder
+from .training_callbacks import (
+    BasicLoggingCallback,
+    DisplayCallback,
+    SaveBestModelCallback,
+)
+from .utils import is_external_encoder, simple_softmax
 
 
-@dataclass
-class _TaskMaps:
-    task_names: list[str]
-    num_labels: dict[str, int]
-    output_mode: dict[str, str]
-    tagger: dict[str, bool]
-    relations: dict[str, bool]
+@dataclass(frozen=True)
+class TaskEvalPrediction:
+    task: TaskInfo
+    predictions: np.ndarray
+    probs: Union[np.ndarray, None]
+    labels: Union[np.ndarray, None]
 
 
 class CnlpTrainSystem:
@@ -60,12 +72,6 @@ class CnlpTrainSystem:
         self._init_dataset()
         self._init_model()
         self._preprocess_training_args()
-
-        # TODO compute metrics function
-
-        # TODO (in new train() method)
-        # - init trainer
-        # - train
 
         # TODO (in new eval() method)
         # - evaluation
@@ -97,70 +103,30 @@ class CnlpTrainSystem:
         )
 
     def _init_tokenizer(self):
+        tokenizer_name = self.model_args.tokenizer_name or self.model_args.encoder_name
+        assert tokenizer_name is not None
         self.tokenizer = AutoTokenizer.from_pretrained(
-            (
-                self.model_args.tokenizer_name
-                if self.model_args.tokenizer_name
-                else self.model_args.encoder_name
-            ),
+            tokenizer_name,
             cache_dir=self.model_args.cache_dir,
             add_prefix_space=True,
-            truncation_side="left"
-            if self.training_args.truncation_side_left
-            else "right",
+            truncation_side=(
+                "left" if self.training_args.truncation_side_left else "right"
+            ),
             additional_special_tokens=(
-                [
-                    "<e>",
-                    "</e>",
-                    "<a1>",
-                    "</a1>",
-                    "<a2>",
-                    "</a2>",
-                    "<cr>",
-                    "<neg>",
-                ]
+                ["<e>", "</e>", "<a1>", "</a1>", "<a2>", "</a2>", "<cr>", "<neg>"]
                 if not self.data_args.character_level
                 else None
             ),
         )
 
     def _init_dataset(self):
-        self.dataset = ClinicalNlpDataset(
+        self.dataset = CnlpDataset(
             self.data_args,
-            tokenizer=self.tokenizer,
-            cache_dir=self.model_args.cache_dir,
+            tokenizer=self.tokenizer,  # pyright: ignore[reportArgumentType]
             hierarchical=(self.model_args.model == "hier"),
-        )
-        try:
-            task_names = (
-                self.data_args.task_name
-                if self.data_args.task_name is not None
-                else self.dataset.tasks
-            )
-            num_labels: dict[str, int] = {}
-            output_mode: dict[str, str] = {}
-            tagger: dict[str, bool] = {}
-            relations: dict[str, bool] = {}
-            for task in self.dataset.tasks_to_labels.keys():
-                num_labels[task] = len(self.dataset.tasks_to_labels[task])
-                task_output_mode: str = self.dataset.output_modes[task]
-                output_mode[task] = task_output_mode
-                tagger[task] = task_output_mode == TAGGING
-                relations[task] = task_output_mode == RELEX
-        except KeyError:
-            raise ValueError(f"Task not found: {self.data_args.task_name}")
-
-        self.task_maps = _TaskMaps(
-            task_names, num_labels, output_mode, tagger, relations
         )
 
     def _init_model(self):
-        # Load pretrained model
-        #
-        # Distributed training:
-        # The .from_pretrained methods guarantee that only one local process can concurrently
-        # download model & vocab.
-
         model_name = self.model_args.model
         if model_name == "cnn":
             self._init_cnn_model()
@@ -174,38 +140,32 @@ class CnlpTrainSystem:
     def _get_class_weights(self):
         if not self.data_args.weight_classes:
             return None
-        class_weights = []
-        for task in self.task_maps.task_names:
-            # get labels in the right order ([0, 1])
-            if isinstance(
-                self.dataset.tasks_to_labels[task][1], str
-            ) and self.dataset.tasks_to_labels[task][1].startswith("No_"):
-                self.dataset.tasks_to_labels[task] = self.dataset.tasks_to_labels[task][
-                    1:
-                ] + [self.dataset.tasks_to_labels[task][0]]
-            labels = self.dataset.processed_dataset["train"][task]
-            weights = []
-            label_counts = Counter(labels)
-            for label in self.dataset.tasks_to_labels[task]:
-                weights.append(
-                    len(labels)
-                    / (self.task_maps.num_labels[task] * label_counts[label])
-                )
+
+        class_weights: list[list[float]] = []
+        for task in self.dataset.tasks:
+            train_labels = self.dataset.train_data[task.name]
+            weights: list[float] = []
+            train_label_counts = Counter(train_labels)
+            for label in task.labels:
                 # class weights are determined by severity of class imbalance
-            if len(self.task_maps.task_names) > 1:
-                class_weights.append(weights)
-            else:
-                class_weights = weights  # if we just have the one class, simplify the tensor or pytorch will be mad
-        class_weights = torch.tensor(class_weights).to(self.training_args.device)
-        # sm = torch.nn.Softmax(dim=class_weights.ndim - 1)
-        # class_weights = sm(class_weights)
-        return class_weights
+                weights.append(
+                    len(train_labels) / (len(task.labels) * train_label_counts[label])
+                )
+
+            class_weights.append(weights)
+
+        class_weights_tensor = torch.tensor(
+            # if we just have the one class, simplify the tensor or pytorch will be mad
+            class_weights[0] if len(class_weights) == 1 else class_weights
+        ).to(self.training_args.device)
+
+        return class_weights_tensor
 
     def _init_cnn_model(self):
         model = CnnSentenceClassifier(
             len(self.tokenizer),
-            task_names=self.task_maps.task_names,
-            num_labels_dict=self.task_maps.num_labels,
+            task_names=[t.name for t in self.dataset.tasks],
+            num_labels_dict=[len(t.labels) for t in self.dataset.tasks],
             embed_dims=self.model_args.cnn_embed_dim,
             num_filters=self.model_args.cnn_num_filters,
             filters=self.model_args.cnn_filter_sizes,
@@ -213,26 +173,28 @@ class CnlpTrainSystem:
             class_weights=self._get_class_weights(),
         )
         # Check if the caller specified a saved model to load (e.g., for an inference-only run)
+        assert self.model_args.encoder_name is not None
         model_path = os.path.join(self.model_args.encoder_name, "pytorch_model.bin")
         if os.path.exists(model_path):
-            model.load_state_dict(torch.load(model_path))
+            model.load_state_dict(torch.load(model_path))  # pyright: ignore[reportAttributeAccessIssue]
 
-        self.model = model
+        self.model = cast(CnnSentenceClassifier, model)
 
     def _init_lstm_model(self):
         model = LstmSentenceClassifier(
             len(self.tokenizer),
-            task_names=self.task_maps.task_names,
-            num_labels_dict=self.task_maps.num_labels,
+            task_names=[t.name for t in self.dataset.tasks],
+            num_labels_dict=[len(t.labels) for t in self.dataset.tasks],
             embed_dims=self.model_args.lstm_embed_dim,
             hidden_size=self.model_args.lstm_hidden_size,
         )
         # Check if the caller specified a saved model to load (e.g., for an inference-only run)
+        assert self.model_args.encoder_name is not None
         model_path = os.path.join(self.model_args.encoder_name, "pytorch_model.bin")
         if os.path.exists(model_path):
-            model.load_state_dict(torch.load(model_path))
+            model.load_state_dict(torch.load(model_path))  # pyright: ignore[reportAttributeAccessIssue]
 
-        self.model = model
+        self.model = cast(LstmSentenceClassifier, model)
 
     def _init_hier_model(self):
         encoder_name = (
@@ -240,21 +202,18 @@ class CnlpTrainSystem:
             if self.model_args.config_name
             else self.model_args.encoder_name
         )
+        assert encoder_name is not None
         if is_external_encoder(encoder_name):
             config = CnlpConfig(
                 encoder_name=encoder_name,
-                finetuning_task=(
-                    self.data_args.task_name
-                    if self.data_args.task_name is not None
-                    else self.dataset.tasks
-                ),
-                layer=self.model_args.layer,
+                finetuning_task=[t.name for t in self.dataset.tasks],
+                layer=self.model_args.layer or -1,
                 tokens=self.model_args.token,
                 num_rel_attention_heads=self.model_args.num_rel_feats,
                 rel_attention_head_dims=self.model_args.head_features,
-                tagger=self.task_maps.tagger,
-                relations=self.task_maps.relations,
-                label_dictionary=self.dataset.get_labels(),
+                tagger={t.name: t.type == TAGGING for t in self.dataset.tasks},
+                relations={t.name: t.type == RELATIONS for t in self.dataset.tasks},
+                label_dictionary={t.name: list(t.labels) for t in self.dataset.tasks},
                 hier_head_config=dict(
                     n_layers=self.model_args.hier_num_layers,
                     d_inner=self.model_args.hier_hidden_dim,
@@ -269,7 +228,8 @@ class CnlpTrainSystem:
 
             model = HierarchicalModel(
                 config=config,
-                class_weights=self.dataset.class_weights,
+                # TODO(ian) as far as I can tell, this was always just None?
+                class_weights=None,
                 freeze=self.training_args.freeze,
             )
         else:
@@ -282,25 +242,26 @@ class CnlpTrainSystem:
                 )
             # use a checkpoint from an existing model
 
-            config = AutoConfig.from_pretrained(
+            config: CnlpConfig = AutoConfig.from_pretrained(
                 encoder_name,
                 cache_dir=self.model_args.cache_dir,
                 layer=self.model_args.layer,
             )
+            task_is_relations = {
+                t.name: t.type == RELATIONS for t in self.dataset.tasks
+            }
+            task_is_tagging = {t.name: t.type == TAGGING for t in self.dataset.tasks}
+
             if self.model_args.ignore_existing_classifiers:
-                config.finetuning_task = (
-                    self.data_args.task_name
-                    if self.data_args.task_name is not None
-                    else self.dataset.tasks
-                )
-                config.relations = self.task_maps.relations
-                config.tagger = self.task_maps.tagger
+                config.finetuning_task = [t.name for t in self.dataset.tasks]
+                config.relations = task_is_relations
+                config.tagger = task_is_tagging
                 config.label_dictionary = {}  # this gets filled in later
             elif self.model_args.keep_existing_classifiers:
                 if (
-                    config.finetuning_task != self.data_args.task_name
-                    or config.relations != self.task_maps.relations
-                    or config.tagger != self.task_maps.tagger
+                    config.finetuning_task != [t.name for t in self.dataset.tasks]
+                    or config.relations != task_is_relations
+                    or config.tagger != task_is_tagging
                 ):
                     raise ValueError(
                         "When --keep_existing_classifiers selected, please ensure"
@@ -318,15 +279,19 @@ class CnlpTrainSystem:
 
             if self.model_args.ignore_existing_classifiers:
                 model.remove_task_classifiers()
-                for task in self.data_args.task_name:
-                    model.add_task_classifier(task, self.dataset.get_labels()[task])
-            model.set_class_weights(self.dataset.class_weights)
+                for task in self.dataset.tasks:
+                    # FIXME(ian) why is this a list and not a dict??
+                    model.add_task_classifier(task.name, list(task.labels))  # pyright: ignore[reportArgumentType]
 
-        self.model = model
+            # TODO(ian) as far as I can tell, this was always just None?
+            model.set_class_weights(None)
+
+        self.model = cast(HierarchicalModel, model)
 
     def _init_cnlpt_model(self):
         # by default cnlpt model, but need to check which encoder they want
         encoder_name = self.model_args.encoder_name
+        assert encoder_name is not None
 
         # TODO check when download any pretrained language model to local disk, if
         # the following condition "is_hub_model(encoder_name)" works or not.
@@ -352,12 +317,13 @@ class CnlpTrainSystem:
             # Load the cnlp configuration using AutoConfig, this will not override
             # the arguments from trained cnlp models. While using CnlpConfig will override
             # the model_type and model_name of the encoder.
+            encoder_name = (
+                self.model_args.config_name
+                if self.model_args.config_name
+                else encoder_name
+            )
             config = AutoConfig.from_pretrained(
-                (
-                    self.model_args.config_name
-                    if self.model_args.config_name
-                    else self.model_args.encoder_name
-                ),
+                encoder_name,
                 cache_dir=self.model_args.cache_dir,
                 # in this case we're looking at a fine-tuned model (?)
                 character_level=self.data_args.character_level,
@@ -368,36 +334,17 @@ class CnlpTrainSystem:
                 raise NotImplementedError(
                     "This functionality has not been restored yet"
                 )
-                # model = CnlpModelForClassification(
-                #     model_path=self.model_args.encoder_name,
-                #     config=config,
-                #     cache_dir=self.model_args.cache_dir,
-                #     tagger=self.task_maps.tagger,
-                #     relations=self.task_maps.relations,
-                #     class_weights=self.dataset.class_weights,
-                #     final_task_weight=self.training_args.final_task_weight,
-                #     use_prior_tasks=self.model_args.use_prior_tasks,
-                #     argument_regularization=self.model_args.arg_reg,
-                # )
-                # delattr(model, "classifiers")
-                # delattr(model, "feature_extractors")
-                # if self.training_args.do_train:
-                #     tempmodel = tempfile.NamedTemporaryFile(
-                #         dir=self.model_args.cache_dir
-                #     )
-                #     torch.save(model.state_dict(), tempmodel)
-                #     model_name = tempmodel.name
             else:
                 # setting 2) evaluate or make predictions
                 model = CnlpModelForClassification.from_pretrained(
                     self.model_args.encoder_name,
                     config=config,
-                    class_weights=self.dataset.class_weights,
+                    # TODO(ian) as far as I can tell, this was always just None?
+                    class_weights=None,
                     final_task_weight=self.training_args.final_task_weight,
                     freeze=self.training_args.freeze,
                     bias_fit=self.training_args.bias_fit,
                 )
-
         else:
             # This only works when model_args.encoder_name is one of the
             # model card from https://huggingface.co/models
@@ -405,42 +352,39 @@ class CnlpTrainSystem:
             encoder_name = (
                 self.model_args.config_name
                 if self.model_args.config_name
-                else self.model_args.encoder_name
+                else encoder_name
             )
             config = CnlpConfig(
                 encoder_name=encoder_name,
-                finetuning_task=(
-                    self.data_args.task_name
-                    if self.data_args.task_name is not None
-                    else self.dataset.tasks
-                ),
+                finetuning_task=[t.name for t in self.dataset.tasks],
                 layer=self.model_args.layer,
                 tokens=self.model_args.token,
                 num_rel_attention_heads=self.model_args.num_rel_feats,
                 rel_attention_head_dims=self.model_args.head_features,
-                tagger=self.task_maps.tagger,
-                relations=self.task_maps.relations,
-                label_dictionary=self.dataset.get_labels(),
+                tagger={t.name: t.type == TAGGING for t in self.dataset.tasks},
+                relations={t.name: t.type == RELATIONS for t in self.dataset.tasks},
+                label_dictionary={t.name: list(t.labels) for t in self.dataset.tasks},
                 character_level=self.data_args.character_level,
                 # num_tokens=len(tokenizer),
             )
             config.vocab_size = len(self.tokenizer)
             model = CnlpModelForClassification(
                 config=config,
-                class_weights=self.dataset.class_weights,
+                # TODO(ian) as far as I can tell, this was always just None?
+                class_weights=None,
                 final_task_weight=self.training_args.final_task_weight,
                 freeze=self.training_args.freeze,
                 bias_fit=self.training_args.bias_fit,
             )
 
-        self.model = model
+        self.model = cast(CnlpModelForClassification, model)
 
     def _preprocess_training_args(self):
         if not self.training_args.do_train:
             return
 
         batches_per_epoch = math.ceil(
-            self.dataset.num_train_instances / self.training_args.train_batch_size
+            len(self.dataset.train_data) / self.training_args.train_batch_size
         )
         total_steps = int(
             self.training_args.num_train_epochs
@@ -467,3 +411,150 @@ class CnlpTrainSystem:
             self.training_args.evaluation_strategy = (
                 self.training_args.eval_strategy
             ) = IntervalStrategy.EPOCH
+
+    def _extract_task_predictions(self, p: EvalPrediction):
+        task_predictions: list[TaskEvalPrediction] = []
+        task_label_offset = 0
+
+        for task in self.dataset.tasks:
+            probs: Union[npt.NDArray[np.float64], None] = None
+
+            raw_preds = p.predictions[task.index]
+            if task.type == TAGGING:
+                preds = np.argmax(raw_preds, axis=2)
+                # labels will be -100 where we don't need to tag
+            elif task.type == RELATIONS:
+                preds = np.argmax(raw_preds, axis=3)
+            else:
+                preds = np.argmax(raw_preds, axis=1)
+                if self.training_args.output_prob:
+                    probs = np.max(
+                        [simple_softmax(logits) for logits in raw_preds],
+                        axis=1,
+                    )
+
+            labels: Union[npt.NDArray[np.int64], None]
+            task_label_width = 0
+
+            label_ids: npt.NDArray[np.int64] | None = getattr(p, "label_ids", None)
+            if label_ids is None:
+                # we are doing inference, so no labels
+                labels = None
+            elif task.type == RELATIONS:
+                task_label_width = self.data_args.max_seq_length
+                # relation labels
+                labels = label_ids[
+                    :, :, task_label_offset : task_label_offset + task_label_width
+                ]
+            elif label_ids.ndim == 3:
+                task_label_width = 1
+                if task.type == TAGGING:
+                    labels = label_ids[
+                        :, :, task_label_offset : task_label_offset + task_label_width
+                    ]
+                else:
+                    labels = label_ids[:, 0, task_label_offset]
+            elif label_ids.ndim == 2:
+                labels = label_ids[:, task_label_offset]
+            else:
+                raise RuntimeError(
+                    f"label_ids has the wrong number of dimensions ({label_ids.ndim})"
+                )
+
+            if labels is not None:
+                labels = labels.squeeze()
+
+            task_predictions.append(
+                TaskEvalPrediction(
+                    task=task,
+                    predictions=preds,
+                    probs=probs,
+                    labels=labels,
+                )
+            )
+
+            task_label_offset += task_label_width
+
+        return task_predictions
+
+    def _get_task_prediction_metrics(self, task_prediction: TaskEvalPrediction):
+        if task_prediction.labels is None:
+            raise RuntimeError(
+                "cannot compute metrics because eval prediction has no labels"
+            )
+        return cnlp_compute_metrics(
+            task_prediction.predictions,
+            task_prediction.labels,
+            task_prediction.task.type,
+            list(task_prediction.task.labels),
+        )
+
+    def _compute_metrics(self, p: EvalPrediction):
+        metrics: dict[str, dict[str, Any]] = {}
+
+        for task_prediction in self._extract_task_predictions(p):
+            task = task_prediction.task
+            metrics[task.name] = self._get_task_prediction_metrics(task_prediction)
+
+        return metrics
+
+    def train(self, rich_display: bool = True):
+        trainer_callbacks = [
+            BasicLoggingCallback(self.model_args, self.data_args, self.training_args)
+        ]
+
+        selection_labels = self.training_args.model_selection_label
+        if not isinstance(selection_labels, list):
+            selection_labels = [selection_labels]
+        selection_labels = [str(label) for label in selection_labels]
+
+        save_best_model_callback = SaveBestModelCallback(
+            model_args=self.model_args,
+            tokenizer=self.tokenizer,
+            tasks=self.dataset.tasks,
+            selection_metric=self.training_args.model_selection_score,
+            selection_labels=selection_labels,
+            output_dir=self.training_args.output_dir,
+        )
+
+        trainer_callbacks.append(save_best_model_callback)
+
+        if rich_display:
+            self.training_args.disable_tqdm = True
+            disp = TrainSystemDisplay(
+                self.model_args,
+                self.data_args,
+                self.training_args,
+            )
+            trainer_callbacks.append(DisplayCallback(disp, save_best_model_callback))
+        else:
+            disp = contextlib.nullcontext()
+
+        with disp:
+            trainer = Trainer(
+                model=self.model,
+                args=self.training_args,
+                train_dataset=self.dataset.train_data,
+                eval_dataset=self.dataset.validation_data,
+                compute_metrics=self._compute_metrics,
+                callbacks=trainer_callbacks,
+            )
+
+            if rich_display:
+                trainer.remove_callback(PrinterCallback)
+
+            # The callback needs to be passed the trainer instance
+            # so it can save the model from inside the callback.
+            # As far as I (Ian) can tell, this is the only way for the
+            # callback to call methods on the trainer.
+            save_best_model_callback.set_trainer(trainer)
+
+            trainer.train()
+
+    def eval(self):
+        raise NotImplementedError("eval not yet implemented")
+
+
+def main():
+    train_system = CnlpTrainSystem.from_argv()
+    train_system.train()

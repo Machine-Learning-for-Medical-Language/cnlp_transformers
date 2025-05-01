@@ -11,7 +11,7 @@ from sklearn.metrics import (
     recall_score,
 )
 
-from .data.tasks import CLASSIFICATION, RELEX, TAGGING, TaskType
+from ..new_data.task_info import CLASSIFICATION, RELATIONS, TAGGING, TaskType
 
 
 def fix_np_types(input_variable):
@@ -209,7 +209,7 @@ def cnlp_compute_metrics(
         return acc_and_f1(preds=preds, labels=labels)
     elif output_mode == TAGGING:
         return tagging_metrics(label_set, preds=preds, labels=labels)
-    elif output_mode == RELEX:
+    elif output_mode == RELATIONS:
         return relation_metrics(label_set, preds=preds, labels=labels)
     else:
         raise Exception(

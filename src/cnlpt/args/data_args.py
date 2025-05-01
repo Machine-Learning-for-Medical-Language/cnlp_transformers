@@ -20,7 +20,7 @@ class DataTrainingArguments:
         }
     )
 
-    task_name: list[str] = field(
+    task_name: Union[list[str], None] = field(
         default_factory=lambda: None,
         metadata={
             "help": "A space-separated list of tasks to train on (mainly used as keys to internally track and display output)"

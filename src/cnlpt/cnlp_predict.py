@@ -13,14 +13,7 @@ import pandas as pd
 import tqdm
 from transformers import EvalPrediction
 
-from .data.tasks import (
-    RELEX,
-    TAGGING,
-    TaskType,
-    classification,
-    relex,
-    tagging,
-)
+from .data.tasks import CLASSIFICATION, RELEX, TAGGING, TaskType
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +32,11 @@ Cell = tuple[int, int, int]
 Span = tuple[int, int, SpanBegin]
 
 
-logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
-    datefmt="%m/%d/%Y %H:%M:%S",
-    level=logging.INFO,
-)
+# logging.basicConfig(
+#     format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
+#     datefmt="%m/%d/%Y %H:%M:%S",
+#     level=logging.INFO,
+# )
 
 
 def simple_softmax(x: list):
@@ -172,9 +165,9 @@ def compute_disagreements(
     assert len(preds) == len(
         labels
     ), f"Predictions and labels have mismatched lengths {len(preds)} and {len(labels)}"
-    if output_mode == classification:
+    if output_mode == CLASSIFICATION:
         return classification_disagreements(preds=preds, labels=labels)
-    elif output_mode == tagging or output_mode == relex:
+    elif output_mode == TAGGING or output_mode == RELEX:
         return relation_or_tagging_disagreements(preds=preds, labels=labels)
     else:
         raise Exception("As yet unsupported task in cnlpt")
@@ -230,15 +223,15 @@ def process_prediction(
     classification_tasks = (
         task_name
         for task_name in task_names
-        if output_mode[task_name] == classification
+        if output_mode[task_name] == CLASSIFICATION
     )
 
     tagging_tasks = sorted(
-        task_name for task_name in task_names if output_mode[task_name] == tagging
+        task_name for task_name in task_names if output_mode[task_name] == TAGGING
     )
 
     relex_tasks = sorted(
-        task_name for task_name in task_names if output_mode[task_name] == relex
+        task_name for task_name in task_names if output_mode[task_name] == RELEX
     )
 
     # ordering in terms of ease of reading
@@ -313,7 +306,7 @@ def get_outputs(
         if len(error_inds) > 0:
             relevant_prob_values = (
                 prob_values[error_inds]
-                if output_mode[pred_task] == classification and len(prob_values) > 0
+                if output_mode[pred_task] == CLASSIFICATION and len(prob_values) > 0
                 else np.array([])
             )
             ground_truth = labels[error_inds].astype(int)
@@ -327,17 +320,17 @@ def get_outputs(
         task_prediction = prediction.astype(int)
         relevant_prob_values = (
             prob_values
-            if output_mode[pred_task] == classification and len(prob_values) > 0
+            if output_mode[pred_task] == CLASSIFICATION and len(prob_values) > 0
             else np.array([])
         )
     text_samples = text_column
     task_type = output_mode[pred_task]
-    if task_type == classification:
+    if task_type == CLASSIFICATION:
         return get_classification_prints(
             pred_task, task_labels, ground_truth, task_prediction, relevant_prob_values
         )
 
-    elif task_type == tagging:
+    elif task_type == TAGGING:
         return get_tagging_prints(
             character_level,
             pred_task,
@@ -347,7 +340,7 @@ def get_outputs(
             text_samples,
             word_ids,
         )
-    elif task_type == relex:
+    elif task_type == RELEX:
         return get_relex_prints(
             pred_task, task_labels, ground_truth, task_prediction, word_ids
         )
