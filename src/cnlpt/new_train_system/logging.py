@@ -8,6 +8,7 @@ logger = logging.getLogger("cnlp_train_system")
 
 
 def configure_logger_for_training(training_args: CnlpTrainingArguments):
+    assert training_args.output_dir is not None
     log_file = os.path.join(training_args.output_dir, "train_system.log")
     level = "INFO" if training_args.local_rank in (-1, 0) else "WARNING"
     LOGGING_CONFIG = {

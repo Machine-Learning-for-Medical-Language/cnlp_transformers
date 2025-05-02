@@ -3,8 +3,8 @@ from collections.abc import Iterable
 from typing import Any, Final, Union
 
 import numpy as np
-from transformers import BatchEncoding
 from transformers.tokenization_utils import PreTrainedTokenizer
+from transformers.tokenization_utils_base import BatchEncoding
 
 from .task_info import CLASSIFICATION, RELATIONS, TAGGING, TaskInfo
 
@@ -234,15 +234,17 @@ def _get_word_ids(
         ]
     elif character_level:
         # slow tokenizers -> build your own word ids
-        special_token_ids = {
-            tokenizer.bos_token_id,
-            tokenizer.eos_token_id,
-            tokenizer.sep_token_id,
-            tokenizer.cls_token_id,
-            tokenizer.pad_token_id,
-            tokenizer.mask_token_id,
-            tokenizer.unk_token_id,
-        }
+        special_token_ids = set(
+            [
+                tokenizer.bos_token_id,
+                tokenizer.eos_token_id,
+                tokenizer.sep_token_id,
+                tokenizer.cls_token_id,
+                tokenizer.pad_token_id,
+                tokenizer.mask_token_id,
+                tokenizer.unk_token_id,
+            ]
+        )
 
         def get_word_ids(indices: Iterable[int]) -> list[Union[int, None]]:
             current = 0

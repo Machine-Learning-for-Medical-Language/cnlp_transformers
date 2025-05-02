@@ -1,5 +1,5 @@
 import numpy as np
-from transformers import AutoConfig
+from transformers.models.auto.configuration_auto import AutoConfig
 
 
 def is_cnlpt_model(model_path: str) -> bool:

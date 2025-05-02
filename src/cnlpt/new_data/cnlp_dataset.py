@@ -1,5 +1,5 @@
 from datasets import Dataset
-from transformers import PreTrainedTokenizer
+from transformers.tokenization_utils import PreTrainedTokenizer
 
 from ..args.data_args import DataTrainingArguments
 from .data_reader import CnlpDataReader
@@ -8,7 +8,10 @@ from .preprocess import preprocess_raw_data
 
 def _validate_dataset_args(args: DataTrainingArguments, hierarchical: bool):
     if hierarchical:
-        assert args.chunk_len is not None and args.num_chunks is not None
+        if args.chunk_len is None or args.num_chunks is None:
+            raise ValueError(
+                "For the hierarchical model, data_args.chunk_len and data_args.num_chunks must be specified."
+            )
         implicit_max_len = args.chunk_len * args.num_chunks
         if args.max_seq_length < implicit_max_len:
             raise ValueError(

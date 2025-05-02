@@ -27,7 +27,7 @@ dependencies = [
     "scikit-learn~=1.5.2",
     "seqeval~=1.2.2",
     "torch",
-    "transformers[torch]~=4.45",
+    "transformers[torch]~=4.51",
     "uvicorn[standard]~=0.32.0",
 ]
 

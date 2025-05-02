@@ -55,7 +55,8 @@ def validate_args(
     training_args: CnlpTrainingArguments,
 ):
     if (
-        os.path.exists(training_args.output_dir)
+        training_args.output_dir is not None
+        and os.path.exists(training_args.output_dir)
         and os.listdir(training_args.output_dir)
         and training_args.do_train
         and not training_args.overwrite_output_dir
