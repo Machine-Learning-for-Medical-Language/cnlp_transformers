@@ -52,7 +52,7 @@ include = ["cnlpt*"]
 
 [dependency-groups]
 lint = [
-    "ruff==0.7.0", # same as in pre-commit hooks
+    "ruff==0.11.8", # same as in pre-commit hooks
 ]
 build = ["build", "pip>=21.3", "twine"]
 test = ["pytest"]
@@ -84,6 +84,7 @@ select = [
     "G",   # logging
     "FA",  # future annotations
     "PIE", # misc
+    "RUF", # misc
 ]
 
 ignore = [
