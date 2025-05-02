@@ -16,7 +16,7 @@ hooks:
 check:
 	ruff check --fix
 	ruff format
-	pre-commit run
+	pre-commit run -a
 
 .PHONY: test
 test:
