@@ -139,7 +139,7 @@ def _convert_features_to_hierarchical(
         def format_chunk(
             chunk, cls_type=cls_id, sep_type=sep_id, pad_type=pad_id, pad=True
         ):
-            formatted_chunk = [cls_type] + chunk + [sep_type]
+            formatted_chunk = [cls_type, *chunk, sep_type]
             if pad:
                 return pad_chunk(formatted_chunk, pad_type=pad_type)
             else:
@@ -181,7 +181,7 @@ def _convert_features_to_hierarchical(
             start = end
 
         def create_pad_chunk(cls_type=cls_id, sep_type=sep_id, pad_type=pad_id):
-            return pad_chunk([cls_type] + [sep_type], pad_type=pad_type)
+            return pad_chunk([cls_type, sep_type], pad_type=pad_type)
 
         # Insert an empty chunk at the beginning.
         if insert_empty_chunk_at_beginning:

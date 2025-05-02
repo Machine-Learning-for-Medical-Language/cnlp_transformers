@@ -137,7 +137,7 @@ class CnlpDataReader:
                 ) or new_label_set.issubset(existing_label_set):
                     logger.warning(
                         f'two different datasets have the same task name "{existing.name}" but not completely equal label lists: '
-                        + f"{str(sorted(existing_label_set))} vs. {str(sorted(new_label_set))}. We will merge them."
+                        + f"{sorted(existing_label_set)!s} vs. {sorted(new_label_set)!s}. We will merge them."
                     )
                     self._tasks[existing.index] = TaskInfo(
                         name=existing.name,
@@ -148,7 +148,7 @@ class CnlpDataReader:
                 else:
                     raise ValueError(
                         f"the task {existing.name} has disjoint sets of labels in different datasets: "
-                        + f"{str(sorted(existing_label_set))} vs. {str(sorted(new_label_set))}"
+                        + f"{sorted(existing_label_set)!s} vs. {sorted(new_label_set)!s}"
                     )
 
         # ensure all splits have all columns
