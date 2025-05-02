@@ -234,7 +234,7 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
     rel_predictions = np.argmax(output.predictions[task_order["tlinkx"]], axis=3)
     rel_inds = np.where(rel_predictions != RELATION_LABEL_DICT["None"])
 
-    logging.debug(f"Found relation indices: {str(rel_inds)}")
+    logging.debug(f"Found relation indices: {rel_inds!s}")
 
     rels_by_sent = {}
     for rel_num in range(len(rel_inds[0])):
@@ -289,11 +289,10 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
                     )
                 except Exception as e:
                     print(
-                        "exception thrown when sent_ind=%d and word_pos_idx=%d"
-                        % (sent_ind, word_pos_idx)
+                        f"exception thrown when sent_ind={sent_ind} and word_pos_idx={word_pos_idx}"
                     )
                     print(
-                        f"prediction is {str(event_predictions[sent_ind][word_pos_idx])}"
+                        f"prediction is {event_predictions[sent_ind][word_pos_idx]!s}"
                     )
                     raise e
 
@@ -335,16 +334,16 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
             sent_timexes = timex_results[-1]
             for timex_ind, timex in enumerate(sent_timexes):
                 if timex.begin == arg1_ind:
-                    arg1 = "TIMEX-%d" % timex_ind
+                    arg1 = f"TIMEX-{timex_ind}"
                 if timex.begin == arg2_ind:
-                    arg2 = "TIMEX-%d" % timex_ind
+                    arg2 = f"TIMEX-{timex_ind}"
 
             sent_events = event_results[-1]
             for event_ind, event in enumerate(sent_events):
                 if event.begin == arg1_ind:
-                    arg1 = "EVENT-%d" % event_ind
+                    arg1 = f"EVENT-{event_ind}"
                 if event.begin == arg2_ind:
-                    arg2 = "EVENT-%d" % event_ind
+                    arg2 = f"EVENT-{event_ind}"
 
             rel = Relation(
                 arg1=arg1,

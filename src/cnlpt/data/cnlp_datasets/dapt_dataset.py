@@ -1,4 +1,5 @@
 import functools
+import operator
 
 from datasets import DatasetDict, IterableDatasetDict
 from torch.utils.data.dataset import Dataset
@@ -11,9 +12,11 @@ from ..cnlp_datasets import AutoProcessor
 
 def group_texts(chunk_size, examples):
     # Concatenate all texts
-    concatenated_examples = {k: sum(examples[k], []) for k in examples.keys()}
+    concatenated_examples = {
+        k: functools.reduce(operator.iadd, examples[k], []) for k in examples.keys()
+    }
     # Compute length of concatenated texts
-    total_length = len(concatenated_examples[list(examples.keys())[0]])
+    total_length = len(concatenated_examples[next(iter(examples.keys()))])
     # We drop the last chunk if it's smaller than chunk_size
     total_length = (total_length // chunk_size) * chunk_size
     # Split by chunks of max_len

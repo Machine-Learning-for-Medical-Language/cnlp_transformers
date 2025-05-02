@@ -63,7 +63,7 @@ def get_intersect(ls1, ls2):
     out = []
     for v, g in groupby(zip(m1, m2), lambda k: k[0][1] < k[1][0]):
         if not v:
-            ls = [*g][0]
+            ls = next(iter(g))
             inf = max(i[0] for i in ls)
             sup = min(i[1] for i in ls)
             # if inf != sup:
@@ -110,11 +110,11 @@ def order_files(file_dir):
     file_list = os.listdir(file_dir)
     # ChemProt spells it correctly and DrugProt doesn't
     abs_endings = {"abstracs", "abstracts"}
-    abs_file = [*filter(lambda s: file_type(s) in abs_endings, file_list)][0]
+    abs_file = next(filter(lambda s: file_type(s) in abs_endings, file_list))
 
-    ents_file = [*filter(lambda s: file_type(s) == "entities", file_list)][0]
+    ents_file = next(filter(lambda s: file_type(s) == "entities", file_list))
 
-    rels_file = [*filter(lambda s: file_type(s) == "relations", file_list)][0]
+    rels_file = next(filter(lambda s: file_type(s) == "relations", file_list))
 
     def full_path(fn):
         return os.path.join(file_dir, fn)
@@ -381,10 +381,11 @@ def coalesce(abs_dict, ent_dict, rel_dict, mode="drugprot"):
             e2e_cell = raw_e2e_cell if len(raw_e2e_cell) > 0 else "None"
             chemical_tags = ner_data_dict[sent_index]["CHEMICAL"]
             gene_tags = ner_data_dict[sent_index]["GENE"]
-            assert (
-                len(gene_tags.split()) == len(tok_sent.split())
-                and len(gene_tags.split()) == len(chemical_tags.split())
-            ), f"Error with lengths! \n {tok_sent} : {len(tok_sent.split())} \n {chemical_tags} : {len(chemical_tags.split())} \n {gene_tags} : {len(gene_tags.split())}"
+            assert len(gene_tags.split()) == len(tok_sent.split()) and len(
+                gene_tags.split()
+            ) == len(chemical_tags.split()), (
+                f"Error with lengths! \n {tok_sent} : {len(tok_sent.split())} \n {chemical_tags} : {len(chemical_tags.split())} \n {gene_tags} : {len(gene_tags.split())}"
+            )
             return [e2e_cell, chemical_tags, gene_tags, tok_sent]
 
         return [

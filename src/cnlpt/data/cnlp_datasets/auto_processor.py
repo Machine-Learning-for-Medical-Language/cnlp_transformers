@@ -218,8 +218,8 @@ class AutoProcessor(DataProcessor):
                 f"Data file {ext_check_file} has an extension that we cannot handle (tried csv and json)"
             )
 
-        logger.info(f"This dataset contains these tasks: {str(dataset_tasks)}")
-        logger.info(f"These tasks overlap with user input: {str(active_tasks)}")
+        logger.info(f"This dataset contains these tasks: {dataset_tasks!s}")
+        logger.info(f"These tasks overlap with user input: {active_tasks!s}")
 
         self.dataset.tasks = active_tasks
         if len(self.dataset.task_output_modes) == 0:
@@ -254,7 +254,7 @@ class AutoProcessor(DataProcessor):
         if max_train_items > 0:
             self.dataset["train"] = self.dataset["train"].select(range(max_train_items))
 
-        print("Loaded dataset has length %d" % (len(self.dataset)))
+        print(f"Loaded dataset has length {len(self.dataset)}")
 
     def get_train_examples(self):
         return self.dataset["train"]

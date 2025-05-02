@@ -162,9 +162,9 @@ def compute_disagreements(
     :return: a dictionary containing evaluation metrics
     """
 
-    assert len(preds) == len(
-        labels
-    ), f"Predictions and labels have mismatched lengths {len(preds)} and {len(labels)}"
+    assert len(preds) == len(labels), (
+        f"Predictions and labels have mismatched lengths {len(preds)} and {len(labels)}"
+    )
     if output_mode == CLASSIFICATION:
         return classification_disagreements(preds=preds, labels=labels)
     elif output_mode == TAGGING or output_mode == RELEX:
@@ -414,7 +414,7 @@ def get_tagging_prints(
 
     def dict_to_str(d: dict[str, list[Span]], tokens: list[str]) -> str:
         result = " , ".join(
-            f'{key}: "{span[2]} {token_sep.join(tokens[span[0]:span[1]])}"'
+            f'{key}: "{span[2]} {token_sep.join(tokens[span[0] : span[1]])}"'
             for key, span in flatten_dict(d)
         )
         return result

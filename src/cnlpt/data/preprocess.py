@@ -71,7 +71,7 @@ def cnlp_convert_features_to_hierarchical(
         def format_chunk(
             chunk, cls_type=cls_id, sep_type=sep_id, pad_type=pad_id, pad=True
         ):
-            formatted_chunk = [cls_type] + chunk + [sep_type]
+            formatted_chunk = [cls_type, *chunk, sep_type]
             if pad:
                 return pad_chunk(formatted_chunk, pad_type=pad_type)
             else:
@@ -112,7 +112,7 @@ def cnlp_convert_features_to_hierarchical(
             start = end
 
         def create_pad_chunk(cls_type=cls_id, sep_type=sep_id, pad_type=pad_id):
-            return pad_chunk([cls_type] + [sep_type], pad_type=pad_type)
+            return pad_chunk([cls_type, sep_type], pad_type=pad_type)
 
         # Insert an empty chunk at the beginning.
         if insert_empty_chunk_at_beginning:
@@ -281,9 +281,9 @@ def cnlp_preprocess_data(
     # (which has one label per pre-wordpiece token) and relations (which are defined as tuples which
     # contain pre-wordpiece token indices)
     if not inference:
-        assert (
-            label_lists is not None and output_modes is not None
-        ), f"label_lists {label_lists} output_modes {output_modes} must both be non-None"
+        assert label_lists is not None and output_modes is not None, (
+            f"label_lists {label_lists} output_modes {output_modes} must both be non-None"
+        )
         # Create a label map for each task in this dataset: { task1 => {label_0: 0, label_1: 1, label_2:, 2}, task2 => {label_0: 0, label_1:1} }
         label_map = {
             task: {label: i for i, label in enumerate(label_lists[task])}

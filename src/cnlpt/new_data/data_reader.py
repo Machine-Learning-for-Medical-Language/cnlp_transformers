@@ -160,7 +160,7 @@ class CnlpDataReader:
                         dataset[split] = dataset[split].add_column(
                             task.name,
                             [NONE_VALUE] * len(dataset[split]),
-                        )  # pyright: ignore[reportCallIssue]
+                        )
 
         splits: set[DatasetSplit] = self.split_names.union(new_dataset.keys())
         self.dataset = DatasetDict(
@@ -182,7 +182,7 @@ class CnlpDataReader:
             path="json",
             data_files={split: os.fspath(json_filepath)},
             field="data",
-        )  # pyright: ignore[reportAssignmentType]
+        )
 
         tasks: list[TaskInfo] = []
 
@@ -247,7 +247,7 @@ class CnlpDataReader:
             path="csv",
             sep=sep,
             data_files={split: os.fspath(csv_filepath)},
-        )  # pyright: ignore[reportAssignmentType]
+        )
         tasks = _infer_tasks(dataset[split])
         self.extend(dataset, tasks)
 

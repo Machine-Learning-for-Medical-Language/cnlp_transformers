@@ -61,8 +61,8 @@ def preprocess_raw_data(
     if not character_level:
         tokenized_input["event_mask"] = _build_event_mask_word_piece(
             tokenized_input=tokenized_input,
-            event_start_token_id=tokenizer.convert_tokens_to_ids("<e>"),  # pyright: ignore[reportArgumentType]
-            event_end_token_id=tokenizer.convert_tokens_to_ids("</e>"),  # pyright: ignore[reportArgumentType]
+            event_start_token_id=tokenizer.convert_tokens_to_ids("<e>"),
+            event_end_token_id=tokenizer.convert_tokens_to_ids("</e>"),
         )
     else:
         tokenized_input["event_mask"] = _build_event_mask_character(
@@ -73,9 +73,9 @@ def preprocess_raw_data(
             tokenized_input,
             chunk_len=chunk_len,
             num_chunks=num_chunks,
-            cls_id=tokenizer.cls_token_id,  # pyright: ignore[reportArgumentType]
-            sep_id=tokenizer.sep_token_id,  # pyright: ignore[reportArgumentType]
-            pad_id=tokenizer.pad_token_id,  # pyright: ignore[reportArgumentType]
+            cls_id=tokenizer.cls_token_id,
+            sep_id=tokenizer.sep_token_id,
+            pad_id=tokenizer.pad_token_id,
             insert_empty_chunk_at_beginning=insert_empty_chunk_at_beginning,
         )
 
@@ -110,11 +110,11 @@ def _convert_features_to_hierarchical(
         # Get feature variables
         # input_ids_, attention_mask_, token_type_ids_, event_tokens_, label_ = astuple(features)
         input_ids_ = tokenized_input.input_ids[ind]
-        attention_mask_ = tokenized_input["attention_mask"][ind]  # pyright: ignore[reportIndexIssue]
+        attention_mask_ = tokenized_input["attention_mask"][ind]
         token_type_ids_ = tokenized_input.get("token_type_ids", None)
         if token_type_ids_ is not None:
             token_type_ids_ = token_type_ids_[ind]
-        event_tokens_ = tokenized_input["event_mask"][ind]  # pyright: ignore[reportIndexIssue]
+        event_tokens_ = tokenized_input["event_mask"][ind]
 
         assert len(input_ids_) == len(attention_mask_) == len(event_tokens_)
 
@@ -215,10 +215,10 @@ def _convert_features_to_hierarchical(
                 chunks_event_tokens.append(create_pad_chunk(1, 1, 0))
 
         tokenized_input.input_ids[ind] = chunks
-        tokenized_input["attention_mask"][ind] = chunks_attention_mask  # pyright: ignore[reportIndexIssue]
+        tokenized_input["attention_mask"][ind] = chunks_attention_mask
         if token_type_ids_ is not None:
-            tokenized_input["token_type_ids"][ind] = chunks_token_type_ids  # pyright: ignore[reportIndexIssue]
-        tokenized_input["event_mask"][ind] = chunks_event_tokens  # pyright: ignore[reportIndexIssue]
+            tokenized_input["token_type_ids"][ind] = chunks_token_type_ids
+        tokenized_input["event_mask"][ind] = chunks_event_tokens
 
     return tokenized_input
 
@@ -303,7 +303,7 @@ def _tokenize_batch(
         padding=padding,
         truncation=True,
         is_split_into_words=not character_level,
-    )  # pyright: ignore[reportReturnType]
+    )
 
     tokenized_batch["word_ids"] = _get_word_ids(
         tokenizer=tokenizer,
@@ -474,7 +474,7 @@ def get_tagging_labels(
     encoded_labels: list[np.ndarray] = []
     for tags, word_ids in zip(
         (row[task.index] for row in labels),
-        tokenized_input["word_ids"],  # pyright: ignore[reportIndexIssue,reportArgumentType]
+        tokenized_input["word_ids"],
     ):
         previous_word_idx = None
         label_ids: list[int] = []
@@ -510,7 +510,7 @@ def get_relex_labels(
 
     for relations, word_ids in zip(
         (row[task.index] for row in labels),
-        tokenized_input["word_ids"],  # pyright: ignore[reportIndexIssue,reportArgumentType]
+        tokenized_input["word_ids"],
     ):
         num_relations += len(relations)
         wpi_to_tokeni = {}

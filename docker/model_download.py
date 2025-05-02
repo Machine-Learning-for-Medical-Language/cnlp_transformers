@@ -1,6 +1,7 @@
 import os
 
-from transformers import AutoConfig, AutoTokenizer
+from transformers.models.auto.configuration_auto import AutoConfig
+from transformers.models.auto.tokenization_auto import AutoTokenizer
 
 from cnlpt.models import CnlpModelForClassification, HierarchicalModel
 from cnlpt.train_system import is_hub_model

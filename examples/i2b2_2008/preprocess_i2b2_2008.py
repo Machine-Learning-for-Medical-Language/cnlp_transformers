@@ -59,14 +59,12 @@ def main(args):
         training_ids,
         training_texts,
     )
-    print(
-        "After reading training text inputs, %d unique ids found" % (len(training_ids))
-    )
+    print(f"After reading training text inputs, {len(training_ids)} unique ids found")
 
     add_notes_file(
         join(args[0], "obesity_patient_records_test.xml"), test_ids, test_texts
     )
-    print("After reading test text inputs, %d unique ids found" % (len(test_ids)))
+    print(f"After reading test text inputs, {len(test_ids)} unique ids found")
 
     add_labels_file(
         join(args[0], "obesity_standoff_annotations_training.xml"),
@@ -89,8 +87,7 @@ def main(args):
         training_labels,
     )
     print(
-        "After reading training labels, %d ids found, %d specifically we have labels for"
-        % (len(training_ids), len(training_labels))
+        f"After reading training labels, {len(training_ids)} ids found, {len(training_labels)} specifically we have labels for"
     )
 
     add_labels_file(
@@ -99,8 +96,7 @@ def main(args):
         test_labels,
     )
     print(
-        "After reading test labels, %d total ids, %d specifically we have labels for"
-        % (len(test_ids), len(test_labels))
+        f"After reading test labels, {len(test_ids)} total ids, {len(test_labels)} specifically we have labels for"
     )
 
     missing_ids = set(training_texts.keys()) - set(training_labels.keys())
