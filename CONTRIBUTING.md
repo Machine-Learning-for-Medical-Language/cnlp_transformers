@@ -168,8 +168,7 @@ the Semantic Versioning guidelines. The key points are as follows:
 
 When the codebase is ready for release, run `python scripts/prepare_release.py <new version number>`.
 This will walk you through the last few changes that need to be made before release,
-including updating the changelog and setting the setuptools_scm fallback version,
-and will also update the lockfile and your venv with the new package version.
+including updating the changelog and the lockfile.
 
 > [!WARNING]
 > `prepare_release.py` requires uv to update the lockfile.
