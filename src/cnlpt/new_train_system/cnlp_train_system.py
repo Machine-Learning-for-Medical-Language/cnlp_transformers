@@ -118,7 +118,7 @@ class CnlpTrainSystem:
     def _init_dataset(self):
         self.dataset = CnlpDataset(
             self.data_args,
-            tokenizer=self.tokenizer,  # pyright: ignore[reportArgumentType]
+            tokenizer=self.tokenizer,
             hierarchical=(self.model_args.model == "hier"),
         )
 
@@ -172,7 +172,7 @@ class CnlpTrainSystem:
         assert self.model_args.encoder_name is not None
         model_path = os.path.join(self.model_args.encoder_name, "pytorch_model.bin")
         if os.path.exists(model_path):
-            model.load_state_dict(torch.load(model_path))  # pyright: ignore[reportAttributeAccessIssue]
+            model.load_state_dict(torch.load(model_path))
 
         self.model = cast(CnnSentenceClassifier, model)
 
@@ -188,7 +188,7 @@ class CnlpTrainSystem:
         assert self.model_args.encoder_name is not None
         model_path = os.path.join(self.model_args.encoder_name, "pytorch_model.bin")
         if os.path.exists(model_path):
-            model.load_state_dict(torch.load(model_path))  # pyright: ignore[reportAttributeAccessIssue]
+            model.load_state_dict(torch.load(model_path))
 
         self.model = cast(LstmSentenceClassifier, model)
 
@@ -277,7 +277,7 @@ class CnlpTrainSystem:
                 model.remove_task_classifiers()
                 for task in self.dataset.tasks:
                     # FIXME(ian) why is this a list and not a dict??
-                    model.add_task_classifier(task.name, list(task.labels))  # pyright: ignore[reportArgumentType]
+                    model.add_task_classifier(task.name, list(task.labels))
 
             # TODO(ian) as far as I can tell, this was always just None?
             model.set_class_weights(None)

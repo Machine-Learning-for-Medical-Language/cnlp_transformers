@@ -3,21 +3,17 @@ import os
 from typing import Literal
 
 import torch
-import torch.backends
-import torch.backends.mps
 from datasets import Dataset
 from pydantic import BaseModel
+from transformers.hf_argparser import HfArgumentParser
 
 # Modeling imports
-from transformers import (
-    AutoConfig,
-    AutoModel,
-    AutoTokenizer,
-    HfArgumentParser,
-    Trainer,
-    TrainingArguments,
-)
+from transformers.models.auto.configuration_auto import AutoConfig
+from transformers.models.auto.modeling_auto import AutoModel
+from transformers.models.auto.tokenization_auto import AutoTokenizer
 from transformers.tokenization_utils import PreTrainedTokenizer
+from transformers.trainer import Trainer
+from transformers.training_args import TrainingArguments
 
 from ..data.preprocess import cnlp_preprocess_data
 from ..models import CnlpConfig
@@ -82,8 +78,11 @@ def create_instance_string(doc_text: str, offsets: list[int]):
 
 
 def resolve_device(
-    device: Literal["cuda", "mps", "cpu", "auto"],
+    device: str,
 ) -> Literal["cuda", "mps", "cpu"]:
+    device = device.lower()
+    if device not in ("cuda", "mps", "cpu", "auto"):
+        raise ValueError(f"invalid device {device}")
     if device == "auto":
         if torch.cuda.is_available():
             device = "cuda"

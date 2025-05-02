@@ -244,8 +244,8 @@ class CnlpConfig(PretrainedConfig):
         tagger: dict[str, bool] = {},
         relations: dict[str, bool] = {},
         use_prior_tasks: bool = False,
-        hier_head_config: dict[str, Any] = None,
-        label_dictionary: dict[str, list[str]] = None,
+        hier_head_config: Union[dict[str, Any], None] = None,
+        label_dictionary: Union[dict[str, list[str]], None] = None,
         character_level: bool = False,
         **kwargs,
     ):
@@ -344,8 +344,7 @@ class CnlpModelForClassification(PreTrainedModel):
 
         if config.layer > self.num_layers:
             raise ValueError(
-                "The layer specified (%d) is too big for the specified encoder which has %d layers"
-                % (config.layer, self.num_layers)
+                f"The layer specified ({config.layer}) is too big for the specified encoder which has {self.num_layers} layers"
             )
 
         if freeze > 0:
@@ -438,7 +437,7 @@ class CnlpModelForClassification(PreTrainedModel):
                     )  # concatenate the  relation matrix with the sequence matrix
                 else:
                     logger.warning(
-                        f"It is not implemented to add a task of shape {str(prior_task_logits.shape)} to a relation matrix"
+                        f"It is not implemented to add a task of shape {prior_task_logits.shape!s} to a relation matrix"
                     )
             elif len(features.shape) == 3:
                 # sequence

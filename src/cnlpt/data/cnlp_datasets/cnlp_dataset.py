@@ -146,11 +146,11 @@ class ClinicalNlpDataset(Dataset):
                 old_labels = set(self.tasks_to_labels[task])
                 if new_labels.isdisjoint(old_labels):
                     raise Exception(
-                        f"The same task name has disjoint sets of labels in different dataset: {str(old_labels)} vs. {str(new_labels)}"
+                        f"The same task name has disjoint sets of labels in different dataset: {old_labels!s} vs. {new_labels!s}"
                     )
                 elif new_labels != old_labels:
                     logger.warning(
-                        f"Two different datasets have the same task name but not completely equal label lists: {str(old_labels)} vs. {str(new_labels)}. We will merge them."
+                        f"Two different datasets have the same task name but not completely equal label lists: {old_labels!s} vs. {new_labels!s}. We will merge them."
                     )
                     self.tasks_to_labels[task] = list(old_labels.union(new_labels))
                 else:

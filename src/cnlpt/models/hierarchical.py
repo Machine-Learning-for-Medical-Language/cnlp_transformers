@@ -211,9 +211,9 @@ class HierarchicalModel(PreTrainedModel):
 
         self.config = cast(CnlpConfig, self.config)  # for PyCharm
 
-        assert (
-            self.config.hier_head_config is not None
-        ), "Hierarchical model is being instantiated with no hierarchical head config"
+        assert self.config.hier_head_config is not None, (
+            "Hierarchical model is being instantiated with no hierarchical head config"
+        )
 
         encoder_config = AutoConfig.from_pretrained(self.config.encoder_name)
         encoder_config.vocab_size = self.config.vocab_size
@@ -225,8 +225,7 @@ class HierarchicalModel(PreTrainedModel):
         transformers.logging.set_verbosity_warning()
         if self.config.layer > self.config.hier_head_config["n_layers"]:
             raise ValueError(
-                "The layer specified (%d) is too big for the specified chunk transformer which has %d layers"
-                % (self.config.layer, self.config.hier_head_config["n_layers"])
+                f"The layer specified ({self.config.layer}) is too big for the specified chunk transformer which has {self.config.hier_head_config['n_layers']} layers"
             )
 
         if self.config.layer < 0:
@@ -235,8 +234,7 @@ class HierarchicalModel(PreTrainedModel):
             )
             if self.layer < 0:
                 raise ValueError(
-                    "The layer specified (%d) is a negative value which is larger than the actual number of layers %d"
-                    % (self.config.layer, self.config.hier_head_config["n_layers"])
+                    f"The layer specified ({self.config.layer}) is a negative value which is larger than the actual number of layers {self.config.hier_head_config['n_layers']}"
                 )
         else:
             self.layer = self.config.layer
@@ -282,7 +280,7 @@ class HierarchicalModel(PreTrainedModel):
         self.label_dictionary = config.label_dictionary
         self.set_class_weights(class_weights)
 
-    def remove_task_classifiers(self, tasks: list[str] = None):
+    def remove_task_classifiers(self, tasks: Union[list[str], None] = None):
         if tasks is None:
             self.classifiers = nn.ModuleDict()
             self.tasks = []

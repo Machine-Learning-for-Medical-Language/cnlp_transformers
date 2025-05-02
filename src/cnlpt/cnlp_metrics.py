@@ -202,9 +202,9 @@ def cnlp_compute_metrics(
     :return: a dictionary containing evaluation metrics
     """
 
-    assert len(preds) == len(
-        labels
-    ), f"Predictions and labels have mismatched lengths {len(preds)} and {len(labels)}"
+    assert len(preds) == len(labels), (
+        f"Predictions and labels have mismatched lengths {len(preds)} and {len(labels)}"
+    )
     if output_mode == CLASSIFICATION:
         return acc_and_f1(preds=preds, labels=labels)
     elif output_mode == TAGGING:

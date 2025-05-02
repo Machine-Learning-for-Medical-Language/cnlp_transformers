@@ -18,7 +18,7 @@ def _cast_dataclasses_to_args(
 
 def _get_args_parser():
     return HfArgumentParser(
-        (ModelArguments, DataTrainingArguments, CnlpTrainingArguments)  # pyright: ignore[reportArgumentType]
+        (ModelArguments, DataTrainingArguments, CnlpTrainingArguments)
     )
 
 

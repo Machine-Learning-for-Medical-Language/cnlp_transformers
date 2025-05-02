@@ -8,8 +8,8 @@ from .model_args import ModelArguments
 from .training_args import CnlpTrainingArguments
 
 __all__ = [
+    "CnlpTrainingArguments",
     "DaptArguments",
     "DataTrainingArguments",
     "ModelArguments",
-    "CnlpTrainingArguments",
 ]
