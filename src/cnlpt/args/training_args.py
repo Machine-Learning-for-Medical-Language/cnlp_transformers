@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Union
 
-from transformers import TrainingArguments
+from transformers.training_args import TrainingArguments
 
 
 @dataclass

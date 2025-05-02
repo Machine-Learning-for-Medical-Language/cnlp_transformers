@@ -1,4 +1,3 @@
-import itertools
 import json
 import os
 from collections.abc import Iterable
@@ -50,17 +49,33 @@ def _infer_tasks(dataset: Dataset) -> list[TaskInfo]:
 
     column_names = [c for c in dataset.column_names if c not in RESERVED_COLUMN_NAMES]
     for i, column_name in enumerate(column_names):
-        labels = set(sorted(str(label) for label in dataset[column_name]))
-        task_type = _infer_task_type_from_labels(labels)
-
-        if task_type == TAGGING:
-            labels = set(itertools.chain(*[ls.split(" ") for ls in labels]))
+        raw_labels = set(str(label) for label in dataset[column_name])
+        task_type = _infer_task_type_from_labels(raw_labels)
+        labels = _get_sorted_label_set(raw_labels, task_type)
 
         tasks.append(
             TaskInfo(name=column_name, type=task_type, index=i, labels=tuple(labels))
         )
 
     return tasks
+
+
+def _get_sorted_label_set(all_raw_labels: Iterable[str], task_type: TaskType):
+    if task_type == CLASSIFICATION:
+        label_set = set(all_raw_labels)
+    elif task_type == TAGGING:
+        joined = " ".join(all_raw_labels)
+        label_set = set(joined.split(" "))
+    elif task_type == RELATIONS:
+        joined = " , ".join(all_raw_labels)
+        label_set = set(
+            rel_or_none.removesuffix(")").split(",")[-1]
+            for rel_or_none in joined.split(" , ")
+        )
+    else:
+        raise ValueError(f"invalid task type {TaskType}")
+
+    return sorted(set(label_set))
 
 
 class CnlpDataReader:
@@ -201,14 +216,14 @@ class CnlpDataReader:
                     raise ValueError(
                         f'task "{task}" found in metadata but not in dataset for {json_filepath}'
                     )
-
-                label_set = set(dataset[split][task_name])
+                task_type = get_task_type(task["output_mode"])
+                label_set = _get_sorted_label_set(dataset[split][task_name], task_type)
                 tasks.append(
                     TaskInfo(
                         name=task_name,
-                        type=get_task_type(task["output_mode"]),
+                        type=task_type,
                         index=i,
-                        labels=tuple(sorted(label_set)),
+                        labels=tuple(label_set),
                     )
                 )
         else:

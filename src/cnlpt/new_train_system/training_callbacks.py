@@ -1,20 +1,15 @@
 # ruff: noqa: ARG002
-import json
-import os
 from collections.abc import Iterable
 from dataclasses import asdict
 from typing import Any, Final, Union
 
 import numpy as np
-from transformers import (
-    PreTrainedTokenizer,
-    PreTrainedTokenizerFast,
-    Trainer,
+from transformers.trainer_callback import (
     TrainerCallback,
     TrainerControl,
     TrainerState,
-    TrainingArguments,
 )
+from transformers.training_args import TrainingArguments
 
 from ..args import CnlpTrainingArguments, DataTrainingArguments, ModelArguments
 from ..new_data.task_info import TaskInfo
@@ -27,40 +22,18 @@ DEFAULT_SELECTION_METRIC: Final = "f1"
 class SaveBestModelCallback(TrainerCallback):
     def __init__(
         self,
-        model_args: ModelArguments,
-        tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
         tasks: Iterable[TaskInfo],
         selection_metric: Union[str, None],
         selection_labels: list[str],
-        output_dir: str,
     ):
-        self.model_args = model_args
-        self.tokenizer = tokenizer
         self.tasks = tasks
         self.selection_metric = selection_metric or DEFAULT_SELECTION_METRIC
         self.selection_labels = selection_labels
-        self.output_dir = output_dir
 
-        self.trainer: Trainer | None = None
         self.best_score: float | None = None
         self.latest_metrics: Union[dict[str, dict[str, Any]], None] = None
         self.best_metrics: Union[dict[str, dict[str, Any]], None] = None
         self.best_step: Union[int, None] = None
-
-    def on_train_begin(
-        self,
-        args: TrainingArguments,
-        state: TrainerState,
-        control: TrainerControl,
-        **kwargs,
-    ):
-        if self.trainer is None:
-            raise RuntimeError(
-                "the trainer instance must be passed to the callback before training using the set_trainer method in order to save the model"
-            )
-
-    def set_trainer(self, trainer: Trainer):
-        self.trainer = trainer
 
     def get_selection_score_from_metrics(self, metrics: dict[str, dict[str, Any]]):
         task_scores: list[float] = []
@@ -70,24 +43,6 @@ class SaveBestModelCallback(TrainerCallback):
             # for now, just default to average of positive and negative f1
             task_scores.append(np.mean(task_metrics[self.selection_metric]))
         return sum(task_scores) / len(task_scores)
-
-    def save_model(self):
-        assert (
-            self.trainer is not None
-        ), "error should have been raised in on_train_begin()"
-        self.trainer.save_model()
-        self.tokenizer.save_pretrained(self.output_dir)
-        if self.model_args.model in ("cnn", "lstm"):
-            with open(
-                os.path.join(self.output_dir, "config.json"),
-                "w",
-            ) as f:
-                config_dict = self.model_args.to_dict()
-                config_dict["label_dictionary"] = {
-                    task.name: list(task.labels) for task in self.tasks
-                }
-                config_dict["task_names"] = [task.name for task in self.tasks]
-                json.dump(config_dict, f)
 
     def on_evaluate(
         self,
@@ -109,7 +64,7 @@ class SaveBestModelCallback(TrainerCallback):
 
         selection_score = self.get_selection_score_from_metrics(metrics)
         logger.info(
-            "model selection score from eval (%s): %s",
+            "Model selection score from eval (%s): %s",
             self.selection_metric,
             selection_score,
         )
@@ -118,8 +73,7 @@ class SaveBestModelCallback(TrainerCallback):
             self.best_score = selection_score
             self.best_metrics = metrics
             self.best_step = state.global_step
-            self.save_model()
-            logger.info("new best model saved")
+            control.should_save = True
 
 
 class DisplayCallback(TrainerCallback):
@@ -186,11 +140,18 @@ class DisplayCallback(TrainerCallback):
 
         if self.epoch_task is not None:
             cur_epoch, epoch_progress = divmod(state.global_step, steps_per_epoch)
+
+            # unless we're just starting (N == 0), prefer rendering
+            # 100% for epoch N instead of 0% for epoch N + 1
+            if epoch_progress == 0 and cur_epoch > 0:
+                epoch_progress = steps_per_epoch
+                cur_epoch -= 1
+
             self.progress.update(
                 task_id=self.epoch_task,
                 total=steps_per_epoch,
                 completed=int(epoch_progress),
-                description=f"Epoch {int(cur_epoch) + 1}/{int(args.num_train_epochs)}",
+                description=f"Epoch {int(cur_epoch + 1)}/{int(args.num_train_epochs)}",
             )
 
         self.display.update()
@@ -294,3 +255,43 @@ class BasicLoggingCallback(TrainerCallback):
     ):
         if logs is not None:
             logger.info(logs)
+
+    def on_epoch_begin(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
+        if state.epoch is None:
+            return
+        logger.info("Starting epoch %s", int(state.epoch) + 1)
+
+    def on_epoch_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
+        if state.epoch is None:
+            return
+        logger.info("Epoch %s complete", int(state.epoch))
+
+    def on_train_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
+        logger.info("*** TRAINING COMPLETE ***")
+
+    def on_save(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
+        logger.info("New best model saved! Current step: %s", state.global_step)

@@ -62,6 +62,8 @@ class TrainSystemDisplay:
 
     @property
     def subtitle(self):
+        if self.training_args.output_dir is None:
+            return "?"
         return os.path.abspath(self.training_args.output_dir)
 
     def eval_metrics_table(self, metrics: Union[dict[str, Any], None]):
@@ -69,16 +71,17 @@ class TrainSystemDisplay:
             return "[dim italic]waiting for evaluation"
         grid = Table.grid(padding=(0, 1))
 
-        overall_metrics: dict[str, Any] = {}
+        general_metrics: dict[str, Any] = {}
         task_metrics: dict[str, dict[str, Any]] = {}
 
         for k, v in metrics.items():
             if isinstance(v, dict):
                 task_metrics[k] = v
             else:
-                overall_metrics[k] = v
+                general_metrics[k] = v
 
-        task_metrics["overall_metrics"] = overall_metrics
+        general_metrics = {"epoch": general_metrics.pop("epoch")} | general_metrics
+        task_metrics = {"general_metrics": general_metrics} | task_metrics
 
         for task_name, m in task_metrics.items():
             items = []
@@ -87,7 +90,7 @@ class TrainSystemDisplay:
                     f"[json.key]{k}[/json.key]: [json.number]{_val_fmt(v)}[/json.number]"
                 )
             color = (
-                "[bold magenta]" if task_name == "overall_metrics" else "[bold yellow]"
+                "[bold magenta]" if task_name == "general_metrics" else "[bold yellow]"
             )
             grid.add_row(
                 f"{color}{task_name}",
@@ -127,6 +130,7 @@ class TrainSystemDisplay:
         meta.add_column()
         meta.add_row("Dataset:", ", ".join(self.data_args.data_dir))
         meta.add_row("Encoder:", str(self.model_args.encoder_name))
+        meta.add_row("Model type:", str(self.model_args.model))
 
         stats = Table.grid(padding=(1, 1))
         stats.add_column(style="blue", justify="right")

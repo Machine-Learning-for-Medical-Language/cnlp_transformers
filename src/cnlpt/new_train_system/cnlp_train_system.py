@@ -8,16 +8,12 @@ from typing import Any, Union, cast
 import numpy as np
 import numpy.typing as npt
 import torch
-from transformers import (
-    AutoConfig,
-    AutoModel,
-    AutoTokenizer,
-    EvalPrediction,
-    IntervalStrategy,
-    PrinterCallback,
-    Trainer,
-    set_seed,
-)
+from transformers.models.auto.configuration_auto import AutoConfig
+from transformers.models.auto.modeling_auto import AutoModel
+from transformers.models.auto.tokenization_auto import AutoTokenizer
+from transformers.trainer import Trainer
+from transformers.trainer_callback import PrinterCallback, TrainerCallback
+from transformers.trainer_utils import EvalPrediction, IntervalStrategy, set_seed
 
 from ..args import CnlpTrainingArguments, DataTrainingArguments, ModelArguments
 from ..models import CnlpConfig, CnlpModelForClassification, HierarchicalModel
@@ -165,7 +161,7 @@ class CnlpTrainSystem:
         model = CnnSentenceClassifier(
             len(self.tokenizer),
             task_names=[t.name for t in self.dataset.tasks],
-            num_labels_dict=[len(t.labels) for t in self.dataset.tasks],
+            num_labels_dict={t.name: len(t.labels) for t in self.dataset.tasks},
             embed_dims=self.model_args.cnn_embed_dim,
             num_filters=self.model_args.cnn_num_filters,
             filters=self.model_args.cnn_filter_sizes,
@@ -184,7 +180,7 @@ class CnlpTrainSystem:
         model = LstmSentenceClassifier(
             len(self.tokenizer),
             task_names=[t.name for t in self.dataset.tasks],
-            num_labels_dict=[len(t.labels) for t in self.dataset.tasks],
+            num_labels_dict={t.name: len(t.labels) for t in self.dataset.tasks},
             embed_dims=self.model_args.lstm_embed_dim,
             hidden_size=self.model_args.lstm_hidden_size,
         )
@@ -401,16 +397,21 @@ class CnlpTrainSystem:
             self.training_args.eval_steps = (
                 steps_per_epoch // self.training_args.evals_per_epoch
             )
-            self.training_args.evaluation_strategy = (
-                self.training_args.eval_strategy
-            ) = IntervalStrategy.STEPS
+            self.training_args.eval_strategy = self.training_args.eval_strategy = (
+                IntervalStrategy.STEPS
+            )
             # This will save model per epoch
             # training_args.save_strategy = IntervalStrategy.EPOCH
         elif self.training_args.do_eval:
             logger.info("Evaluation strategy not specified so evaluating every epoch")
-            self.training_args.evaluation_strategy = (
-                self.training_args.eval_strategy
-            ) = IntervalStrategy.EPOCH
+            self.training_args.eval_strategy = self.training_args.eval_strategy = (
+                IntervalStrategy.EPOCH
+            )
+
+        if torch.mps.is_available():
+            # pin_memory is unsupported on MPS, but defaults to True,
+            # so we'll explicitly turn it off to avoid a warning.
+            self.training_args.dataloader_pin_memory = False
 
     def _extract_task_predictions(self, p: EvalPrediction):
         task_predictions: list[TaskEvalPrediction] = []
@@ -499,7 +500,7 @@ class CnlpTrainSystem:
         return metrics
 
     def train(self, rich_display: bool = True):
-        trainer_callbacks = [
+        trainer_callbacks: list[TrainerCallback] = [
             BasicLoggingCallback(self.model_args, self.data_args, self.training_args)
         ]
 
@@ -508,13 +509,11 @@ class CnlpTrainSystem:
             selection_labels = [selection_labels]
         selection_labels = [str(label) for label in selection_labels]
 
+        assert self.training_args.output_dir is not None
         save_best_model_callback = SaveBestModelCallback(
-            model_args=self.model_args,
-            tokenizer=self.tokenizer,
             tasks=self.dataset.tasks,
             selection_metric=self.training_args.model_selection_score,
             selection_labels=selection_labels,
-            output_dir=self.training_args.output_dir,
         )
 
         trainer_callbacks.append(save_best_model_callback)
@@ -542,12 +541,6 @@ class CnlpTrainSystem:
 
             if rich_display:
                 trainer.remove_callback(PrinterCallback)
-
-            # The callback needs to be passed the trainer instance
-            # so it can save the model from inside the callback.
-            # As far as I (Ian) can tell, this is the only way for the
-            # callback to call methods on the trainer.
-            save_best_model_callback.set_trainer(trainer)
 
             trainer.train()
 
