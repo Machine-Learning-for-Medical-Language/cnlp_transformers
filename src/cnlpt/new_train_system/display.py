@@ -64,7 +64,10 @@ class TrainSystemDisplay:
     def subtitle(self):
         if self.training_args.output_dir is None:
             return "?"
-        return os.path.abspath(self.training_args.output_dir)
+        logfile = os.path.join(
+            os.path.abspath(self.training_args.output_dir), "train_system.log"
+        )
+        return f"Training log: {logfile}"
 
     def eval_metrics_table(self, metrics: Union[dict[str, Any], None]):
         if metrics is None:
@@ -128,6 +131,12 @@ class TrainSystemDisplay:
         meta = Table.grid(padding=(0, 1))
         meta.add_column(style="blue", justify="right")
         meta.add_column()
+        out_dir_abspath = (
+            os.path.abspath(self.training_args.output_dir)
+            if self.training_args.output_dir is not None
+            else "?"
+        )
+        meta.add_row("Output dir:", out_dir_abspath)
         meta.add_row("Dataset:", ", ".join(self.data_args.data_dir))
         meta.add_row("Encoder:", str(self.model_args.encoder_name))
         meta.add_row("Model type:", str(self.model_args.model))
