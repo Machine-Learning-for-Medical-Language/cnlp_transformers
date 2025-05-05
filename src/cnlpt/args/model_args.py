@@ -6,7 +6,7 @@ cnlpt_models = ["cnn", "lstm", "hier", "cnlpt"]
 
 
 @dataclass
-class ModelArguments:
+class CnlpModelArguments:
     """
     Arguments pertaining to which model/config/tokenizer we are going to fine-tune from.
     See all possible arguments by passing the ``--help`` flag to this script.

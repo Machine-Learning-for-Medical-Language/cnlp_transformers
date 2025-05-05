@@ -5,7 +5,7 @@ import datasets
 from torch.utils.data.dataset import Dataset
 from transformers.tokenization_utils import PreTrainedTokenizer
 
-from ...args import DataTrainingArguments
+from ...args import CnlpDataArguments
 from ...data.cnlp_datasets import AutoProcessor
 from ...data.tasks import CLASSIFICATION, RELEX, TAGGING, TaskType
 from ..features import HierarchicalInputFeatures, InputFeatures
@@ -31,12 +31,12 @@ class ClinicalNlpDataset(Dataset):
         model (:class:`cnlpt.HierarchicalTransformer.HierarchicalModel`)
     """
 
-    args: DataTrainingArguments
+    args: CnlpDataArguments
     features: list[InputFeatures]
 
     def __init__(
         self,
-        args: DataTrainingArguments,
+        args: CnlpDataArguments,
         tokenizer: PreTrainedTokenizer,
         limit_length: Union[int, None] = None,
         cache_dir: Union[str, None] = None,

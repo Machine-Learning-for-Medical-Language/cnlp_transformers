@@ -1,12 +1,12 @@
 from datasets import Dataset
 from transformers.tokenization_utils import PreTrainedTokenizer
 
-from ..args.data_args import DataTrainingArguments
+from ..args.data_args import CnlpDataArguments
 from .data_reader import CnlpDataReader
 from .preprocess import preprocess_raw_data
 
 
-def _validate_dataset_args(args: DataTrainingArguments, hierarchical: bool):
+def _validate_dataset_args(args: CnlpDataArguments, hierarchical: bool):
     if hierarchical:
         if args.chunk_len is None or args.num_chunks is None:
             raise ValueError(
@@ -22,7 +22,7 @@ def _validate_dataset_args(args: DataTrainingArguments, hierarchical: bool):
 class CnlpDataset:
     def __init__(
         self,
-        args: DataTrainingArguments,
+        args: CnlpDataArguments,
         tokenizer: PreTrainedTokenizer,
         hierarchical: bool = False,
     ):

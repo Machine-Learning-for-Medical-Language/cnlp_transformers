@@ -4,22 +4,22 @@ from typing import Any, Union, cast
 
 from transformers.hf_argparser import DataClassType, HfArgumentParser
 
-from ..args import CnlpTrainingArguments, DataTrainingArguments, ModelArguments
+from ..args import CnlpDataArguments, CnlpModelArguments, CnlpTrainingArguments
 from .logging import logger
 
 
 def _cast_dataclasses_to_args(
     dataclasses: tuple[Any, ...],
-) -> tuple[ModelArguments, DataTrainingArguments, CnlpTrainingArguments]:
+) -> tuple[CnlpModelArguments, CnlpDataArguments, CnlpTrainingArguments]:
     return cast(
-        tuple[ModelArguments, DataTrainingArguments, CnlpTrainingArguments], dataclasses
+        tuple[CnlpModelArguments, CnlpDataArguments, CnlpTrainingArguments], dataclasses
     )
 
 
 def _get_args_parser():
     args_dataclasses = cast(
         tuple[DataClassType, ...],
-        (ModelArguments, DataTrainingArguments, CnlpTrainingArguments),
+        (CnlpModelArguments, CnlpDataArguments, CnlpTrainingArguments),
     )
     return HfArgumentParser(args_dataclasses)
 
@@ -52,8 +52,8 @@ def parse_args_from_argv(
 
 
 def validate_args(
-    model_args: ModelArguments,
-    data_args: DataTrainingArguments,
+    model_args: CnlpModelArguments,
+    data_args: CnlpDataArguments,
     training_args: CnlpTrainingArguments,
 ):
     if (

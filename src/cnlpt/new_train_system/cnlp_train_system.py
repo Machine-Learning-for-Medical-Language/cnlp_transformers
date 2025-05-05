@@ -15,7 +15,7 @@ from transformers.trainer import Trainer
 from transformers.trainer_callback import PrinterCallback, TrainerCallback
 from transformers.trainer_utils import EvalPrediction, IntervalStrategy, set_seed
 
-from ..args import CnlpTrainingArguments, DataTrainingArguments, ModelArguments
+from ..args import CnlpDataArguments, CnlpModelArguments, CnlpTrainingArguments
 from ..models import CnlpConfig, CnlpModelForClassification, HierarchicalModel
 from ..models.baseline import CnnSentenceClassifier, LstmSentenceClassifier
 from ..new_data.cnlp_dataset import CnlpDataset
@@ -49,8 +49,8 @@ class CnlpTrainSystem:
     def __init__(
         self,
         *,
-        model_args: ModelArguments,
-        data_args: DataTrainingArguments,
+        model_args: CnlpModelArguments,
+        data_args: CnlpDataArguments,
         training_args: CnlpTrainingArguments,
     ):
         configure_logger_for_training(training_args)
