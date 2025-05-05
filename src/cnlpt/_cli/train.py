@@ -1,9 +1,5 @@
-import sys
-
 import click
 
-# from ..train_system import __file__ as train_system_file
-# from ..train_system import main as train_system
 from ..new_train_system.cnlp_train_system import main as train_system
 
 
@@ -14,8 +10,7 @@ from ..new_train_system.cnlp_train_system import main as train_system
     ),
 )
 @click.argument("train_args", nargs=-1, type=click.UNPROCESSED)
-def train_command(train_args):
+def train_command(train_args: list[str]):
     "Fine-tune models for clinical NLP."
 
-    sys.argv = list(train_args)
-    train_system()
+    train_system(argv=list(train_args))
