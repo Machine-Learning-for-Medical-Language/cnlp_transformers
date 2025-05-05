@@ -543,8 +543,15 @@ class CnlpTrainSystem:
 
             trainer.train()
 
-    def eval(self):
-        raise NotImplementedError("eval not yet implemented")
+    def evaluate(self):
+        # TODO(ian)
+        # This method should just run a single evaluation (on the validation data) with the current model.
+        pass
+
+    def predict(self):
+        # TODO(ian)
+        # This method should run predictions on the test data with the current model.
+        pass
 
 
 def main(argv: Union[list[str], None] = None):
