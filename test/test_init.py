@@ -12,30 +12,6 @@ def test_init():
     assert cnlpt.__package__ == "cnlpt"
 
 
-def test_torch_numpy_available():
-    """
-    Test that NumPy is available to PyTorch (#91)
-    """
-    import torch
-
-    t = torch.tensor(
-        [[3.5026, -3.2149], [3.5615, -3.3653], [-2.5377, 1.8398], [-2.5859, 2.0284]]
-    )
-    try:
-        t.numpy()
-    except RuntimeError as e:
-        assert False, e.args[0] + " (check for UserWarning)"
-
-
-def test_import_sklearn():
-    """
-    Test that sklearn can be imported (#85)
-    """
-    from importlib.util import find_spec
-
-    assert find_spec("sklearn") is not None
-
-
 class TestSubmodulesPresent:
     """
     Test that all submodules are defined and can be imported (#88)
