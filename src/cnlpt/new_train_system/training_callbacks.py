@@ -11,7 +11,7 @@ from transformers.trainer_callback import (
 )
 from transformers.training_args import TrainingArguments
 
-from ..args import CnlpTrainingArguments, DataTrainingArguments, ModelArguments
+from ..args import CnlpDataArguments, CnlpModelArguments, CnlpTrainingArguments
 from ..new_data.task_info import TaskInfo
 from .display import TrainSystemDisplay
 from .logging import logger
@@ -220,8 +220,8 @@ class DisplayCallback(TrainerCallback):
 class BasicLoggingCallback(TrainerCallback):
     def __init__(
         self,
-        model_args: ModelArguments,
-        data_args: DataTrainingArguments,
+        model_args: CnlpModelArguments,
+        data_args: CnlpDataArguments,
         training_args: CnlpTrainingArguments,
     ):
         self.model_args = model_args

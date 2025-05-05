@@ -45,7 +45,7 @@ from transformers import (
 from transformers.file_utils import CONFIG_NAME
 from transformers.training_args import IntervalStrategy
 
-from .args import CnlpTrainingArguments, DataTrainingArguments, ModelArguments
+from .args import CnlpDataArguments, CnlpModelArguments, CnlpTrainingArguments
 from .cnlp_metrics import cnlp_compute_metrics
 from .cnlp_predict import process_prediction, restructure_prediction, structure_labels
 from .data.cnlp_datasets import ClinicalNlpDataset
@@ -161,12 +161,12 @@ def is_external_encoder(model_name_or_path: str) -> bool:
 def parse_training_arguments(
     json_file: Union[str, None] = None,
     json_obj: Union[dict[str, Any], None] = None,
-) -> tuple[ModelArguments, DataTrainingArguments, CnlpTrainingArguments]:
+) -> tuple[CnlpModelArguments, CnlpDataArguments, CnlpTrainingArguments]:
     parser = HfArgumentParser(
-        (ModelArguments, DataTrainingArguments, CnlpTrainingArguments)
+        (CnlpModelArguments, CnlpDataArguments, CnlpTrainingArguments)
     )
-    model_args: ModelArguments
-    data_args: DataTrainingArguments
+    model_args: CnlpModelArguments
+    data_args: CnlpDataArguments
     training_args: CnlpTrainingArguments
 
     if json_file is not None and json_obj is not None:
@@ -226,8 +226,8 @@ def configure_logger(training_args: CnlpTrainingArguments):
 
 
 def init_tokenizer(
-    model_args: ModelArguments,
-    data_args: DataTrainingArguments,
+    model_args: CnlpModelArguments,
+    data_args: CnlpDataArguments,
     training_args: CnlpTrainingArguments,
 ):
     return AutoTokenizer.from_pretrained(
@@ -266,7 +266,7 @@ class TaskMaps:
 
 
 def extract_task_maps(
-    dataset: ClinicalNlpDataset, data_args: DataTrainingArguments
+    dataset: ClinicalNlpDataset, data_args: CnlpDataArguments
 ) -> TaskMaps:
     try:
         task_names = (
@@ -321,8 +321,8 @@ def get_class_weights(
 
 
 def load_model(
-    model_args: ModelArguments,
-    data_args: DataTrainingArguments,
+    model_args: CnlpModelArguments,
+    data_args: CnlpDataArguments,
     training_args: CnlpTrainingArguments,
     tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
     dataset: ClinicalNlpDataset,

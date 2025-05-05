@@ -3,7 +3,7 @@ from typing import Union
 
 
 @dataclass
-class DataTrainingArguments:
+class CnlpDataArguments:
     """
     Arguments pertaining to what data we are going to input our model for training and eval.
 

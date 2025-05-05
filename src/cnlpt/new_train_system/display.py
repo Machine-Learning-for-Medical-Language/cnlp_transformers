@@ -14,7 +14,7 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from ..args import CnlpTrainingArguments, DataTrainingArguments, ModelArguments
+from ..args import CnlpDataArguments, CnlpModelArguments, CnlpTrainingArguments
 
 console = Console()
 
@@ -32,8 +32,8 @@ def _val_fmt(x):
 class TrainSystemDisplay:
     def __init__(
         self,
-        model_args: ModelArguments,
-        data_args: DataTrainingArguments,
+        model_args: CnlpModelArguments,
+        data_args: CnlpDataArguments,
         training_args: CnlpTrainingArguments,
     ):
         self.model_args = model_args
