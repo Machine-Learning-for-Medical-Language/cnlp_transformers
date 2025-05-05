@@ -2,7 +2,7 @@ import os
 import sys
 from typing import Any, Union, cast
 
-from transformers.hf_argparser import HfArgumentParser
+from transformers.hf_argparser import DataClassType, HfArgumentParser
 
 from ..args import CnlpTrainingArguments, DataTrainingArguments, ModelArguments
 from .logging import logger
@@ -17,9 +17,11 @@ def _cast_dataclasses_to_args(
 
 
 def _get_args_parser():
-    return HfArgumentParser(
-        (ModelArguments, DataTrainingArguments, CnlpTrainingArguments)
+    args_dataclasses = cast(
+        tuple[DataClassType, ...],
+        (ModelArguments, DataTrainingArguments, CnlpTrainingArguments),
     )
+    return HfArgumentParser(args_dataclasses)
 
 
 def parse_args_dict(
