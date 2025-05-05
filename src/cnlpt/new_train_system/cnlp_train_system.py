@@ -547,6 +547,6 @@ class CnlpTrainSystem:
         raise NotImplementedError("eval not yet implemented")
 
 
-def main():
-    train_system = CnlpTrainSystem.from_argv()
+def main(argv: Union[list[str], None] = None):
+    train_system = CnlpTrainSystem.from_argv(argv)
     train_system.train()
