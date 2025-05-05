@@ -69,14 +69,6 @@ class CnlpTrainSystem:
         self._init_model()
         self._preprocess_training_args()
 
-        # TODO (in new eval() method)
-        # - evaluation
-
-        # TODO (in new predict() method)
-        # - prediction
-
-        # TODO run tests with new system
-
     @classmethod
     def from_json_args(cls, json_file: Union[str, os.PathLike]):
         model_args, data_args, training_args = parse_args_json_file(json_file)
