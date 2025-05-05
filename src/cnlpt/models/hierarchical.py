@@ -291,12 +291,10 @@ class HierarchicalModel(PreTrainedModel):
                 self.tasks.remove(task)
                 self.class_weights.pop(task)
 
-    def add_task_classifier(self, task_name: str, label_dictionary: dict[str, list]):
+    def add_task_classifier(self, task_name: str, task_labels: list[str]):
         self.tasks.append(task_name)
-        self.classifiers[task_name] = ClassificationHead(
-            self.config, len(label_dictionary)
-        )
-        self.label_dictionary[task_name] = label_dictionary
+        self.classifiers[task_name] = ClassificationHead(self.config, len(task_labels))
+        self.label_dictionary[task_name] = task_labels
 
     def set_class_weights(self, class_weights: Union[list[float], None] = None):
         if class_weights is None:

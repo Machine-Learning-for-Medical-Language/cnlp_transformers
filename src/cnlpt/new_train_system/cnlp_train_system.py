@@ -276,7 +276,6 @@ class CnlpTrainSystem:
             if self.model_args.ignore_existing_classifiers:
                 model.remove_task_classifiers()
                 for task in self.dataset.tasks:
-                    # FIXME(ian) why is this a list and not a dict??
                     model.add_task_classifier(task.name, list(task.labels))
 
             # TODO(ian) as far as I can tell, this was always just None?
