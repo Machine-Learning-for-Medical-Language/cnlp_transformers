@@ -13,7 +13,7 @@ import pandas as pd
 import tqdm
 from transformers import EvalPrediction
 
-from .cnlp_processors import classification, relex, tagging
+from .data.tasks import CLASSIFICATION, RELEX, TAGGING, TaskType
 
 logger = logging.getLogger(__name__)
 
@@ -32,11 +32,11 @@ Cell = tuple[int, int, int]
 Span = tuple[int, int, SpanBegin]
 
 
-logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
-    datefmt="%m/%d/%Y %H:%M:%S",
-    level=logging.INFO,
-)
+# logging.basicConfig(
+#     format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
+#     datefmt="%m/%d/%Y %H:%M:%S",
+#     level=logging.INFO,
+# )
 
 
 def simple_softmax(x: list):
@@ -48,8 +48,7 @@ def restructure_prediction(
     task_names: list[str],
     raw_prediction: EvalPrediction,
     max_seq_length: int,
-    tagger: dict[str, bool],
-    relations: dict[str, bool],
+    output_modes: dict[str, TaskType],
     output_prob: bool,
 ) -> tuple[
     dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]],
@@ -65,15 +64,14 @@ def restructure_prediction(
 
     for task_ind, task_name in enumerate(task_names):
         preds, labels, pad, prob_values = structure_labels(
-            raw_prediction,
-            task_name,
-            task_ind,
-            task_label_ind,
-            max_seq_length,
-            tagger,
-            relations,
-            task_label_to_boundaries,
-            output_prob,
+            p=raw_prediction,
+            task_name=task_name,
+            task_type=output_modes[task_name],
+            task_ind=task_ind,
+            task_label_ind=task_label_ind,
+            max_seq_length=max_seq_length,
+            task_label_to_boundaries=task_label_to_boundaries,
+            output_prob=output_prob,
         )
         task_label_ind += pad
 
@@ -87,11 +85,10 @@ def restructure_prediction(
 def structure_labels(
     p: EvalPrediction,
     task_name: str,
+    task_type: TaskType,
     task_ind: int,
     task_label_ind: int,
     max_seq_length: int,
-    tagger: dict[str, bool],
-    relations: dict[str, bool],
     task_label_to_boundaries: dict[str, tuple[int, int]],
     output_prob: bool,
 ) -> tuple[np.ndarray, np.ndarray, int, np.ndarray]:
@@ -100,10 +97,10 @@ def structure_labels(
     pad = 0
     prob_values: npt.NDArray[np.float64] = np.ndarray([])
     labels: npt.NDArray[np.int64] = np.ndarray([])
-    if tagger[task_name]:
+    if task_type == TAGGING:
         preds = np.argmax(p.predictions[task_ind], axis=2)
         # labels will be -100 where we don't need to tag
-    elif relations[task_name]:
+    elif task_type == RELEX:
         preds = np.argmax(p.predictions[task_ind], axis=3)
     else:
         preds = np.argmax(p.predictions[task_ind], axis=1)
@@ -115,7 +112,7 @@ def structure_labels(
     # for inference
     if not hasattr(p, "label_ids") or p.label_ids is None:
         return preds, np.array([]), pad, np.array([])
-    if relations[task_name]:
+    if task_type == RELEX:
         # relation labels
         labels = p.label_ids[
             :, :, task_label_ind : task_label_ind + max_seq_length
@@ -126,7 +123,7 @@ def structure_labels(
         )
         pad = max_seq_length
     elif p.label_ids.ndim == 3:
-        if tagger[task_name]:
+        if task_type == TAGGING:
             labels = p.label_ids[:, :, task_label_ind : task_label_ind + 1].squeeze()
         else:
             labels = p.label_ids[:, 0, task_label_ind].squeeze()
@@ -165,12 +162,12 @@ def compute_disagreements(
     :return: a dictionary containing evaluation metrics
     """
 
-    assert len(preds) == len(
-        labels
-    ), f"Predictions and labels have mismatched lengths {len(preds)} and {len(labels)}"
-    if output_mode == classification:
+    assert len(preds) == len(labels), (
+        f"Predictions and labels have mismatched lengths {len(preds)} and {len(labels)}"
+    )
+    if output_mode == CLASSIFICATION:
         return classification_disagreements(preds=preds, labels=labels)
-    elif output_mode == tagging or output_mode == relex:
+    elif output_mode == TAGGING or output_mode == RELEX:
         return relation_or_tagging_disagreements(preds=preds, labels=labels)
     else:
         raise Exception("As yet unsupported task in cnlpt")
@@ -226,15 +223,15 @@ def process_prediction(
     classification_tasks = (
         task_name
         for task_name in task_names
-        if output_mode[task_name] == classification
+        if output_mode[task_name] == CLASSIFICATION
     )
 
     tagging_tasks = sorted(
-        task_name for task_name in task_names if output_mode[task_name] == tagging
+        task_name for task_name in task_names if output_mode[task_name] == TAGGING
     )
 
     relex_tasks = sorted(
-        task_name for task_name in task_names if output_mode[task_name] == relex
+        task_name for task_name in task_names if output_mode[task_name] == RELEX
     )
 
     # ordering in terms of ease of reading
@@ -309,7 +306,7 @@ def get_outputs(
         if len(error_inds) > 0:
             relevant_prob_values = (
                 prob_values[error_inds]
-                if output_mode[pred_task] == classification and len(prob_values) > 0
+                if output_mode[pred_task] == CLASSIFICATION and len(prob_values) > 0
                 else np.array([])
             )
             ground_truth = labels[error_inds].astype(int)
@@ -323,17 +320,17 @@ def get_outputs(
         task_prediction = prediction.astype(int)
         relevant_prob_values = (
             prob_values
-            if output_mode[pred_task] == classification and len(prob_values) > 0
+            if output_mode[pred_task] == CLASSIFICATION and len(prob_values) > 0
             else np.array([])
         )
     text_samples = text_column
     task_type = output_mode[pred_task]
-    if task_type == classification:
+    if task_type == CLASSIFICATION:
         return get_classification_prints(
             pred_task, task_labels, ground_truth, task_prediction, relevant_prob_values
         )
 
-    elif task_type == tagging:
+    elif task_type == TAGGING:
         return get_tagging_prints(
             character_level,
             pred_task,
@@ -343,7 +340,7 @@ def get_outputs(
             text_samples,
             word_ids,
         )
-    elif task_type == relex:
+    elif task_type == RELEX:
         return get_relex_prints(
             pred_task, task_labels, ground_truth, task_prediction, word_ids
         )
@@ -417,7 +414,7 @@ def get_tagging_prints(
 
     def dict_to_str(d: dict[str, list[Span]], tokens: list[str]) -> str:
         result = " , ".join(
-            f'{key}: "{span[2]} {token_sep.join(tokens[span[0]:span[1]])}"'
+            f'{key}: "{span[2]} {token_sep.join(tokens[span[0] : span[1]])}"'
             for key, span in flatten_dict(d)
         )
         return result

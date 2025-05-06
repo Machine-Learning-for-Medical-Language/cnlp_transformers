@@ -1,4 +1,3 @@
-import logging
 from typing import Any
 
 import numpy as np
@@ -12,9 +11,7 @@ from sklearn.metrics import (
     recall_score,
 )
 
-from .cnlp_processors import classification, relex, tagging
-
-logger = logging.getLogger(__name__)
+from .data.tasks import CLASSIFICATION, RELEX, TAGGING, TaskType
 
 
 def fix_np_types(input_variable):
@@ -35,7 +32,6 @@ def tagging_metrics(
     label_set: list[str],
     preds: np.ndarray,
     labels: np.ndarray,
-    task_name: str,
 ) -> dict[str, Any]:
     """
     One of the metrics functions for use in :func:`cnlp_compute_metrics`.
@@ -78,7 +74,7 @@ def tagging_metrics(
         "acc": acc,
         "token_f1": fix_np_types(f1),
         "f1": fix_np_types(seq_f1([label_seq], [pred_seq])),
-        "report": "\n" + seq_cls([label_seq], [pred_seq]),
+        "report": "\n" + str(seq_cls([label_seq], [pred_seq])),
     }
 
 
@@ -86,7 +82,6 @@ def relation_metrics(
     label_set: list[str],
     preds: np.ndarray,
     labels: np.ndarray,
-    task_name: str,
 ) -> dict[str, Any]:
     """
     One of the metrics functions for use in :func:`cnlp_compute_metrics`.
@@ -187,10 +182,9 @@ def acc_and_f1(preds: np.ndarray, labels: np.ndarray) -> dict[str, Any]:
 
 
 def cnlp_compute_metrics(
-    task_name: str,
     preds: np.ndarray,
     labels: np.ndarray,
-    output_mode: str,
+    output_mode: TaskType,
     label_set: list[str],
 ) -> dict[str, Any]:
     """
@@ -201,7 +195,6 @@ def cnlp_compute_metrics(
     If the new task is a simple classification task, a sensible default
     is defined; falling back on this will trigger a warning.
 
-    :param task_name: the task name used to index into cnlp_processors
     :param preds: the predicted labels from the model
     :param labels: the true labels
     :param output_mode: the output mode of the classifier
@@ -209,19 +202,15 @@ def cnlp_compute_metrics(
     :return: a dictionary containing evaluation metrics
     """
 
-    assert len(preds) == len(
-        labels
-    ), f"Predictions and labels have mismatched lengths {len(preds)} and {len(labels)}"
-    if output_mode == classification:
+    assert len(preds) == len(labels), (
+        f"Predictions and labels have mismatched lengths {len(preds)} and {len(labels)}"
+    )
+    if output_mode == CLASSIFICATION:
         return acc_and_f1(preds=preds, labels=labels)
-    elif output_mode == tagging:
-        return tagging_metrics(
-            label_set, preds=preds, labels=labels, task_name=task_name
-        )
-    elif output_mode == relex:
-        return relation_metrics(
-            label_set, preds=preds, labels=labels, task_name=task_name
-        )
+    elif output_mode == TAGGING:
+        return tagging_metrics(label_set, preds=preds, labels=labels)
+    elif output_mode == RELEX:
+        return relation_metrics(label_set, preds=preds, labels=labels)
     else:
         raise Exception(
             "There is no metric defined for this task in function cnlp_compute_metrics()"

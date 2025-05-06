@@ -9,13 +9,14 @@ from typing import Union, cast
 
 import torch
 import torch.nn.functional as F
+import transformers
 from torch import nn
 from torch.nn import CrossEntropyLoss
 from transformers import AutoConfig, AutoModel
 from transformers.modeling_outputs import SequenceClassifierOutput
 from transformers.modeling_utils import PreTrainedModel
 
-from .CnlpModelForClassification import (
+from .cnlp import (
     ClassificationHead,
     CnlpConfig,
     freeze_encoder_weights,
@@ -210,21 +211,21 @@ class HierarchicalModel(PreTrainedModel):
 
         self.config = cast(CnlpConfig, self.config)  # for PyCharm
 
-        assert (
-            self.config.hier_head_config is not None
-        ), "Hierarchical model is being instantiated with no hierarchical head config"
+        assert self.config.hier_head_config is not None, (
+            "Hierarchical model is being instantiated with no hierarchical head config"
+        )
 
         encoder_config = AutoConfig.from_pretrained(self.config.encoder_name)
         encoder_config.vocab_size = self.config.vocab_size
         self.config.encoder_config = encoder_config.to_dict()
         encoder_model = AutoModel.from_config(encoder_config)
+        transformers.logging.set_verbosity_error()
         self.encoder = encoder_model.from_pretrained(self.config.encoder_name)
         self.encoder.resize_token_embeddings(encoder_config.vocab_size)
-
+        transformers.logging.set_verbosity_warning()
         if self.config.layer > self.config.hier_head_config["n_layers"]:
             raise ValueError(
-                "The layer specified (%d) is too big for the specified chunk transformer which has %d layers"
-                % (self.config.layer, self.config.hier_head_config["n_layers"])
+                f"The layer specified ({self.config.layer}) is too big for the specified chunk transformer which has {self.config.hier_head_config['n_layers']} layers"
             )
 
         if self.config.layer < 0:
@@ -233,8 +234,7 @@ class HierarchicalModel(PreTrainedModel):
             )
             if self.layer < 0:
                 raise ValueError(
-                    "The layer specified (%d) is a negative value which is larger than the actual number of layers %d"
-                    % (self.config.layer, self.config.hier_head_config["n_layers"])
+                    f"The layer specified ({self.config.layer}) is a negative value which is larger than the actual number of layers {self.config.hier_head_config['n_layers']}"
                 )
         else:
             self.layer = self.config.layer
@@ -280,7 +280,7 @@ class HierarchicalModel(PreTrainedModel):
         self.label_dictionary = config.label_dictionary
         self.set_class_weights(class_weights)
 
-    def remove_task_classifiers(self, tasks: list[str] = None):
+    def remove_task_classifiers(self, tasks: Union[list[str], None] = None):
         if tasks is None:
             self.classifiers = nn.ModuleDict()
             self.tasks = []
@@ -291,12 +291,10 @@ class HierarchicalModel(PreTrainedModel):
                 self.tasks.remove(task)
                 self.class_weights.pop(task)
 
-    def add_task_classifier(self, task_name: str, label_dictionary: dict[str, list]):
+    def add_task_classifier(self, task_name: str, task_labels: list[str]):
         self.tasks.append(task_name)
-        self.classifiers[task_name] = ClassificationHead(
-            self.config, len(label_dictionary)
-        )
-        self.label_dictionary[task_name] = label_dictionary
+        self.classifiers[task_name] = ClassificationHead(self.config, len(task_labels))
+        self.label_dictionary[task_name] = task_labels
 
     def set_class_weights(self, class_weights: Union[list[float], None] = None):
         if class_weights is None:
@@ -464,7 +462,3 @@ class HierarchicalModel(PreTrainedModel):
                 attentions=outputs.attentions,
                 chunk_attentions=chunks_attns,
             )
-
-
-AutoConfig.register("cnlpt", CnlpConfig)
-AutoModel.register(CnlpConfig, HierarchicalModel)
