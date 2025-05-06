@@ -75,7 +75,7 @@ def _get_sorted_label_set(all_raw_labels: Iterable[str], task_type: TaskType):
     else:
         raise ValueError(f"invalid task type {TaskType}")
 
-    return sorted(set(label_set))
+    return sorted(label_set)
 
 
 class CnlpDataReader:
