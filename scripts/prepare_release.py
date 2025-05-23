@@ -27,22 +27,12 @@ def prepare_release_interactive(version: str):
 
     # Update changelog
     print(
-        "Update the changelog:\n",
-        f"  In CHANGELOG.md, move everything in 'Unreleased' to a new header for {version}.",
+        "Update the changelog:\n"
+        f"  In CHANGELOG.md, move everything in 'Unreleased' to a new header for {version}."
         "  Also feel free to add in any missing notable features included in this release.",
         sep="\n",
     )
     input("  Press enter to continue.")
-    print()
-
-    # Update setuptools_scm fallback version
-    if get_fallback_version() != version:
-        print("Update the setuptools_scm fallback version:\n")
-    while (current := get_fallback_version()) != version:
-        print(
-            f'  In pyproject.toml, under [tool.setuptools_scm], change fallback_version to "{version}" (currently "{current}")',
-        )
-        input("  Press enter to continue.")
     print()
 
     # Update lockfile
@@ -51,10 +41,7 @@ def prepare_release_interactive(version: str):
     )
     subprocess.run(
         ["uv", "sync", "--reinstall-package", "cnlp_transformers"],
-        env=os.environ.copy() | {"SETUPTOOLS_SCM_PRETEND_VERSION": version},
-    )
-    print(
-        f'Done! Before committing your changes, make sure `cnlpt --version` outputs "{version}".'
+        env=os.environ.copy(),
     )
 
 

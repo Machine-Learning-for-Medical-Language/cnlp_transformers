@@ -21,7 +21,8 @@ import math
 import os
 import sys
 import tempfile
-from collections import defaultdict, deque
+from collections import Counter, defaultdict, deque
+from dataclasses import dataclass
 from os.path import exists, join
 from typing import Any, Callable, Union
 
@@ -35,6 +36,8 @@ from transformers import (
     AutoTokenizer,
     EvalPrediction,
     HfArgumentParser,
+    PreTrainedTokenizer,
+    PreTrainedTokenizerFast,
     Trainer,
     TrainerCallback,
     set_seed,
@@ -42,14 +45,14 @@ from transformers import (
 from transformers.file_utils import CONFIG_NAME
 from transformers.training_args import IntervalStrategy
 
-from .BaselineModels import CnnSentenceClassifier, LstmSentenceClassifier
-from .cnlp_args import CnlpTrainingArguments, ModelArguments
-from .cnlp_data import ClinicalNlpDataset, DataTrainingArguments, get_dataset_segment
+from .args import CnlpDataArguments, CnlpModelArguments, CnlpTrainingArguments
 from .cnlp_metrics import cnlp_compute_metrics
 from .cnlp_predict import process_prediction, restructure_prediction, structure_labels
-from .cnlp_processors import relex, tagging
-from .CnlpModelForClassification import CnlpConfig, CnlpModelForClassification
-from .HierarchicalTransformer import HierarchicalModel
+from .data.cnlp_datasets import ClinicalNlpDataset
+from .data.tasks import RELEX, TAGGING, TaskType
+from .data.utils import get_dataset_segment
+from .models import CnlpConfig, CnlpModelForClassification, HierarchicalModel
+from .models.baseline import CnnSentenceClassifier, LstmSentenceClassifier
 
 sys.path.append(os.path.join(os.getcwd()))
 
@@ -155,29 +158,15 @@ def is_external_encoder(model_name_or_path: str) -> bool:
     return not is_cnlpt_model(model_name_or_path)
 
 
-def main(
+def parse_training_arguments(
     json_file: Union[str, None] = None,
     json_obj: Union[dict[str, Any], None] = None,
-) -> dict[str, dict[str, Any]]:
-    """
-    See all possible arguments in :class:`transformers.TrainingArguments`
-    or by passing the --help flag to this script.
-
-    We now keep distinct sets of args, for a cleaner separation of concerns.
-
-    :param json_file: if passed, a path to a JSON file
-        to use as the model, data, and training arguments instead of
-        retrieving them from the CLI (mutually exclusive with ``json_obj``)
-    :param json_obj: if passed, a JSON dictionary
-        to use as the model, data, and training arguments instead of
-        retrieving them from the CLI (mutually exclusive with ``json_file``)
-    :return: the evaluation results (will be empty if ``--do_eval`` not passed)
-    """
+) -> tuple[CnlpModelArguments, CnlpDataArguments, CnlpTrainingArguments]:
     parser = HfArgumentParser(
-        (ModelArguments, DataTrainingArguments, CnlpTrainingArguments)
+        (CnlpModelArguments, CnlpDataArguments, CnlpTrainingArguments)
     )
-    model_args: ModelArguments
-    data_args: DataTrainingArguments
+    model_args: CnlpModelArguments
+    data_args: CnlpDataArguments
     training_args: CnlpTrainingArguments
 
     if json_file is not None and json_obj is not None:
@@ -208,10 +197,24 @@ def main(
             f"Output directory ({training_args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overcome."
         )
 
-    model_name = model_args.model
-    hierarchical = model_name == "hier"
+    if training_args.model_selection_label is not None and any(
+        isinstance(item, int) for item in training_args.model_selection_label
+    ):
+        logger.warning(
+            f"It is not recommended to use ints as model selection labels: {tuple([item for item in training_args.model_selection_label if isinstance(item, int)])}. Labels should be input in string form."
+        )
 
-    # Setup logging
+    if training_args.truncation_side_left:
+        if model_args.model == "hier":
+            logger.warning(
+                "truncation_side_left flag is not available for the hierarchical model -- setting to right"
+            )
+            training_args.truncation_side_left = False
+
+    return model_args, data_args, training_args
+
+
+def configure_logger(training_args: CnlpTrainingArguments):
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
         datefmt="%m/%d/%Y %H:%M:%S",
@@ -220,31 +223,14 @@ def main(
     logger.warning(
         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}, distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
     )
-    logger.info(f"Training/evaluation parameters {training_args}")
-    logger.info(f"Data parameters {data_args}")
-    logger.info(f"Model parameters {model_args}")
-    # Set seed
-    set_seed(training_args.seed)
 
-    if training_args.model_selection_label is not None and any(
-        isinstance(item, int) for item in training_args.model_selection_label
-    ):
-        logger.warning(
-            f"It is not recommended to use ints as model selection labels: {tuple([item for item in training_args.model_selection_label if isinstance(item, int)])}. Labels should be input in string form."
-        )
 
-    # Load tokenizer: Need this first for loading the datasets
-    if training_args.truncation_side_left:
-        if hierarchical:
-            logger.warning(
-                "truncation_side_left flag is not available for the hierarchical model -- setting to right"
-            )
-            truncation_side = "right"
-        else:
-            truncation_side = "left"
-    else:
-        truncation_side = "right"
-    tokenizer = AutoTokenizer.from_pretrained(
+def init_tokenizer(
+    model_args: CnlpModelArguments,
+    data_args: CnlpDataArguments,
+    training_args: CnlpTrainingArguments,
+):
+    return AutoTokenizer.from_pretrained(
         (
             model_args.tokenizer_name
             if model_args.tokenizer_name
@@ -252,7 +238,7 @@ def main(
         ),
         cache_dir=model_args.cache_dir,
         add_prefix_space=True,
-        truncation_side=truncation_side,
+        truncation_side="left" if training_args.truncation_side_left else "right",
         additional_special_tokens=(
             [
                 "<e>",
@@ -269,71 +255,104 @@ def main(
         ),
     )
 
-    # Get datasets
-    dataset = ClinicalNlpDataset(
-        data_args,
-        tokenizer=tokenizer,
-        cache_dir=model_args.cache_dir,
-        hierarchical=hierarchical,
-    )
 
+@dataclass
+class TaskMaps:
+    task_names: list[str]
+    num_labels: dict[str, int]
+    output_mode: dict[str, TaskType]
+    tagger: dict[str, bool]
+    relations: dict[str, bool]
+
+
+def extract_task_maps(
+    dataset: ClinicalNlpDataset, data_args: CnlpDataArguments
+) -> TaskMaps:
     try:
         task_names = (
             data_args.task_name if data_args.task_name is not None else dataset.tasks
         )
-        num_labels = {}
-        output_mode = {}
-        tagger = {}
-        relations = {}
+        num_labels: dict[str, int] = {}
+        output_mode: dict[str, TaskType] = {}
+        tagger: dict[str, bool] = {}
+        relations: dict[str, bool] = {}
         for task in dataset.tasks_to_labels.keys():
             num_labels[task] = len(dataset.tasks_to_labels[task])
-            task_output_mode = dataset.output_modes[task]
+            task_output_mode: TaskType = dataset.output_modes[task]
             output_mode[task] = task_output_mode
-            tagger[task] = task_output_mode == tagging
-            relations[task] = task_output_mode == relex
-
+            tagger[task] = task_output_mode == TAGGING
+            relations[task] = task_output_mode == RELEX
     except KeyError:
         raise ValueError(f"Task not found: {data_args.task_name}")
 
-    class_weights = None
-    # get class weights, if desired
-    if data_args.weight_classes:
-        from collections import Counter
+    return TaskMaps(task_names, num_labels, output_mode, tagger, relations)
 
-        class_weights = []
-        for task in task_names:
-            # get labels in the right order ([0, 1])
-            if isinstance(
-                dataset.tasks_to_labels[task][1], str
-            ) and dataset.tasks_to_labels[task][1].startswith("No_"):
-                dataset.tasks_to_labels[task] = dataset.tasks_to_labels[task][1:] + [
-                    dataset.tasks_to_labels[task][0]
-                ]
-            labels = dataset.processed_dataset["train"][task]
-            weights = []
-            label_counts = Counter(labels)
-            for label in dataset.tasks_to_labels[task]:
-                weights.append(len(labels) / (num_labels[task] * label_counts[label]))
-                # class weights are determined by severity of class imbalance
-            if len(task_names) > 1:
-                class_weights.append(weights)
-            else:
-                class_weights = weights  # if we just have the one class, simplify the tensor or pytorch will be mad
-        class_weights = torch.tensor(class_weights).to(training_args.device)
-        # sm = torch.nn.Softmax(dim=class_weights.ndim - 1)
-        # class_weights = sm(class_weights)
 
-    # Load pretrained model and tokenizer
+def get_class_weights(
+    dataset: ClinicalNlpDataset,
+    training_args: CnlpTrainingArguments,
+    task_maps: TaskMaps,
+):
+    class_weights = []
+    for task in task_maps.task_names:
+        # get labels in the right order ([0, 1])
+        if isinstance(
+            dataset.tasks_to_labels[task][1], str
+        ) and dataset.tasks_to_labels[task][1].startswith("No_"):
+            dataset.tasks_to_labels[task] = dataset.tasks_to_labels[task][1:] + [
+                dataset.tasks_to_labels[task][0]
+            ]
+        labels = dataset.processed_dataset["train"][task]
+        weights = []
+        label_counts = Counter(labels)
+        for label in dataset.tasks_to_labels[task]:
+            weights.append(
+                len(labels) / (task_maps.num_labels[task] * label_counts[label])
+            )
+            # class weights are determined by severity of class imbalance
+        if len(task_maps.task_names) > 1:
+            class_weights.append(weights)
+        else:
+            class_weights = weights  # if we just have the one class, simplify the tensor or pytorch will be mad
+    class_weights = torch.tensor(class_weights).to(training_args.device)
+    # sm = torch.nn.Softmax(dim=class_weights.ndim - 1)
+    # class_weights = sm(class_weights)
+    return class_weights
+
+
+def load_model(
+    model_args: CnlpModelArguments,
+    data_args: CnlpDataArguments,
+    training_args: CnlpTrainingArguments,
+    tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
+    dataset: ClinicalNlpDataset,
+    task_maps: TaskMaps,
+) -> tuple[
+    Union[
+        CnnSentenceClassifier,
+        LstmSentenceClassifier,
+        HierarchicalModel,
+        CnlpModelForClassification,
+    ],
+    str,
+]:
+    # Load pretrained model
 
     #
     # Distributed training:
     # The .from_pretrained methods guarantee that only one local process can concurrently
     # download model & vocab.
+
+    class_weights = None
+    if data_args.weight_classes:
+        class_weights = get_class_weights(dataset, training_args, task_maps)
+
+    model_name = model_args.model
     if model_name == "cnn":
         model = CnnSentenceClassifier(
             len(tokenizer),
-            task_names=task_names,
-            num_labels_dict=num_labels,
+            task_names=task_maps.task_names,
+            num_labels_dict=task_maps.num_labels,
             embed_dims=model_args.cnn_embed_dim,
             num_filters=model_args.cnn_num_filters,
             filters=model_args.cnn_filter_sizes,
@@ -347,8 +366,8 @@ def main(
     elif model_name == "lstm":
         model = LstmSentenceClassifier(
             len(tokenizer),
-            task_names=task_names,
-            num_labels_dict=num_labels,
+            task_names=task_maps.task_names,
+            num_labels_dict=task_maps.num_labels,
             embed_dims=model_args.lstm_embed_dim,
             hidden_size=model_args.lstm_hidden_size,
         )
@@ -374,8 +393,8 @@ def main(
                 tokens=model_args.token,
                 num_rel_attention_heads=model_args.num_rel_feats,
                 rel_attention_head_dims=model_args.head_features,
-                tagger=tagger,
-                relations=relations,
+                tagger=task_maps.tagger,
+                relations=task_maps.relations,
                 label_dictionary=dataset.get_labels(),
                 hier_head_config=dict(
                     n_layers=model_args.hier_num_layers,
@@ -395,7 +414,7 @@ def main(
                 freeze=training_args.freeze,
             )
         else:
-            if hierarchical and (
+            if model_name == "hier" and (
                 model_args.keep_existing_classifiers
                 == model_args.ignore_existing_classifiers
             ):  # XNOR
@@ -413,14 +432,14 @@ def main(
                     if data_args.task_name is not None
                     else dataset.tasks
                 )
-                config.relations = relations
-                config.tagger = tagger
+                config.relations = task_maps.relations
+                config.tagger = task_maps.tagger
                 config.label_dictionary = {}  # this gets filled in later
             elif model_args.keep_existing_classifiers:
                 if (
                     config.finetuning_task != data_args.task_name
-                    or config.relations != relations
-                    or config.tagger != tagger
+                    or config.relations != task_maps.relations
+                    or config.tagger != task_maps.tagger
                 ):
                     raise ValueError(
                         "When --keep_existing_classifiers selected, please ensure"
@@ -439,7 +458,6 @@ def main(
                 for task in data_args.task_name:
                     model.add_task_classifier(task, dataset.get_labels()[task])
             model.set_class_weights(dataset.class_weights)
-
     else:
         # by default cnlpt model, but need to check which encoder they want
         encoder_name = model_args.encoder_name
@@ -488,8 +506,8 @@ def main(
                     model_path=model_args.encoder_name,
                     config=config,
                     cache_dir=model_args.cache_dir,
-                    tagger=tagger,
-                    relations=relations,
+                    tagger=task_maps.tagger,
+                    relations=task_maps.relations,
                     class_weights=dataset.class_weights,
                     final_task_weight=training_args.final_task_weight,
                     use_prior_tasks=model_args.use_prior_tasks,
@@ -532,8 +550,8 @@ def main(
                 tokens=model_args.token,
                 num_rel_attention_heads=model_args.num_rel_feats,
                 rel_attention_head_dims=model_args.head_features,
-                tagger=tagger,
-                relations=relations,
+                tagger=task_maps.tagger,
+                relations=task_maps.relations,
                 label_dictionary=dataset.get_labels(),
                 character_level=data_args.character_level,
                 # num_tokens=len(tokenizer),
@@ -547,42 +565,99 @@ def main(
                 bias_fit=training_args.bias_fit,
             )
 
-    model_type = type(model)
-    output_eval_file = os.path.join(training_args.output_dir, "eval_results.txt")
-    if training_args.do_train:
-        # TODO: This assumes that if there are multiple training sets, they all have the same length, but
-        # in the future it would be nice to be able to have multiple heterogeneous datasets
-        batches_per_epoch = math.ceil(
-            dataset.num_train_instances / training_args.train_batch_size
+    return model, model_path
+
+
+def preprocess_training_args(
+    training_args: CnlpTrainingArguments, dataset: ClinicalNlpDataset
+):
+    # TODO: This assumes that if there are multiple training sets, they all have the same length, but
+    # in the future it would be nice to be able to have multiple heterogeneous datasets
+    batches_per_epoch = math.ceil(
+        dataset.num_train_instances / training_args.train_batch_size
+    )
+    total_steps = int(
+        training_args.num_train_epochs
+        * batches_per_epoch
+        // training_args.gradient_accumulation_steps
+    )
+
+    if training_args.evals_per_epoch > 0:
+        logger.warning(
+            "Overwriting the value of logging steps based on provided evals_per_epoch argument"
         )
-        total_steps = int(
-            training_args.num_train_epochs
-            * batches_per_epoch
-            // training_args.gradient_accumulation_steps
+        # steps per epoch factors in gradient accumulation steps (as compared to batches_per_epoch above which doesn't)
+        steps_per_epoch = int(total_steps // training_args.num_train_epochs)
+        training_args.eval_steps = steps_per_epoch // training_args.evals_per_epoch
+        training_args.evaluation_strategy = training_args.eval_strategy = (
+            IntervalStrategy.STEPS
+        )
+        # This will save model per epoch
+        # training_args.save_strategy = IntervalStrategy.EPOCH
+    elif training_args.do_eval:
+        logger.info("Evaluation strategy not specified so evaluating every epoch")
+        training_args.evaluation_strategy = training_args.eval_strategy = (
+            IntervalStrategy.EPOCH
         )
 
-        if training_args.evals_per_epoch > 0:
-            logger.warning(
-                "Overwriting the value of logging steps based on provided evals_per_epoch argument"
-            )
-            # steps per epoch factors in gradient accumulation steps (as compared to batches_per_epoch above which doesn't)
-            steps_per_epoch = int(total_steps // training_args.num_train_epochs)
-            training_args.eval_steps = steps_per_epoch // training_args.evals_per_epoch
-            training_args.evaluation_strategy = training_args.eval_strategy = (
-                IntervalStrategy.STEPS
-            )
-            # This will save model per epoch
-            # training_args.save_strategy = IntervalStrategy.EPOCH
-        elif training_args.do_eval:
-            logger.info("Evaluation strategy not specified so evaluating every epoch")
-            training_args.evaluation_strategy = training_args.eval_strategy = (
-                IntervalStrategy.EPOCH
-            )
+
+def main(
+    json_file: Union[str, None] = None,
+    json_obj: Union[dict[str, Any], None] = None,
+) -> dict[str, dict[str, Any]]:
+    """
+    See all possible arguments in :class:`transformers.TrainingArguments`
+    or by passing the --help flag to this script.
+
+    We now keep distinct sets of args, for a cleaner separation of concerns.
+
+    :param json_file: if passed, a path to a JSON file
+        to use as the model, data, and training arguments instead of
+        retrieving them from the CLI (mutually exclusive with ``json_obj``)
+    :param json_obj: if passed, a JSON dictionary
+        to use as the model, data, and training arguments instead of
+        retrieving them from the CLI (mutually exclusive with ``json_file``)
+    :return: the evaluation results (will be empty if ``--do_eval`` not passed)
+    """
+    model_args, data_args, training_args = parse_training_arguments(json_file, json_obj)
+
+    configure_logger(training_args)
+    logger.info(f"Training/evaluation parameters {training_args}")
+    logger.info(f"Data parameters {data_args}")
+    logger.info(f"Model parameters {model_args}")
+
+    set_seed(training_args.seed)
+
+    tokenizer = init_tokenizer(model_args, data_args, training_args)
+
+    dataset = ClinicalNlpDataset(
+        data_args,
+        tokenizer=tokenizer,
+        cache_dir=model_args.cache_dir,
+        hierarchical=(model_args.model == "hier"),
+    )
+
+    task_maps = extract_task_maps(dataset, data_args)
+
+    model, model_path = load_model(
+        model_args=model_args,
+        data_args=data_args,
+        training_args=training_args,
+        tokenizer=tokenizer,
+        dataset=dataset,
+        task_maps=task_maps,
+    )
+
+    if training_args.do_train:
+        preprocess_training_args(training_args, dataset)
+
+    ## CHUNK - metric computer factory
 
     current_prediction_packet = deque()
+    output_eval_file = os.path.join(training_args.output_dir, "eval_results.txt")
 
     def build_compute_metrics_fn(
-        task_names: list[str], model, dataset: ClinicalNlpDataset
+        model, dataset: ClinicalNlpDataset
     ) -> Callable[[EvalPrediction], dict]:
         def compute_metrics_fn(p: EvalPrediction):
             metrics = {}
@@ -597,11 +672,10 @@ def main(
                 preds, labels, pad, prob_values = structure_labels(
                     p,
                     task_name,
+                    task_maps.output_mode[task_name],
                     task_ind,
                     task_label_ind,
                     data_args.max_seq_length,
-                    tagger,
-                    relations,
                     task_label_to_boundaries,
                     training_args.output_prob,
                 )
@@ -610,7 +684,6 @@ def main(
                 task_label_to_label_packet[task_name] = (preds, labels, prob_values)
 
                 metrics[task_name] = cnlp_compute_metrics(
-                    task_name,
                     preds,
                     labels,
                     dataset.output_modes[task_name],
@@ -677,7 +750,7 @@ def main(
                         if training_args.do_train:
                             trainer.save_model()
                             tokenizer.save_pretrained(training_args.output_dir)
-                            if model_name == "cnn" or model_name == "lstm":
+                            if model_args.model in ("cnn", "lstm"):
                                 with open(
                                     os.path.join(
                                         training_args.output_dir, "config.json"
@@ -688,7 +761,7 @@ def main(
                                     config_dict["label_dictionary"] = (
                                         dataset.get_labels()
                                     )
-                                    config_dict["task_names"] = task_names
+                                    config_dict["task_names"] = task_maps.task_names
                                     json.dump(config_dict, f)
                         for task_ind, task_name in enumerate(metrics):
                             with open(output_eval_file, "a") as writer:
@@ -719,6 +792,8 @@ def main(
 
         return compute_metrics_fn
 
+    ## CHUNK - init trainer
+
     # Initialize our Trainer
     training_args.load_best_model_at_end = True
     training_args.metric_for_best_model = "one_score"
@@ -727,9 +802,11 @@ def main(
         args=training_args,
         train_dataset=dataset.processed_dataset.get("train", None),
         eval_dataset=dataset.processed_dataset.get("validation", None),
-        compute_metrics=build_compute_metrics_fn(task_names, model, dataset),
+        compute_metrics=build_compute_metrics_fn(model, dataset),
         callbacks=[EvalCallback],
     )
+
+    ## CHUNK - training
 
     # Training
     if training_args.do_train:
@@ -745,19 +822,22 @@ def main(
             if trainer.is_world_process_zero():
                 trainer.save_model()
                 tokenizer.save_pretrained(training_args.output_dir)
-                if model_name == "cnn" or model_name == "lstm":
+                if model_args.model in ("cnn", "lstm"):
                     config_dict = model_args.to_dict()
                     config_dict["label_dictionary"] = dataset.get_labels()
-                    config_dict["task_names"] = task_names
+                    config_dict["task_names"] = task_maps.task_names
                     with open(
                         os.path.join(training_args.output_dir, "config.json"), "w"
                     ) as f:
                         json.dump(config_dict, f)
 
+    ## CHUNK - eval
+
     # Evaluation
     eval_results = {}
 
     task_to_label_space = dataset.get_labels()
+    model_type = type(model)
 
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
@@ -789,13 +869,13 @@ def main(
             # here we probably want separate predictions for each dataset:
             if training_args.load_best_model_at_end:
                 model_path = training_args.output_dir
-                if model_name == "cnn" or model_name == "lstm":
+                if model_args.model in ("cnn", "lstm"):
                     # non-HF models need manually passed config args
                     model = model_type.from_pretrained(
                         model_path,
                         vocab_size=len(tokenizer),
-                        task_names=task_names,
-                        num_labels_dict=num_labels,
+                        task_names=task_maps.task_names,
+                        num_labels_dict=task_maps.num_labels,
                     )
                 else:
                     model = model_type.from_pretrained(model_path)
@@ -805,9 +885,7 @@ def main(
                     args=training_args,
                     train_dataset=dataset.processed_dataset.get("train", None),
                     eval_dataset=dataset.processed_dataset.get("validation", None),
-                    compute_metrics=build_compute_metrics_fn(
-                        task_names, model, dataset
-                    ),
+                    compute_metrics=build_compute_metrics_fn(model, dataset),
                 )
                 # use trainer to predict
 
@@ -836,7 +914,7 @@ def main(
                         task_to_label_packet=task_to_label_packet,
                         eval_dataset=dataset_dev_segment,
                         task_to_label_space=task_to_label_space,
-                        output_mode=output_mode,
+                        output_mode=task_maps.output_mode,
                     )
 
                     out_table.to_csv(
@@ -850,8 +928,10 @@ def main(
 
         eval_results.update(eval_result)
 
+    ## CHUNK - prediction
+
     if training_args.do_predict:
-        logging.info("*** Test ***")
+        logger.info("*** Test ***")
         trainer.compute_metrics = None
         # FIXME: this part hasn't been updated for the MTL setup so it doesn't work anymore since
         # predictions is generalized to be a list of predictions and the output needs to be different for each kin.
@@ -877,8 +957,7 @@ def main(
                     task_names=dataset.tasks,
                     raw_prediction=raw_test_predictions,
                     max_seq_length=data_args.max_seq_length,
-                    tagger=tagger,
-                    relations=relations,
+                    output_modes=task_maps.output_mode,
                     output_prob=training_args.output_prob,
                 )
 
@@ -890,7 +969,7 @@ def main(
                     task_to_label_packet=task_to_label_packet,
                     eval_dataset=dataset_test_segment,
                     task_to_label_space=task_to_label_space,
-                    output_mode=output_mode,
+                    output_mode=task_maps.output_mode,
                 )
 
                 out_table.to_csv(
@@ -901,6 +980,7 @@ def main(
                     quoting=csv.QUOTE_NONE,
                     escapechar="\\",
                 )
+
     return eval_results
 
 

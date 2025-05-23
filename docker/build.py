@@ -16,7 +16,7 @@ MODELS = [
 ]
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--model", action="append", choices=["all"] + MODELS)
+parser.add_argument("--model", action="append", choices=["all", *MODELS])
 parser.add_argument("--processor", choices=["all", "cpu", "gpu"], default="all")
 parser.add_argument("--push", action="store_true", default=False)
 args = parser.parse_args()
@@ -69,7 +69,7 @@ def build_one(model: str, processor: str, *, version: str, push: bool = False) -
     else:
         build_args.append("--load")  # to load into docker locally
 
-    subprocess.run(["docker", "buildx", "build"] + build_args, check=True)
+    subprocess.run(["docker", "buildx", "build", *build_args], check=True)
 
 
 if __name__ == "__main__":

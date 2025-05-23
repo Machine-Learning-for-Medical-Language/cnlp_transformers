@@ -88,7 +88,7 @@ def process_tokenized_sentence_document(doc: TokenizedSentenceDocument):
         instances.append(inst_str)
 
     dataset = create_dataset(instances, tokenizer, max_length=MAX_LENGTH)
-    logger.warning(f"Dataset is as follows: {str(dataset.features)}")
+    logger.warning(f"Dataset is as follows: {dataset.features!s}")
 
     preproc_end = time()
 
