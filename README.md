@@ -225,6 +225,18 @@ To run only the time expression or event taggers, change the run command to:
 
 then run the same process commands as above (including the same URL). You will get similar json output, but only one of the dictionary elements (timexes or events) will be populated.
 
+## Citing cnlp_transformers
+Please use the following bibtex to cite cnlp_transformers if you use it in a publication:
+```
+@misc{cnlp_transformers,
+  author       = {CNLPT},
+  title = {Clinical {NLP} {Transformers} (cnlp\_transformers)},
+  year         = {2021},
+  publisher    = {GitHub},
+  journal      = {GitHub repository},
+  howpublished = {\url{https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers}},
+}
+```
 
 ## Publications using cnlp_transformers
 Please send us any citations that used this library!
