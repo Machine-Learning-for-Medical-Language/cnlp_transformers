@@ -224,3 +224,17 @@ To run only the time expression or event taggers, change the run command to:
 ```uvicorn cnlpt.api.event_rest:app --host 0.0.0.0```
 
 then run the same process commands as above (including the same URL). You will get similar json output, but only one of the dictionary elements (timexes or events) will be populated.
+
+
+## Publications using cnlp_transformers
+Please send us any citations that used this library!
+
+1.  Chen S, Guevara M, Ramirez N, Murray A, Warner JL, Aerts HJWL, et al. Natural Language Processing to Automatically Extract the Presence and Severity of Esophagitis in Notes of Patients Undergoing Radiotherapy. JCO Clin Cancer Inform. 2023 Jul;(7):e2300048.
+2.  Li Y, Miller T, Bethard S, Savova G. Identifying Task Groupings for Multi-Task Learning Using Pointwise V-Usable Information [Internet]. arXiv.org. 2024 [cited 2025 May 22]. Available from: https://arxiv.org/abs/2410.12774v1
+3.  Wang L, Li Y, Miller T, Bethard S, Savova G. Two-Stage Fine-Tuning for Improved Bias and Variance for Large Pretrained Language Models. In: Rogers A, Boyd-Graber J, Okazaki N, editors. Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) [Internet]. Toronto, Canada: Association for Computational Linguistics; 2023 [cited 2025 May 22]. p. 15746–61. Available from: https://aclanthology.org/2023.acl-long.877/
+4.  Miller T, Bethard S, Dligach D, Savova G. End-to-end clinical temporal information extraction with multi-head attention. Proc Conf Assoc Comput Linguist Meet. 2023 Jul;2023:313–9. 
+5.  Yoon W, Ren B, Thomas S, Kim C, Savova G, Hall MH, et al. Aspect-Oriented Summarization for Psychiatric Short-Term Readmission Prediction [Internet]. arXiv; 2025 [cited 2025 May 22]. Available from: http://arxiv.org/abs/2502.10388
+6.  Wang L, Zipursky AR, Geva A, McMurry AJ, Mandl KD, Miller TA. A computable case definition for patients with SARS-CoV2 testing that occurred outside the hospital. JAMIA Open. 2023 Oct 1;6(3):ooad047. 
+7.  Bitterman DS, Goldner E, Finan S, Harris D, Durbin EB, Hochheiser H, et al. An End-to-End Natural Language Processing System for Automatically Extracting Radiation Therapy Events From Clinical Texts. Int J Radiat Oncol Biol Phys. 2023 Sep 1;117(1):262–73.
+8.  McMurry AJ, Gottlieb DI, Miller TA, Jones JR, Atreja A, Crago J, et al. Cumulus: A federated EHR-based learning system powered by FHIR and AI. medRxiv. 2024 Feb 6;2024.02.02.24301940. 
+9.  LCD benchmark: long clinical document benchmark on mortality prediction for language models | Journal of the American Medical Informatics Association | Oxford Academic [Internet]. [cited 2025 Jan 23]. Available from: https://academic.oup.com/jamia/article-abstract/32/2/285/7909835?redirectedFrom=fulltext
