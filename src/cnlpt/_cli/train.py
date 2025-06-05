@@ -1,6 +1,6 @@
 import click
 
-from ..new_train_system.cnlp_train_system import main as train_system
+from ..train_system.cnlp_train_system import main as train_system
 
 
 @click.command(

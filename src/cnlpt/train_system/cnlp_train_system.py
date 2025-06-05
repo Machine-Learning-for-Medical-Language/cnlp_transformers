@@ -16,10 +16,10 @@ from transformers.trainer_callback import PrinterCallback, TrainerCallback
 from transformers.trainer_utils import EvalPrediction, IntervalStrategy, set_seed
 
 from ..args import CnlpDataArguments, CnlpModelArguments, CnlpTrainingArguments
+from ..data.cnlp_dataset import CnlpDataset
+from ..data.task_info import RELATIONS, TAGGING, TaskInfo
 from ..models import CnlpConfig, CnlpModelForClassification, HierarchicalModel
 from ..models.baseline import CnnSentenceClassifier, LstmSentenceClassifier
-from ..new_data.cnlp_dataset import CnlpDataset
-from ..new_data.task_info import RELATIONS, TAGGING, TaskInfo
 from .display import TrainSystemDisplay
 from .logging import configure_logger_for_training, logger
 from .metrics import cnlp_compute_metrics
@@ -46,6 +46,15 @@ class TaskEvalPrediction:
 
 
 class CnlpTrainSystem:
+    """This class manages the full training workflow for the cnlp_transformers library.
+
+    The train system can be initialized directly from `CnlpModelArguments`, `CnlpDataArguments`, and `CnlpTrainingArguments`,
+    or using one of the following class methods:
+    - `from_json_args(json_file)`: Load arguments from a json file.
+    - `from_args_dict(args)`: Load arguments from a python dictionary.
+    - `from_argv(argv)`: Load arguments from `sys.argv` or a user-specified list of argv-style arguments.
+    """
+
     def __init__(
         self,
         *,
@@ -71,6 +80,14 @@ class CnlpTrainSystem:
 
     @classmethod
     def from_json_args(cls, json_file: Union[str, os.PathLike]):
+        """Instantiate the train system from a json-formatted args file.
+
+        Args:
+            json_file: Path to the json-formatted args file.
+
+        Returns:
+            The new `CnlpTrainSystem` instance.
+        """
         model_args, data_args, training_args = parse_args_json_file(json_file)
         return cls(
             model_args=model_args, data_args=data_args, training_args=training_args
@@ -78,6 +95,14 @@ class CnlpTrainSystem:
 
     @classmethod
     def from_args_dict(cls, args: dict[str, Any]):
+        """Instantiate the train system from a dict of args.
+
+        Args:
+            args: Arguments for the train system.
+
+        Returns:
+            The new `CnlpTrainSystem` instance.
+        """
         model_args, data_args, training_args = parse_args_dict(args)
         return cls(
             model_args=model_args, data_args=data_args, training_args=training_args
@@ -85,6 +110,16 @@ class CnlpTrainSystem:
 
     @classmethod
     def from_argv(cls, argv: Union[list[str], None] = None):
+        """Instantiate the train system from `sys.argv` or a user-specified list of argv-style arguments.
+
+        If `argv` is not specified, `sys.argv` will be used.
+
+        Args:
+            argv: List of arguments. Optional, defaults to None.
+
+        Returns:
+            The new `CnlpTrainSystem` instance.
+        """
         model_args, data_args, training_args = parse_args_from_argv(argv)
         return cls(
             model_args=model_args, data_args=data_args, training_args=training_args
@@ -491,6 +526,11 @@ class CnlpTrainSystem:
         return metrics
 
     def train(self, rich_display: bool = True):
+        """Begin the training loop.
+
+        Args:
+            rich_display: Whether to display training progress in a rich status panel. Defaults to True.
+        """
         trainer_callbacks: list[TrainerCallback] = [
             BasicLoggingCallback(self.model_args, self.data_args, self.training_args)
         ]

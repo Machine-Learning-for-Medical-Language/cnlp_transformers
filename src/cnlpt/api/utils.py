@@ -15,7 +15,7 @@ from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.trainer import Trainer
 from transformers.training_args import TrainingArguments
 
-from ..data.preprocess import cnlp_preprocess_data
+from ..legacy.data.preprocess import cnlp_preprocess_data
 from ..models import CnlpConfig
 
 

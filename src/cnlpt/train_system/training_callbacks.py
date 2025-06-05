@@ -12,7 +12,7 @@ from transformers.trainer_callback import (
 from transformers.training_args import TrainingArguments
 
 from ..args import CnlpDataArguments, CnlpModelArguments, CnlpTrainingArguments
-from ..new_data.task_info import TaskInfo
+from ..data.task_info import TaskInfo
 from .display import TrainSystemDisplay
 from .logging import logger
 

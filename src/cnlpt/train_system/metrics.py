@@ -11,12 +11,11 @@ from sklearn.metrics import (
     recall_score,
 )
 
-from ..new_data.task_info import CLASSIFICATION, RELATIONS, TAGGING, TaskType
+from ..data.task_info import CLASSIFICATION, RELATIONS, TAGGING, TaskType
 
 
 def fix_np_types(input_variable):
-    """
-    In the mtl classification setting, f1 is an array, and when the HF library
+    """In the mtl classification setting, f1 is an array, and when the HF library
     tries to write out the training history to a json file it will throw an error.
     Here, we just check whether it's a numpy array and if so convert to a list.
 
@@ -33,8 +32,7 @@ def tagging_metrics(
     preds: np.ndarray,
     labels: np.ndarray,
 ) -> dict[str, Any]:
-    """
-    One of the metrics functions for use in :func:`cnlp_compute_metrics`.
+    """One of the metrics functions for use in :func:`cnlp_compute_metrics`.
 
     Generates evaluation metrics for sequence tagging tasks.
 
@@ -49,11 +47,13 @@ def tagging_metrics(
             'report': seqeval classification report
         }
 
-    :param label_set: The set of labels for this task
-    :param preds: the predicted labels from the model
-    :param labels: the true labels
-    :param task_name: the name of the relevant task (unused)
-    :return: a dictionary containing evaluation metrics
+    Args:
+        label_set: The set of labels for this task.
+        preds: The predicted labels from the model.
+        labels: The true labels.
+
+    Returns:
+        A dictionary containing evaluation metrics.
     """
     preds = preds.flatten()
     labels = labels.flatten().astype("int")
@@ -83,8 +83,7 @@ def relation_metrics(
     preds: np.ndarray,
     labels: np.ndarray,
 ) -> dict[str, Any]:
-    """
-    One of the metrics functions for use in :func:`cnlp_compute_metrics`.
+    """One of the metrics functions for use in :func:`cnlp_compute_metrics`.
 
     Generates evaluation metrics for relation extraction tasks.
 
@@ -99,10 +98,13 @@ def relation_metrics(
             'precision': precision
         }
 
-    :param label_set: the set of labels for this task
-    :param preds: the predicted labels from the model
-    :param labels: the true labels
-    :return: a dictionary containing evaluation metrics
+    Args:
+        label_set: The set of labels for this task.
+        preds: The predicted labels from the model.
+        labels: The true labels.
+
+    Returns:
+        A dictionary containing evaluation metrics.
     """
 
     # If we are using the attention-based relation extractor, many impossible pairs
@@ -146,8 +148,7 @@ def relation_metrics(
 
 
 def acc_and_f1(preds: np.ndarray, labels: np.ndarray) -> dict[str, Any]:
-    """
-    One of the metrics functions for use in :func:`cnlp_compute_metrics`.
+    """One of the metrics functions for use in :func:`cnlp_compute_metrics`.
 
     Generates evaluation metrics for generic tasks.
 
@@ -161,9 +162,12 @@ def acc_and_f1(preds: np.ndarray, labels: np.ndarray) -> dict[str, Any]:
             'precision': precision
         }
 
-    :param preds: the predicted labels from the model
-    :param labels: the true labels
-    :return: a dictionary containing evaluation metrics
+    Args:
+        preds: The predicted labels from the model.
+        labels: The true labels.
+
+    Returns:
+        A dictionary containing evaluation metrics.
     """
     acc = accuracy_score(y_pred=preds, y_true=labels)
     recall = recall_score(y_true=labels, y_pred=preds, average=None)
@@ -187,19 +191,21 @@ def cnlp_compute_metrics(
     output_mode: TaskType,
     label_set: list[str],
 ) -> dict[str, Any]:
-    """
-    Function that defines and computes the metrics used for each task.
+    """Function that defines and computes the metrics used for each task.
 
     When adding a task definition to this file, add a branch to this
     function defining what its evaluation metric invocation should be.
     If the new task is a simple classification task, a sensible default
     is defined; falling back on this will trigger a warning.
 
-    :param preds: the predicted labels from the model
-    :param labels: the true labels
-    :param output_mode: the output mode of the classifier
-    :param label_set: the set of output label names for the classifier
-    :return: a dictionary containing evaluation metrics
+    Args:
+        preds: The predicted labels from the model.
+        labels: The true labels.
+        output_mode: The output mode of the classifier.
+        label_set: The set of output label names for the classifier.
+
+    Returns:
+        A dictionary containing evaluation metrics.
     """
 
     assert len(preds) == len(labels), (

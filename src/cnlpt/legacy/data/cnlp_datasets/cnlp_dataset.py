@@ -5,7 +5,7 @@ import datasets
 from torch.utils.data.dataset import Dataset
 from transformers.tokenization_utils import PreTrainedTokenizer
 
-from ...args import CnlpDataArguments
+from ....args import CnlpDataArguments
 from ...data.cnlp_datasets import AutoProcessor
 from ...data.tasks import CLASSIFICATION, RELEX, TAGGING, TaskType
 from ..features import HierarchicalInputFeatures, InputFeatures

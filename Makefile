@@ -5,7 +5,7 @@ help:
 	@echo '  hooks  - install pre-commit hooks'
 	@echo '  check  - lint and format using ruff'
 	@echo '  test   - run tests with pytest'
-	@echo '  docs   - build the docs'
+	@echo '  docs   - build the docs locally'
 	@echo '  build  - build cnlp-transformers for distribution'
 
 .PHONY: hooks
@@ -24,12 +24,8 @@ test:
 
 .PHONY: docs
 docs:
-# this script is copied from the old build_doc_source.sh script
-	find docs -maxdepth 1 ! -name 'index.rst' -name '*.rst' -type f -exec rm -f {} +
-	rm -f transformer_objects.inv
-	sphobjinv convert zlib docs/transformer_objects.txt --quiet
-	SPHINX_APIDOC_OPTIONS=members,show-inheritance sphinx-apidoc -feT -o docs src/cnlpt
-	echo "   :noindex:" >> docs/cnlpt.rst
+	scripts/build_html_docs.sh docs/build
+	@echo "Point your browser at file://${PWD}/docs/build/html/index.html to view."
 
 .PHONY: build
 build:

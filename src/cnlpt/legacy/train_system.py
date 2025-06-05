@@ -45,14 +45,14 @@ from transformers import (
 from transformers.file_utils import CONFIG_NAME
 from transformers.training_args import IntervalStrategy
 
-from .args import CnlpDataArguments, CnlpModelArguments, CnlpTrainingArguments
+from ..args import CnlpDataArguments, CnlpModelArguments, CnlpTrainingArguments
+from ..models import CnlpConfig, CnlpModelForClassification, HierarchicalModel
+from ..models.baseline import CnnSentenceClassifier, LstmSentenceClassifier
 from .cnlp_metrics import cnlp_compute_metrics
 from .cnlp_predict import process_prediction, restructure_prediction, structure_labels
 from .data.cnlp_datasets import ClinicalNlpDataset
 from .data.tasks import RELEX, TAGGING, TaskType
 from .data.utils import get_dataset_segment
-from .models import CnlpConfig, CnlpModelForClassification, HierarchicalModel
-from .models.baseline import CnnSentenceClassifier, LstmSentenceClassifier
 
 sys.path.append(os.path.join(os.getcwd()))
 

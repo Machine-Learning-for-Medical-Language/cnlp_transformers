@@ -20,12 +20,21 @@ def _validate_dataset_args(args: CnlpDataArguments, hierarchical: bool):
 
 
 class CnlpDataset:
+    """A preprocessed dataset for clinical NLP."""
+
     def __init__(
         self,
         args: CnlpDataArguments,
         tokenizer: PreTrainedTokenizer,
         hierarchical: bool = False,
     ):
+        """Create a new `CnlpDataset`.
+
+        Args:
+            args: Arguments for data loading and preprocessing.
+            tokenizer: Tokenizer to tokenize the raw data.
+            hierarchical: Whether this data is being preprocessed for a hierarchical model. Defaults to False.
+        """
         _validate_dataset_args(args, hierarchical)
 
         self.hierarchical = hierarchical
@@ -58,17 +67,24 @@ class CnlpDataset:
                     "max_length": args.max_seq_length,
                     "inference_only": "train" not in reader.split_names,
                     "hierarchical": self.hierarchical,
+                    "character_level": args.character_level,
                     "chunk_len": args.chunk_len,
                     "num_chunks": args.num_chunks,
-                    "character_level": args.character_level,
                     "insert_empty_chunk_at_beginning": args.insert_empty_chunk_at_beginning,
                 },
             )
 
     @property
     def train_data(self):
+        """This dataset's train split."""
         return self.dataset["train"]
 
     @property
     def validation_data(self):
+        """This dataset's validation split."""
         return self.dataset["validation"]
+
+    @property
+    def test_data(self):
+        """This dataset's test split."""
+        return self.dataset["test"]

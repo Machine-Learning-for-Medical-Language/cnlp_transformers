@@ -6,7 +6,7 @@ from torch.utils.data.dataset import Dataset
 from transformers import DataCollatorForLanguageModeling
 from transformers.tokenization_utils import PreTrainedTokenizer
 
-from ...args import DaptArguments
+from ....args import DaptArguments
 from ..cnlp_datasets import AutoProcessor
 
 

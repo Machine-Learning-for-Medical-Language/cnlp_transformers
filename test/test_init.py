@@ -12,42 +12,60 @@ def test_init():
     assert cnlpt.__package__ == "cnlpt"
 
 
-class TestSubmodulesPresent:
-    """
-    Test that all submodules are defined and can be imported (#88)
-    """
+def test_init_models():
+    import cnlpt.models
 
-    def test_BaselineModels_present(self):
-        import cnlpt.models.baseline
+    assert cnlpt.models.__package__ == "cnlpt.models"
+    assert cnlpt.models.__all__ == [
+        "CnlpConfig",
+        "CnlpModelForClassification",
+        "HierarchicalModel",
+    ]
 
-        assert cnlpt.models.baseline.__package__ == "cnlpt.models.baseline"
+    import cnlpt.models.baseline
 
-    def test_cnlp_data_present(self):
-        import cnlpt.data
+    assert cnlpt.models.baseline.__package__ == "cnlpt.models.baseline"
+    assert cnlpt.models.baseline.__all__ == [
+        "CnnSentenceClassifier",
+        "LstmSentenceClassifier",
+    ]
 
-        assert cnlpt.data.__package__ == "cnlpt.data"
 
-    def test_cnlp_processors_present(self):
-        import cnlpt.data.cnlp_datasets
+def test_init_train_system():
+    import cnlpt.train_system
 
-        assert cnlpt.data.cnlp_datasets.__package__ == "cnlpt.data.cnlp_datasets"
+    assert cnlpt.train_system.__package__ == "cnlpt.train_system"
+    assert cnlpt.train_system.__all__ == ["CnlpTrainSystem"]
 
-    def test_CnlpModelForClassification_present(self):
-        import cnlpt.models.cnlp
 
-        assert cnlpt.models.cnlp.__package__ == "cnlpt.models"
+def test_init_data():
+    import cnlpt.data
 
-    def test_HierarchicalTransformer_present(self):
-        import cnlpt.models.hierarchical
+    assert cnlpt.data.__package__ == "cnlpt.data"
+    assert cnlpt.data.__all__ == [
+        "CLASSIFICATION",
+        "RELATIONS",
+        "TAGGING",
+        "CnlpDataset",
+        "TaskInfo",
+        "get_task_type",
+        "preprocess_raw_data",
+    ]
 
-        assert cnlpt.models.hierarchical.__package__ == "cnlpt.models"
 
-    def test_thyme_eval_present(self):
-        import cnlpt.thyme_eval
+def test_init_args():
+    import cnlpt.args
 
-        assert cnlpt.thyme_eval.__package__ == "cnlpt"
+    assert cnlpt.args.__package__ == "cnlpt.args"
+    assert cnlpt.args.__all__ == [
+        "CnlpDataArguments",
+        "CnlpModelArguments",
+        "CnlpTrainingArguments",
+    ]
 
-    def test_train_system_present(self):
-        import cnlpt.train_system
 
-        assert cnlpt.train_system.__package__ == "cnlpt"
+def test_init_api():
+    import cnlpt.api
+
+    assert cnlpt.api.__package__ == "cnlpt.api"
+    assert cnlpt.api.__all__ == ["MODEL_TYPES", "get_rest_app"]

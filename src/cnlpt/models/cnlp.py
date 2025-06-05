@@ -26,11 +26,14 @@ logger = logging.getLogger(__name__)
 
 
 def generalize_encoder_forward_kwargs(encoder, **kwargs: Any) -> dict[str, Any]:
-    """
-    Create a new input feature argument that preserves only the features that are valid for this encoder.
+    """Create a new input feature argument that preserves only the features that are valid for this encoder.
     Warn if a feature is present but not valid for the encoder.
-    :param encoder: A HF encoder model
-    :return: Dictionary of valid arguments for this encoder
+
+    Args:
+        encoder: A HF encoder model
+
+    Returns:
+        Dictionary of valid arguments for this encoder
     """
     new_kwargs = dict()
     params = inspect.signature(encoder.forward).parameters
@@ -49,11 +52,12 @@ def generalize_encoder_forward_kwargs(encoder, **kwargs: Any) -> dict[str, Any]:
 
 
 def freeze_encoder_weights(encoder, freeze: float):
-    """
-    Probabilistically freeze the weights of this HF encoder model according to the freeze parameter.
+    """Probabilistically freeze the weights of this HF encoder model according to the freeze parameter.
     Values of freeze >=1 are treated as if every parameter should be frozen.
-    :param encoder: HF encoder model
-    :param freeze: Probability of freezing any given parameter (0-1)
+
+    Args:
+        encoder: HF encoder model
+        freeze: Probability of freezing any given parameter (0-1)
     """
     for param in encoder.parameters():
         if freeze >= 1.0:
@@ -65,9 +69,7 @@ def freeze_encoder_weights(encoder, freeze: float):
 
 
 class ClassificationHead(nn.Module):
-    """
-    Generic classification head that can be used for any task.
-    """
+    """Generic classification head that can be used for any task."""
 
     def __init__(self, config, num_labels, hidden_size=-1):
         super().__init__()
@@ -83,17 +85,8 @@ class ClassificationHead(nn.Module):
 
 
 class RepresentationProjectionLayer(nn.Module):
-    """
-    The class that maps from some output from a text encoder into a feature representation that can be classified.
-    Project the representation to a new space depending on the task type, based on arguments passed in to the constructor.
-    :param config - The config file for the encoder
-    :param layer - Which layer to pull the encoder representation from
-    :param tokens - Whether to classify an entity based on the token reprsentation rather than the CLS representation
-    :param tagger - Whether the current task is a token tagging task
-    :param relations - Whether the current task is relation exttraction
-    :param num_attention_heads - For relations, how many "features" to use
-    :param head_size - For relations, how big each head should be
-    """
+    """The class that maps from some output from a text encoder into a feature representation that can be classified.
+    Project the representation to a new space depending on the task type, based on arguments passed in to the constructor."""
 
     def __init__(
         self,
@@ -105,6 +98,16 @@ class RepresentationProjectionLayer(nn.Module):
         num_attention_heads: int = -1,
         head_size: int = 64,
     ):
+        """
+        Args:
+            config: The config file for the encoder
+            layer: Which layer to pull the encoder representation from
+            tokens: Whether to classify an entity based on the token reprsentation rather than the CLS representation
+            tagger: Whether the current task is a token tagging task
+            relations: Whether the current task is relation exttraction
+            num_attention_heads: For relations, how many "features" to use
+            head_size: For relations, how big each head should be
+        """
         super().__init__()
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         if relations:
@@ -213,22 +216,7 @@ class RepresentationProjectionLayer(nn.Module):
 
 
 class CnlpConfig(PretrainedConfig):
-    """
-    The config class for :class:`CnlpModelForClassification`.
-
-    :param encoder_name: the encoder name to use with :meth:`transformers.AutoConfig.from_pretrained`
-    :param finetuning_task: the tasks for which this model is fine-tuned
-    :param layer: the index of the encoder layer to extract features from
-    :param tokens: if true, sentence-level classification is done based on averaged token embeddings for token(s) surrounded by <e> </e> special tokens
-    :param num_rel_attention_heads: the number of features/attention heads to use in the NxN relation classifier
-    :param rel_attention_head_dims: the number of parameters in each attention head in the NxN relation classifier
-    :param tagger: for each task, whether the task is a sequence tagging task
-    :param relations: for each task, whether the task is a relation extraction task
-    :param use_prior_tasks: whether to use the outputs from the previous tasks as additional inputs for subsequent tasks
-    :param hier_head_config: If this is a hierarchical model, this is where the config parameters go
-    :param label_dictionary: A mapping from task names to label sets
-    :param **kwargs: arguments for :class:`transformers.PretrainedConfig`
-    """
+    """The config class for :class:`CnlpModelForClassification`."""
 
     model_type = "cnlpt"
 
@@ -249,6 +237,22 @@ class CnlpConfig(PretrainedConfig):
         character_level: bool = False,
         **kwargs,
     ):
+        """Create a new CnlpConfig object.
+
+        Args:
+            encoder_name: The encoder name to use with :meth:`transformers.AutoConfig.from_pretrained`. Defaults to "roberta-base".
+            finetuning_task: The tasks for which this model is fine-tuned. Defaults to None.
+            layer: The index of the encoder layer to extract features from. Defaults to -1.
+            tokens: If true, sentence-level classification is done based on averaged token embeddings for token(s) surrounded by <e> </e> special tokens. Defaults to False.
+            num_rel_attention_heads: The number of features/attention heads to use in the NxN relation classifier. Defaults to 12.
+            rel_attention_head_dims: The number of parameters in each attention head in the NxN relation classifier. Defaults to 64.
+            tagger: For each task, whether the task is a sequence tagging task. Defaults to {}.
+            relations: For each task, whether the task is a relation extraction task. Defaults to {}.
+            use_prior_tasks: Whether to use the outputs from the previous tasks as additional inputs for subsequent tasks. Defaults to False.
+            hier_head_config: If this is a hierarchical model, this is where the config parameters go. Defaults to None.
+            label_dictionary: A mapping from task names to label sets. Defaults to None.
+            character_level: Whether the encoder is character level. Defaults to False.
+        """
         super().__init__(**kwargs)
         # self.name_or_path='cnlpt'
         self.finetuning_task = finetuning_task
@@ -293,16 +297,7 @@ class CnlpConfig(PretrainedConfig):
 
 
 class CnlpModelForClassification(PreTrainedModel):
-    """
-    The CNLP transformer model.
-    :param config: The CnlpConfig object that configures this model
-    :param class_weights: if provided,
-        the weights to use for each task when computing the loss
-    :param final_task_weight: the weight to use for the final task
-        when computing the loss; default 1.0.
-    :param freeze: what proportion of encoder weights to freeze (-1 for none)
-    :param bias_fit: whether to fine-tune only the bias of the encoder
-    """
+    """The CNLP transformer model."""
 
     base_model_prefix = "cnlpt"
     config_class = CnlpConfig
@@ -316,6 +311,15 @@ class CnlpModelForClassification(PreTrainedModel):
         freeze: float = -1.0,
         bias_fit: bool = False,
     ):
+        """Create a new CNLP transformer model instance from a config object.
+
+        Args:
+            config: The CnlpConfig object that configures this model
+            class_weights: If provided, the weights to use for each task when computing the loss. Defaults to None.
+            final_task_weight: The weight to use for the final task when computing the loss. Defaults to 1.0.
+            freeze: What proportion of encoder weights to freeze (-1 for none). Defaults to -1.0.
+            bias_fit: Whether to fine-tune only the bias of the encoder. Defaults to False.
+        """
         super().__init__(config)
 
         encoder_config = AutoConfig.from_pretrained(config.encoder_name)
@@ -410,13 +414,17 @@ class CnlpModelForClassification(PreTrainedModel):
     def predict_relations_with_previous_logits(
         self, features: torch.Tensor, logits: list[torch.Tensor]
     ) -> torch.Tensor:
-        """
-        For the relation prediction task, use previous predictions of the tagging task as additional features in the
+        """For the relation prediction task, use previous predictions of the tagging task as additional features in the
         representation used for making the relation prediction.
-        :param features: The existing feature vector for the relations
-        :param logits: The predicted logits from the tagging task
-        :return: The augmented feature tensor
+
+        Args:
+            features: The existing feature vector for the relations
+            logits: The predicted logits from the tagging task
+
+        Returns:
+            The augmented feature tensor
         """
+
         # features is (batch x seq x seq x n_heads)
         seq_len = features.shape[1]
         for prior_task_logits in logits:
@@ -553,8 +561,7 @@ class CnlpModelForClassification(PreTrainedModel):
         output_hidden_states=None,
         event_tokens=None,
     ):
-        r"""
-        Forward method.
+        r"""Forward method.
 
         Args:
             input_ids (`torch.LongTensor` of shape `(batch_size, sequence_len)`, *optional*):

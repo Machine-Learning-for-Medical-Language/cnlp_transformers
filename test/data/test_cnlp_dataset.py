@@ -4,7 +4,7 @@ import pytest
 from transformers.models.auto.tokenization_auto import AutoTokenizer
 
 from cnlpt.args import CnlpDataArguments
-from cnlpt.new_data.cnlp_dataset import CnlpDataset
+from cnlpt.data import CnlpDataset
 
 
 @pytest.fixture(scope="session")

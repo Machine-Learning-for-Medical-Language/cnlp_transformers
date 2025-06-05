@@ -4,10 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from cnlpt.new_data.data_reader import CnlpDataReader
-from cnlpt.new_data.task_info import (
-    TaskInfo,
-)
+from cnlpt.data.data_reader import CnlpDataReader
+from cnlpt.data.task_info import TaskInfo
 
 
 @pytest.fixture

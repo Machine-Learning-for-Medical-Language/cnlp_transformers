@@ -79,16 +79,25 @@ def _get_sorted_label_set(all_raw_labels: Iterable[str], task_type: TaskType):
 
 
 class CnlpDataReader:
+    """Utility class to read and parse raw CNLP-formatted data.
+
+    This class will read CNLP-formatted data from disk and collect it into a `DatasetDict`,
+    as well as maintain a list of `TaskInfo` instances representing the data's CNLP tasks.
+    """
+
     def __init__(self):
+        """Initialize an empty `CnlpDataReader` with no data."""
         self.dataset = DatasetDict()
         self._tasks: list[TaskInfo] = []
 
     @property
     def split_names(self) -> set[DatasetSplit]:
+        """The set of splits (i.e., "train", "validation", and/or "test") present in the data."""
         return set(self.dataset.keys())
 
     @property
     def task_names(self):
+        """The names of all the tasks present in the data."""
         return tuple(t.name for t in self._tasks)
 
     def _get_task_by_name(self, task_name: str):
@@ -98,6 +107,18 @@ class CnlpDataReader:
         raise ValueError(f'task with name "{task_name}" not found')
 
     def get_tasks(self, task_names: Union[Iterable[str], None] = None):
+        """Get all or some subset of the tasks in the data.
+
+        The `TaskInfo` objects returned by this method will have their `index` property
+        set to their index in the returned tuple.
+
+        Args:
+            task_names: The names of the tasks to retrieve. If set to None, retrieves all tasks.
+                Defaults to None.
+
+        Returns:
+            A tuple of `TaskInfo` objects.
+        """
         if task_names is None:
             return tuple(self._tasks)
         result: list[TaskInfo] = []
@@ -106,7 +127,7 @@ class CnlpDataReader:
             result.append(TaskInfo(name=t.name, type=t.type, index=i, labels=t.labels))
         return tuple(result)
 
-    def extend(self, new_dataset: DatasetDict, tasks: list[TaskInfo]):
+    def _extend(self, new_dataset: DatasetDict, tasks: list[TaskInfo]):
         # first merge the tasks
         for new_task in tasks:
             if new_task.name not in self.task_names:
@@ -175,6 +196,15 @@ class CnlpDataReader:
         json_filepath: Union[str, os.PathLike],
         split: Union[DatasetSplit, None] = None,
     ):
+        """Update this reader with new data from a CNLP-formatted json file.
+
+        Args:
+            json_filepath: The path to the json file.
+            split: Which split this data should be a part of. If None, the split will be inferred by the file name. Defaults to None.
+
+        Raises:
+            ValueError: If the file is improperly formatted.
+        """
         if split is None:
             split = _infer_split(json_filepath)
 
@@ -235,7 +265,7 @@ class CnlpDataReader:
             )
             tasks = _infer_tasks(dataset[split])
 
-        self.extend(dataset, tasks)
+        self._extend(dataset, tasks)
 
     def load_csv(
         self,
@@ -243,6 +273,13 @@ class CnlpDataReader:
         split: Union[DatasetSplit, None] = None,
         sep: str = ",",
     ):
+        """Update this reader with new data from a CNLP-formatted csv (or tsv) file.
+
+        Args:
+            csv_filepath: The path to the csv (or tsv) file.
+            split: Which split this data should be a part of. If None, the split will be inferred by the file name. Defaults to None.
+            sep: The separator to use for reading this file. Defaults to ",". For tsv, this should be set to "\\t".
+        """
         if split is None:
             split = _infer_split(csv_filepath)
 
@@ -255,9 +292,18 @@ class CnlpDataReader:
             ),
         )
         tasks = _infer_tasks(dataset[split])
-        self.extend(dataset, tasks)
+        self._extend(dataset, tasks)
 
     def load_dir(self, data_dir: Union[str, os.PathLike]):
+        """Update this reader with new data from a directory containing CNLP-formatted data.
+
+        This will search (non-recursively) for files named "train", "test", "validation", "valid", or "dev",
+        that have the extension ".csv", ".tsv", or ".json".
+        The split and data format will be inferred from the filename for each file.
+
+        Args:
+            data_dir: Directory with CNLP-formatted data to load.
+        """
         for filename in os.listdir(data_dir):
             root, ext = os.path.splitext(filename)
             ext = ext.removeprefix(".")
