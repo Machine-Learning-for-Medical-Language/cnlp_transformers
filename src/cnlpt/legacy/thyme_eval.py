@@ -75,7 +75,10 @@ def main(args):
                 )
                 if text_name in input_annotations:
                     for annot in anafora_input_data.annotations:
-                        annot.id = f"{annot.id}_{xml_ind}"
+                        annot.id = "%s_%d" % (
+                            annot.id,
+                            xml_ind,
+                        )
                         input_annotations[text_name].append(annot)
                 else:
                     input_annotations[text_name] = anafora_input_data.annotations
@@ -280,7 +283,7 @@ def main(args):
                 token_spans = align_tokens(sent_tokens[sent_ind], sent_txt)
             except Exception as e:
                 sys.stderr.write(
-                    f"In document {text_name}, error \n{e!s}\n processing sentence:\n*****\n{sent_txt}\n******\n"
+                    f"In document {text_name}, error \n{str(e)}\n processing sentence:\n*****\n{sent_txt}\n******\n"
                 )
                 sys.exit(-1)
 

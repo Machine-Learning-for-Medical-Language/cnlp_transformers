@@ -69,6 +69,7 @@ dev = [
 
 [tool.ruff]
 target-version = "py39"
+extend-exclude = ["src/cnlpt/legacy/*"]
 
 [tool.ruff.lint]
 select = [

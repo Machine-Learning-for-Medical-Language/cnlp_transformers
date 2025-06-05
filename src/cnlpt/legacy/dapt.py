@@ -16,8 +16,8 @@ from transformers import (
     set_seed,
 )
 
-from .dapt_args import DaptArguments
-from .data.cnlp_datasets import DaptDataset
+from .cnlp_args import DaptArguments
+from .cnlp_data import DaptDataset
 
 logger = logging.getLogger(__name__)
 

@@ -1,17 +1,100 @@
+import functools
+import json
 import logging
 from collections import deque
 from collections.abc import Iterable
+from dataclasses import asdict, dataclass, field
+from enum import Enum
 from typing import Union
 
+import datasets
 import numpy as np
-from transformers import BatchEncoding
+from datasets import Dataset as HFDataset
+from datasets import DatasetDict, IterableDatasetDict
+from torch.utils.data.dataset import Dataset
+from transformers import BatchEncoding, DataCollatorForLanguageModeling
 from transformers.tokenization_utils import PreTrainedTokenizer
 
-from .features import HierarchicalInputFeatures, InputFeatures
-from .tasks import CLASSIFICATION, RELEX, TAGGING
+from .cnlp_args import DaptArguments
+from .cnlp_processors import AutoProcessor, classification, relex, tagging
+
+special_tokens = ["<e>", "</e>", "<a1>", "</a1>", "<a2>", "</a2>", "<cr>", "<neg>"]
+text_columns = ["text", "text_a", "text_b"]
+none_column = "__None__"
 
 logger = logging.getLogger(__name__)
-none_column = "__None__"
+
+
+def list_field(default=None, metadata=None):
+    return field(default_factory=lambda: default, metadata=metadata)
+
+
+class Split(Enum):
+    """
+    Enum representing the three data splits for model development.
+    """
+
+    train = "train"
+    dev = "dev"
+    test = "test"
+
+
+@dataclass(frozen=True)
+class InputFeatures:
+    """
+    A single set of features of data.
+    Property names are the same names as the corresponding inputs to a model.
+
+    Args:
+        input_ids: Indices of input sequence tokens in the vocabulary.
+        attention_mask: Mask to avoid performing attention on padding token indices.
+            Mask values selected in ``[0, 1]``:
+            Usually  ``1`` for tokens that are NOT MASKED, ``0`` for MASKED (padded) tokens.
+        token_type_ids: (Optional) Segment token indices to indicate first and second
+            portions of the inputs. Only some models use them.
+        event_tokens: (Optional)
+        label: (Optional) Label corresponding to the input. Int for classification problems,
+            float for regression problems.
+    """
+
+    input_ids: list[int]
+    attention_mask: Union[list[int], None] = None
+    token_type_ids: Union[list[int], None] = None
+    event_tokens: Union[list[int], None] = None
+    label: list[Union[int, float, list[int], list[tuple[int]], None]] = None
+
+    def to_json_string(self):
+        """Serializes this instance to a JSON string."""
+        return json.dumps(asdict(self)) + "\n"
+
+
+@dataclass(frozen=True)
+class HierarchicalInputFeatures:
+    """
+    A single set of features of data for the hierarchical model.
+    Property names are the same names as the corresponding inputs to a model.
+
+    Args:
+        input_ids: Indices of input sequence tokens in the vocabulary.
+        attention_mask: Mask to avoid performing attention on padding token indices.
+            Mask values selected in ``[0, 1]``:
+            Usually  ``1`` for tokens that are NOT MASKED, ``0`` for MASKED (padded) tokens.
+        token_type_ids: (Optional) Segment token indices to indicate first and second
+            portions of the inputs. Only some models use them.
+        event_tokens: (Optional)
+        label: (Optional) Label corresponding to the input. Int for classification problems,
+            float for regression problems.
+    """
+
+    input_ids: list[list[int]]
+    attention_mask: Union[list[list[int]], None] = None
+    token_type_ids: Union[list[list[int]], None] = None
+    event_tokens: Union[list[list[int]], None] = None
+    label: list[Union[int, float, list[int], list[tuple[int]], None]] = None
+
+    def to_json_string(self):
+        """Serializes this instance to a JSON string."""
+        return json.dumps(asdict(self)) + "\n"
 
 
 def cnlp_convert_features_to_hierarchical(
@@ -71,7 +154,7 @@ def cnlp_convert_features_to_hierarchical(
         def format_chunk(
             chunk, cls_type=cls_id, sep_type=sep_id, pad_type=pad_id, pad=True
         ):
-            formatted_chunk = [cls_type, *chunk, sep_type]
+            formatted_chunk = [cls_type] + chunk + [sep_type]
             if pad:
                 return pad_chunk(formatted_chunk, pad_type=pad_type)
             else:
@@ -112,7 +195,7 @@ def cnlp_convert_features_to_hierarchical(
             start = end
 
         def create_pad_chunk(cls_type=cls_id, sep_type=sep_id, pad_type=pad_id):
-            return pad_chunk([cls_type, sep_type], pad_type=pad_type)
+            return pad_chunk([cls_type] + [sep_type], pad_type=pad_type)
 
         # Insert an empty chunk at the beginning.
         if insert_empty_chunk_at_beginning:
@@ -281,9 +364,9 @@ def cnlp_preprocess_data(
     # (which has one label per pre-wordpiece token) and relations (which are defined as tuples which
     # contain pre-wordpiece token indices)
     if not inference:
-        assert label_lists is not None and output_modes is not None, (
-            f"label_lists {label_lists} output_modes {output_modes} must both be non-None"
-        )
+        assert (
+            label_lists is not None and output_modes is not None
+        ), f"label_lists {label_lists} output_modes {output_modes} must both be non-None"
         # Create a label map for each task in this dataset: { task1 => {label_0: 0, label_1: 1, label_2:, 2}, task2 => {label_0: 0, label_1:1} }
         label_map = {
             task: {label: i for i, label in enumerate(label_lists[task])}
@@ -305,16 +388,16 @@ def cnlp_preprocess_data(
             task_labels = []
             raw_labels.append(examples[task])
 
-            if output_modes[task] == CLASSIFICATION:
+            if output_modes[task] == classification:
                 task_labels = [label_map[task][label] for label in raw_labels[task_ind]]
                 # labels is just a list of one label for each instance
-            elif output_modes[task] == TAGGING:
+            elif output_modes[task] == tagging:
                 task_labels = [
                     [label_map[task][label] for label in inst_labels.split()]
                     for inst_labels in raw_labels[task_ind]
                 ]
                 # labels is a list of lists, where each internal list is the set of tags for that instance.
-            elif output_modes[task] == RELEX:
+            elif output_modes[task] == relex:
                 for inst_rels in raw_labels[task_ind]:
                     if inst_rels is None or inst_rels == "None":
                         task_labels.append(["None"])
@@ -377,55 +460,6 @@ def cnlp_preprocess_data(
     return result
 
 
-def _build_event_mask_word_piece(
-    result: BatchEncoding, num_insts: int, event_start_token_id, event_end_token_id
-):
-    """
-    Create arrays corresponding to input tokens where the events to be classified contain special mask tokens.
-    These are used if the --event flag is specified to classify event tokens rather than the [CLS] token.
-    :param result: The input encodings of the tokens
-    :param num_insts: The length of the input
-    :param event_start_token_id: The special token index used to indicate the start of an event.
-    :param event_end_token_id: The special token index used to indicate the end of an event.
-    :return: The list of lists of per-instance event mask values corresponding to the input tokens.
-    """
-    event_tokens = []
-    for i in range(num_insts):
-        input_ids = result["input_ids"][i]
-        try:
-            event_start = input_ids.index(event_start_token_id)
-        except Exception:
-            event_start = -1
-
-        try:
-            event_end = input_ids.index(event_end_token_id)
-        except Exception:
-            event_end = len(input_ids) - 1
-
-        if event_start >= 0:
-            inst_event_tokens = (
-                [0] * event_start
-                + [1] * (event_end - event_start + 1)
-                + [0] * (len(input_ids) - event_end - 1)
-            )
-        else:
-            inst_event_tokens = [1] * len(input_ids)
-
-        event_tokens.append(inst_event_tokens)
-
-    return event_tokens
-
-
-def _build_event_mask_character(result: BatchEncoding, num_insts: int):
-    event_tokens = []
-    for i in range(num_insts):
-        input_ids = result["input_ids"][i]
-        inst_event_tokens = [1] * len(input_ids)
-        event_tokens.append(inst_event_tokens)
-
-    return event_tokens
-
-
 def _build_pytorch_labels(
     result: BatchEncoding,
     tasks: list[str],
@@ -438,10 +472,10 @@ def _build_pytorch_labels(
     # labels_out = []
     # TODO -- also adapt to character level
     pad_classification = False
-    if RELEX in output_modes.values() or TAGGING in output_modes.values():
+    if relex in output_modes.values() or tagging in output_modes.values():
         # we have tagging as the highest dimensional output
         max_dims = 2
-        if CLASSIFICATION in output_modes.values():
+        if classification in output_modes.values():
             pad_classification = True
     else:
         # classification only
@@ -488,9 +522,9 @@ def _build_labels_for_task(
     label_lists: dict[str, list[str]],
     pad_classification: bool,
 ) -> Union[np.ndarray, list[np.ndarray]]:
-    if output_mode[task] == TAGGING:
+    if output_mode[task] == tagging:
         return get_tagging_labels(task_ind, result, labels, num_instances)
-    elif output_mode[task] == RELEX:
+    elif output_mode[task] == relex:
         return get_relex_labels(
             task,
             task_ind,
@@ -500,7 +534,7 @@ def _build_labels_for_task(
             max_length,
             label_lists,
         )
-    elif output_mode[task] == CLASSIFICATION:
+    elif output_mode[task] == classification:
         return get_classification_labels(
             task_ind,
             labels,
@@ -635,7 +669,53 @@ def get_classification_labels(
     return np.array(encoded_labels)
 
 
-# TODO: the following three functions seem to be unused in the codebase?
+def _build_event_mask_word_piece(
+    result: BatchEncoding, num_insts: int, event_start_token_id, event_end_token_id
+):
+    """
+    Create arrays corresponding to input tokens where the events to be classified contain special mask tokens.
+    These are used if the --event flag is specified to classify event tokens rather than the [CLS] token.
+    :param result: The input encodings of the tokens
+    :param num_insts: The length of the input
+    :param event_start_token_id: The special token index used to indicate the start of an event.
+    :param event_end_token_id: The special token index used to indicate the end of an event.
+    :return: The list of lists of per-instance event mask values corresponding to the input tokens.
+    """
+    event_tokens = []
+    for i in range(num_insts):
+        input_ids = result["input_ids"][i]
+        try:
+            event_start = input_ids.index(event_start_token_id)
+        except Exception:
+            event_start = -1
+
+        try:
+            event_end = input_ids.index(event_end_token_id)
+        except Exception:
+            event_end = len(input_ids) - 1
+
+        if event_start >= 0:
+            inst_event_tokens = (
+                [0] * event_start
+                + [1] * (event_end - event_start + 1)
+                + [0] * (len(input_ids) - event_end - 1)
+            )
+        else:
+            inst_event_tokens = [1] * len(input_ids)
+
+        event_tokens.append(inst_event_tokens)
+
+    return event_tokens
+
+
+def _build_event_mask_character(result: BatchEncoding, num_insts: int):
+    event_tokens = []
+    for i in range(num_insts):
+        input_ids = result["input_ids"][i]
+        inst_event_tokens = [1] * len(input_ids)
+        event_tokens.append(inst_event_tokens)
+
+    return event_tokens
 
 
 def truncate_features(feature: Union[InputFeatures, HierarchicalInputFeatures]):
@@ -688,3 +768,414 @@ def truncate_list_of_lists(li: Union[list, str]) -> Union[list, str]:
             return li
     else:
         return li
+
+
+@dataclass
+class DataTrainingArguments:
+    """
+    Arguments pertaining to what data we are going to input our model for training and eval.
+
+    Using :class:`transformers.HfArgumentParser` we can turn this class
+    into argparse arguments to be able to specify them on
+    the command line.
+    """
+
+    data_dir: list[str] = field(
+        metadata={
+            "help": "The input data dirs. A space-separated list of directories that "
+            "should contain the .tsv files (or other data files) for the task. "
+            "Should be presented in the same order as the task names."
+        }
+    )
+
+    task_name: list[str] = field(
+        default_factory=lambda: None,
+        metadata={
+            "help": "A space-separated list of tasks to train on (mainly used as keys to internally track and display output)"
+        },
+    )
+    # field(
+    #     metadata={"help": "A space-separated list of tasks to train on: " + ", ".join(cnlp_processors.keys())})
+
+    max_seq_length: int = field(
+        default=128,
+        metadata={
+            "help": "The maximum total input sequence length after tokenization. Sequences longer "
+            "than this will be truncated, sequences shorter will be padded."
+        },
+    )
+    overwrite_cache: bool = field(
+        default=False,
+        metadata={"help": "Overwrite the cached training and evaluation sets"},
+    )
+
+    weight_classes: bool = field(
+        default=False,
+        metadata={
+            "help": "A flag that indicates whether class-specific loss should be used. "
+            "This can be useful in cases with severe class imbalance. The formula "
+            "for a weight of a class is the count of that class divided the count "
+            "of the rarest class."
+        },
+    )
+
+    chunk_len: Union[int, None] = field(
+        default=None, metadata={"help": "Chunk length for hierarchical model"}
+    )
+    character_level: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether the dataset sould be processed at the character level"
+            "(otherwise will be processed at the token level)"
+        },
+    )
+
+    num_chunks: Union[int, None] = field(
+        default=None, metadata={"help": "Max chunk count for hierarchical model"}
+    )
+
+    insert_empty_chunk_at_beginning: bool = field(
+        default=False,
+        metadata={"help": "Whether to insert an empty chunk for hierarchical model"},
+    )
+
+    truncate_examples: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to truncate input examples when displaying them in the log"
+        },
+    )
+
+    max_train_items: Union[int, None] = field(
+        default=-1,
+        metadata={
+            "help": "Set a number of train instances to use during training (useful for debugging data processing logic if a dataset is very large. Default is to train on all training data."
+        },
+    )
+
+    max_eval_items: Union[int, None] = field(
+        default=-1,
+        metadata={
+            "help": "Set a number of validation instances to use during training (useful if a dataset has been created using dumb logic like 80/10/10 and 10%% takes forever to evaluate on. Default is evaluate on all validation data."
+        },
+    )
+
+
+class ClinicalNlpDataset(Dataset):
+    """
+    Copy-pasted from GlueDataset with glue task-specific code changed;
+    moved into here to be self-contained.
+
+    :param args: the data training args for this experiment
+    :param tokenizer: the tokenizer
+    :param limit_length: if provided, the number of
+        examples to include in the dataset
+    :param cache_dir: if provided, the directory to save/load a cache
+        of this dataset
+    :param hierarchical: whether to structure the data for the hierarchical
+        model (:class:`cnlpt.HierarchicalTransformer.HierarchicalModel`)
+    """
+
+    args: DataTrainingArguments
+    features: list[InputFeatures]
+
+    def __init__(
+        self,
+        args: DataTrainingArguments,
+        tokenizer: PreTrainedTokenizer,
+        limit_length: Union[int, None] = None,
+        cache_dir: Union[str, None] = None,
+        hierarchical: bool = False,
+    ):
+        self.args = args
+        self.processors = []
+        self.class_weights = None
+        self.tasks_to_labels = {}
+        self.hierarchical = hierarchical
+        self.datasets = []
+        self.processed_dataset = []
+        self.output_modes = {}
+
+        # Load data features from cache or dataset file
+        self.label_lists = []
+        self.num_train_instances = 0
+
+        if self.hierarchical:
+            implicit_max_len = self.args.chunk_len * self.args.num_chunks
+            if self.args.max_seq_length < implicit_max_len:
+                raise ValueError(
+                    "For the hierarchical model, the max seq length should be equal to the chunk length * num_chunks, otherwise what is the point?"
+                )
+
+        # if cli supplies no tasks, the processor will assume we want all the tasks, but we do need to have a conventional order
+        # for the model to use, so we need to still create a tasks variable.
+        tasks = None if args.task_name is None else list(args.task_name)
+        for data_dir_ind, data_dir in enumerate(args.data_dir):
+            dataset_processor = AutoProcessor(
+                data_dir, tasks, max_train_items=args.max_train_items
+            )
+            self.processors.append(dataset_processor)
+
+            # Make sure that any overlapping task names have the same label sets and output mode definitions
+            self._reconcile_labels_lists(dataset_processor)
+            self._reconcile_output_modes(dataset_processor)
+
+            self.datasets.append(dataset_processor.dataset)
+
+        ## Each processed dataset will have been pruned to remove columns that the user _didn't_ ask for,
+        ## but we need to add columns for tasks that it doesn't have that the user did ask for, with the
+        ## appropriate task types and  special values so pytorch knows not to compute losses over those
+        ## tasks for those inputs. Need to  do that after we've read all datasets and inferred all the task
+        ## types and label spaces.
+        self._reconcile_columns()
+        combined_dataset = self._concatenate_datasets()
+
+        if tasks is None:
+            # i.e., cli did not supply any task ordering:
+            if "train" in combined_dataset:
+                split = "train"
+            elif "dev" in combined_dataset:
+                split = "dev"
+            else:
+                split = "test"
+
+            tasks = list(
+                combined_dataset[split].features.keys() - {"text", "text_a", "text_b"}
+            )
+
+        self.tasks = tasks
+
+        if self.args.character_level:
+            logging.warning(
+                "No real implementation for character level event masking yet, using a placeholder"
+            )
+        self.processed_dataset = combined_dataset.map(
+            cnlp_preprocess_data,
+            batched=True,
+            load_from_cache_file=not args.overwrite_cache,
+            desc="Running tokenizer on dataset, organizing labels, creating hierarchical segments if necessary",
+            batch_size=100,
+            fn_kwargs={
+                "tokenizer": tokenizer,
+                "max_length": args.max_seq_length,
+                "label_lists": self.tasks_to_labels,
+                "output_modes": self.output_modes,
+                "inference": "train" not in combined_dataset,
+                "hierarchical": self.hierarchical,
+                "chunk_len": self.args.chunk_len,
+                "num_chunks": self.args.num_chunks,
+                "insert_empty_chunk_at_beginning": self.args.insert_empty_chunk_at_beginning,
+                "truncate_examples": self.args.truncate_examples,
+                "character_level": self.args.character_level,
+                "tasks": tasks,
+            },
+        )
+
+        if args.max_eval_items > 0:
+            new_validation = self.processed_dataset["validation"].train_test_split(
+                test_size=args.max_eval_items
+            )["test"]
+            self.processed_dataset["validation"] = new_validation
+
+        self.num_train_instances += self.processed_dataset["train"].num_rows
+
+    def _reconcile_labels_lists(self, processor: AutoProcessor):
+        """
+        given a new data processor, which extracted a label list for every task it contained,
+        we reconcile it with existing label list for the same task
+        :param processor: An AutoProcessor object that contains a processed dataset
+        """
+        for task, labels in processor.get_labels().items():
+            if task in self.tasks_to_labels:
+                ## a subset of existing labels (WARN), superset of existing labels (WARN), mixture, or no overlap (ERROR)
+                new_labels = set(labels)
+                old_labels = set(self.tasks_to_labels[task])
+                if new_labels.isdisjoint(old_labels):
+                    raise Exception(
+                        f"The same task name has disjoint sets of labels in different dataset: {str(old_labels)} vs. {str(new_labels)}"
+                    )
+                elif new_labels != old_labels:
+                    logger.warning(
+                        f"Two different datasets have the same task name but not completely equal label lists: {str(old_labels)} vs. {str(new_labels)}. We will merge them."
+                    )
+                    self.tasks_to_labels[task] = list(old_labels.union(new_labels))
+                else:
+                    ## they match completely, nothing to be done
+                    pass
+            else:
+                self.tasks_to_labels[task] = labels
+
+    def _reconcile_output_modes(self, processor: AutoProcessor):
+        """
+        given a new data processor, which inferred output modes for its tasks, make
+        sure those output modes agree with existing inferred output modes for any
+        same-named tasks.
+        """
+        for task, output_mode in processor.get_output_modes().items():
+            if task in self.output_modes:
+                # There is an existing task with this name
+                existing_output_mode = self.output_modes[task]
+                if output_mode != existing_output_mode:
+                    raise Exception(
+                        f"The task {task} has two different output modes in different datasets and might not be the same task: {existing_output_mode} vs. {output_mode}"
+                    )
+            else:
+                self.output_modes[task] = output_mode
+
+    def _reconcile_columns(self):
+        """
+        The overall dataset should get the superset of all task columns, even if some of the tasks aren't in
+        all of the component datasets
+        """
+        tasks = self.tasks_to_labels.keys()
+
+        for dataset in self.datasets:
+            for split_name in dataset.keys():
+                for task in tasks:
+                    if task not in dataset[split_name].column_names:
+                        if self.output_modes[task] == tagging:
+                            dataset[split_name] = dataset[split_name].add_column(
+                                task, [none_column] * len(dataset[split_name])
+                            )
+                        elif self.output_modes[task] == relex:
+                            pass
+                        elif self.output_modes[task] == classification:
+                            dataset[split_name] = dataset[split_name].add_column(
+                                task, [none_column] * len(dataset[split_name])
+                            )
+
+                for column in dataset[split_name].column_names:
+                    if column not in tasks and column not in text_columns:
+                        dataset[split_name] = dataset[split_name].remove_columns(column)
+
+    def _concatenate_datasets(self) -> datasets.DatasetDict:
+        """
+        We have multiple dataset dicts, we need to create a single dataset dict
+        where we concatenate each of the splits first.
+        """
+        datasets_by_split = {}
+        for dataset in self.datasets:
+            for split in dataset:
+                if split not in datasets_by_split:
+                    datasets_by_split[split] = []
+                datasets_by_split[split].append(dataset[split])
+
+        for split_name, split_data in datasets_by_split.items():
+            datasets_by_split[split_name] = datasets.concatenate_datasets(split_data)
+
+        return datasets.DatasetDict(datasets_by_split)
+
+    def __len__(self) -> int:
+        """
+        Length method for this class.
+
+        :return: the number of datasets included in this dataset
+        """
+        return len(self.datasets)
+
+    def __getitem__(self, i) -> Union[InputFeatures, HierarchicalInputFeatures]:
+        """
+        Getitem method for this class.
+
+        :param i: the index of the example to retrieve
+        :return: the example at index `i`
+        """
+        return self.features[i]
+
+    def get_labels(self) -> dict[str, list[str]]:
+        """
+        Retrieve the label lists for all the tasks for the dataset.
+
+        :return: the dictionary of label lists indexed by task name
+        """
+        return self.tasks_to_labels
+
+
+def group_texts(chunk_size, examples):
+    # Concatenate all texts
+    concatenated_examples = {k: sum(examples[k], []) for k in examples.keys()}
+    # Compute length of concatenated texts
+    total_length = len(concatenated_examples[list(examples.keys())[0]])
+    # We drop the last chunk if it's smaller than chunk_size
+    total_length = (total_length // chunk_size) * chunk_size
+    # Split by chunks of max_len
+    result = {
+        k: [t[i : i + chunk_size] for i in range(0, total_length, chunk_size)]
+        for k, t in concatenated_examples.items()
+    }
+    # Create a new labels column
+    result["labels"] = result["input_ids"].copy()
+    return result
+
+
+def tokenize_fn(tokenizer, examples):
+    result = tokenizer(examples["text"])
+    if tokenizer.is_fast:
+        result["word_ids"] = [
+            result.word_ids(i) for i in range(len(result["input_ids"]))
+        ]
+    return result
+
+
+def get_dataset_segment(
+    split_name: str,
+    dataset_ind: int,
+    dataset: ClinicalNlpDataset,
+):
+    start_ind = end_ind = 0
+    for ind in range(dataset_ind):
+        start_ind += len(dataset.datasets[ind][split_name])
+    end_ind = start_ind + len(dataset.datasets[dataset_ind][split_name])
+
+    return HFDataset.from_dict(dataset.processed_dataset[split_name][start_ind:end_ind])
+
+
+class DaptDataset(Dataset):
+    def __getitem__(self, index):
+        return self.train[index]
+
+    def __init__(
+        self,
+        args: DaptArguments,
+        tokenizer: PreTrainedTokenizer,
+    ):
+        self.args = args
+        self.tokenizer = tokenizer
+
+        processor = AutoProcessor(self.args.data_dir, tasks=None)
+
+        # This can probably be refined
+        dataset: DatasetDict = processor.dataset
+        remove_columns = {"text", "id", *processor.get_labels()}.intersection(
+            set(dataset.column_names["train"])
+        )
+
+        dataset = dataset.map(
+            functools.partial(tokenize_fn, self.tokenizer),
+            batched=True,
+            remove_columns=list(remove_columns),
+        )
+        dataset = dataset.map(
+            functools.partial(group_texts, self.args.chunk_size),
+            batched=True,
+        )
+
+        if isinstance(dataset, (DatasetDict, IterableDatasetDict)) or args.no_eval:
+            self.dataset = dataset
+        else:
+            self.dataset = dataset.train_test_split(
+                test_size=args.test_size,
+                seed=args.seed,
+            )
+
+        self.data_collator = DataCollatorForLanguageModeling(
+            tokenizer=tokenizer, mlm_probability=self.args.mlm_probability
+        )
+
+    @property
+    def train(self):
+        return self.dataset["train"]
+
+    @property
+    def test(self):
+        return self.dataset["test"]

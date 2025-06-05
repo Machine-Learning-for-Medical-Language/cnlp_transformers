@@ -7,22 +7,23 @@ modes for tasks and datasets that use a few conventional formats.
 import json
 import logging
 import os
-from collections.abc import Iterable
 from os.path import join
-from typing import Union
 
 import datasets
 from datasets import load_dataset
 from tqdm import tqdm
 from transformers.data.processors.utils import DataProcessor
 
-from ..tasks import CLASSIFICATION, RELEX, TAGGING, TaskType
-
 logger = logging.getLogger(__name__)
+
+mtl = "mtl"
+classification = "classification"
+tagging = "tagging"
+relex = "relations"
 
 
 def get_unique_labels(
-    dataset, tasks: list[str], task_output_modes: dict[str, TaskType]
+    dataset, tasks: list[str], task_output_modes: dict[str, str]
 ) -> dict[str, list[str]]:
     """
     Return the set of unique labels defined in a dataset by iterating through the dataset.
@@ -44,13 +45,13 @@ def get_unique_labels(
         output_mode = task_output_modes[task_name]
 
         ## get the complete set of unique tags by splitting each set of tags seen so far
-        if output_mode == TAGGING:
+        if output_mode == tagging:
             unique_tags = set()
             for label in unique_labels:
                 tags = label.split(" ")
                 unique_tags.update(tags)
             unique_labels = list(unique_tags)
-        elif output_mode == RELEX:
+        elif output_mode == relex:
             unique_relations = set()
             for label_ind, label in enumerate(unique_labels):
                 if label is None:
@@ -72,15 +73,15 @@ def get_unique_labels(
     return dataset_unique_labels
 
 
-def infer_output_modes(dataset: datasets.DatasetDict) -> dict[str, TaskType]:
+def infer_output_modes(dataset: datasets.DatasetDict) -> dict[str, str]:
     """
     Figure out what output mode each task in the dataset requires by looking at the format of the labels.
     :param dataset: HF datasets DatasetDict containing the loaded dataset
     :return: Dictionary mapping from task names to output modes
     """
-    task_output_modes: dict[str, TaskType] = {}
+    task_output_modes = {}
     for task_ind, task_name in enumerate(dataset.tasks):
-        output_mode = CLASSIFICATION
+        output_mode = classification
         unique_labels = set()
         # check all splits for labels just in case they do not fully overlap
         for split in dataset:
@@ -94,10 +95,10 @@ def infer_output_modes(dataset: datasets.DatasetDict) -> dict[str, TaskType]:
         ## dealing with a tagging dataset, or if it ends in ), in which case it is a relation task.
         for label in unique_labels:
             if str(label)[-1] == ")":
-                output_mode = RELEX
+                output_mode = relex
                 break
             elif " " in str(label):
-                output_mode = TAGGING
+                output_mode = tagging
                 break
 
         task_output_modes[task_name] = output_mode
@@ -137,31 +138,32 @@ class AutoProcessor(DataProcessor):
     TODO - add documentation of the expected file formats for json and csv defaults
     """
 
-    def __init__(
-        self,
-        data_dir: str,
-        tasks: Union[Iterable[str], None] = None,
-        max_train_items=-1,
-    ):
+    def __init__(self, data_dir: str, tasks: set[str] = None, max_train_items=-1):
         super().__init__()
 
         train_file = dev_file = test_file = None
         data_files = {}
-        for filename in os.listdir(data_dir):
-            if filename.startswith("train"):
-                train_file = filename
+        for fn in os.listdir(data_dir):
+            if fn.startswith("train"):
+                train_file = fn
                 data_files["train"] = join(data_dir, train_file)
-            elif filename.startswith(("dev", "valid")):
-                dev_file = filename
+            elif fn.startswith(("dev", "valid")):
+                dev_file = fn
                 data_files["validation"] = join(data_dir, dev_file)
-            elif filename.startswith("test"):
-                test_file = filename
+            elif fn.startswith("test"):
+                test_file = fn
                 data_files["test"] = join(data_dir, test_file)
 
-        metadata = None
-        ext_check_file = train_file or dev_file or test_file
-        if not ext_check_file:
+        if train_file is None and dev_file is None and test_file is None:
             raise ValueError("This dataset doesn't have train, dev, or test files")
+
+        metadata = None
+        if train_file is not None:
+            ext_check_file = train_file
+        elif dev_file is not None:
+            ext_check_file = dev_file
+        else:
+            ext_check_file = test_file
 
         if ext_check_file.endswith(("csv", "tsv")):
             if ext_check_file.endswith("csv"):
@@ -199,7 +201,7 @@ class AutoProcessor(DataProcessor):
                         "No metadata was available in the data file or in the same directory!"
                     )
 
-                dataset_task2output: dict[str, TaskType] = {}
+                dataset_task2output = {}
                 for subtask in metadata["subtasks"]:
                     dataset_task2output[subtask["task_name"]] = subtask["output_mode"]
 
@@ -215,11 +217,11 @@ class AutoProcessor(DataProcessor):
             self.dataset.task_output_modes = dataset_task2output
         else:
             raise ValueError(
-                f"Data file {ext_check_file} has an extension that we cannot handle (tried csv and json)"
+                f"Data file {train_file} has an extension that we cannot handle (tried csv and json)"
             )
 
-        logger.info(f"This dataset contains these tasks: {dataset_tasks!s}")
-        logger.info(f"These tasks overlap with user input: {active_tasks!s}")
+        logger.info(f"This dataset contains these tasks: {str(dataset_tasks)}")
+        logger.info(f"These tasks overlap with user input: {str(active_tasks)}")
 
         self.dataset.tasks = active_tasks
         if len(self.dataset.task_output_modes) == 0:
@@ -228,7 +230,7 @@ class AutoProcessor(DataProcessor):
         # convert label columns to strings
         logger.info("Converting columns to strings")
         for task in tqdm(self.dataset.tasks):
-            if self.dataset.task_output_modes[task] == CLASSIFICATION:
+            if self.dataset.task_output_modes[task] == classification:
                 task_str = task + "_str"
                 for split in self.dataset:
                     # create a new column casting every element to string, remove old (int) column, rename new (str) column
@@ -254,7 +256,7 @@ class AutoProcessor(DataProcessor):
         if max_train_items > 0:
             self.dataset["train"] = self.dataset["train"].select(range(max_train_items))
 
-        print(f"Loaded dataset has length {len(self.dataset)}")
+        print("Loaded dataset has length %d" % (len(self.dataset)))
 
     def get_train_examples(self):
         return self.dataset["train"]
@@ -265,10 +267,10 @@ class AutoProcessor(DataProcessor):
     def get_test_examples(self):
         return self.dataset["test"]
 
-    def get_output_mode(self, task_name) -> TaskType:
+    def get_output_mode(self, task_name):
         return self.dataset.task_output_modes[task_name]
 
-    def get_output_modes(self) -> dict[str, TaskType]:
+    def get_output_modes(self):
         return self.dataset.task_output_modes
 
     def get_num_tasks(self):
