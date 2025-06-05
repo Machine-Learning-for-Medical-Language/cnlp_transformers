@@ -651,8 +651,6 @@ def main(
     if training_args.do_train:
         preprocess_training_args(training_args, dataset)
 
-    ## CHUNK - metric computer factory
-
     current_prediction_packet = deque()
     output_eval_file = os.path.join(training_args.output_dir, "eval_results.txt")
 
@@ -792,8 +790,6 @@ def main(
 
         return compute_metrics_fn
 
-    ## CHUNK - init trainer
-
     # Initialize our Trainer
     training_args.load_best_model_at_end = True
     training_args.metric_for_best_model = "one_score"
@@ -805,8 +801,6 @@ def main(
         compute_metrics=build_compute_metrics_fn(model, dataset),
         callbacks=[EvalCallback],
     )
-
-    ## CHUNK - training
 
     # Training
     if training_args.do_train:
@@ -830,8 +824,6 @@ def main(
                         os.path.join(training_args.output_dir, "config.json"), "w"
                     ) as f:
                         json.dump(config_dict, f)
-
-    ## CHUNK - eval
 
     # Evaluation
     eval_results = {}
@@ -927,8 +919,6 @@ def main(
                     )
 
         eval_results.update(eval_result)
-
-    ## CHUNK - prediction
 
     if training_args.do_predict:
         logger.info("*** Test ***")
