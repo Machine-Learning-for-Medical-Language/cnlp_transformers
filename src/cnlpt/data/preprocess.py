@@ -40,7 +40,7 @@ def preprocess_raw_data(
         insert_empty_chunk_at_beginning: Whether an empty chunk should be inserted at the beginning (for hierarchical models). Defaults to False.
 
     Raises:
-        ValueError: If `inference_only` is True and `tasks` is None.
+        ValueError: If `inference_only` is False and `tasks` is None.
 
     Returns:
         The preprocessed batch.

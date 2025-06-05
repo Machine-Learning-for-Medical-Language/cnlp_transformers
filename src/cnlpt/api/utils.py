@@ -15,7 +15,7 @@ from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.trainer import Trainer
 from transformers.training_args import TrainingArguments
 
-from ..legacy.data.preprocess import cnlp_preprocess_data
+from ..data.preprocess import preprocess_raw_data
 from ..models import CnlpConfig
 
 
@@ -44,21 +44,21 @@ def create_dataset(
     """Use a tokenizer to create a dataset from a list of strings."""
     dataset = Dataset.from_dict({"text": inst_list})
     task_dataset = dataset.map(
-        cnlp_preprocess_data,
+        preprocess_raw_data,
         batched=True,
         load_from_cache_file=False,
         desc="Running tokenizer on dataset, organizing labels, creating hierarchical segments if necessary",
         batch_size=100,
         fn_kwargs={
             "tokenizer": tokenizer,
+            "tasks": None,
             "max_length": max_length,
-            "inference": True,
+            "inference_only": True,
             "hierarchical": hier,
             # TODO: need to get this from the model if necessary
             "chunk_len": chunk_len,
             "num_chunks": num_chunks,
             "insert_empty_chunk_at_beginning": insert_empty_chunk_at_beginning,
-            "truncate_examples": True,
         },
     )
     return task_dataset
