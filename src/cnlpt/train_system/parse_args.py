@@ -21,7 +21,7 @@ def _get_args_parser():
         tuple[DataClassType, ...],
         (CnlpModelArguments, CnlpDataArguments, CnlpTrainingArguments),
     )
-    return HfArgumentParser(args_dataclasses)
+    return HfArgumentParser(args_dataclasses, prog="cnlpt train")
 
 
 def parse_args_dict(
