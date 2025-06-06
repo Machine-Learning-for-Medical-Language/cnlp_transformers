@@ -45,7 +45,9 @@ we have instructions for using [uv](https://github.com/astral-sh/uv)
 2. From the project's base directory, run:
 
    ```bash
-   uv sync --python 3.11 # 3.9 and 3.10 are also supported. uv will install dev dependencies by default.
+   # uv will use python 3.13 and install dev dependencies by default.
+   # If you prefer a different python version, use e.g. `uv sync -p 3.9`
+   uv sync 
    source .venv/bin/activate # activate the virtual environment
    ```
 
