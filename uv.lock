@@ -476,7 +476,7 @@ requires-dist = [
     { name = "requests", specifier = "~=2.32.2" },
     { name = "scikit-learn", specifier = "~=1.5.2" },
     { name = "seqeval", specifier = "~=1.2.2" },
-    { name = "torch" },
+    { name = "torch", specifier = ">=2.6" },
     { name = "transformers", extras = ["torch"], specifier = "~=4.51" },
     { name = "uvicorn", extras = ["standard"], specifier = "~=0.32.0" },
 ]
