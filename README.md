@@ -11,23 +11,28 @@ Primary use cases include
 This library is _not_ intended to serve as a place for clinical NLP applications to live. If you build something cool that uses transformer models that take advantage of our model definitions, the best practice is probably to rely on it as a library rather than treating it as your workspace. This library is also not intended as a deployment-ready tool for _scalable_ clinical NLP. There is a lot of interest in developing methods and tools that are smaller and can process millions of records, and this library can potentially be used for research along those line. But it will probably never be extremely optimized or shrink-wrapped for applications. However, there should be plenty of examples and useful code for people who are interested in that type of deployment.
 
 ## Install
-> [!WARNING]
-macOS support is currently experimental. We recommend using python3.10 for macOS installations.
 
-> [!NOTE] 
-When installing the library's dependencies, `pip` will probably install 
-PyTorch with CUDA 10.2 support by default. If you would like to run the 
-library in CPU-only mode or with a newer version of CUDA, [install PyTorch 
-to your desired specifications](https://pytorch.org/get-started/locally/) 
-in your virtual environment first before installing `cnlp-transformers`.
+> [!IMPORTANT]
+> When installing the library's dependencies, PyTorch will probably be installed
+> with CUDA 12.6 support by default on linux, and without CUDA support on other platforms.
+> If you would like to run the library in CPU-only mode or with a specific version of CUDA,
+> [install PyTorch to your desired specifications](https://pytorch.org/get-started/locally/)
+> in your virtual environment first before installing `cnlp-transformers`.
+> [See here](https://docs.astral.sh/uv/guides/integration/pytorch/#the-uv-pip-interface) if
+> using uv.
 
 ### Static installation
 
 If you are installing just to fine-tune or run the REST APIs,
-you can install without cloning:
+you can install without cloning using [uv](https://docs.astral.sh/uv/):
 
 ```sh
-# Note: if needed, install PyTorch first (see above)
+uv pip install cnlp-transformers
+```
+
+Or with pip:
+
+```sh
 pip install cnlp-transformers
 ```
 
@@ -110,18 +115,18 @@ We provided the following step-by-step examples how to finetune in clinical NLP 
 
 ### Fine-tuning options
 
-Run ```python -m cnlpt.train_system -h``` to see all the available options. In addition to inherited Huggingface Transformers options, there are options to do the following:
+Run `cnlpt train -h` to see all the available options. In addition to inherited Huggingface Transformers options, there are options to do the following:
 
-* Select different models: ```--model hier``` uses a hierarchical transformer layer on top of a specified encoder model. We recommend using a very small encoder: ```--encoder microsoft/xtremedistil-l6-h256-uncased``` so that the full model fits into memory.
+* Select different models: `--model hier` uses a hierarchical transformer layer on top of a specified encoder model. We recommend using a very small encoder: `--encoder microsoft/xtremedistil-l6-h256-uncased` so that the full model fits into memory.
 * Run simple baselines (use ``--model cnn|lstm --tokenizer_name roberta-base`` -- since there is no HF model then you must specify the tokenizer explicitly)
-* Use a different layer's CLS token for the classification (e.g., ```--layer 10```)
-* Probabilistically freeze weights of the encoder (leaving classifier weights all unfrozen) (```--freeze``` alone freezes all encoder weights, ```--freeze <float>``` when given a parameter between 0 and 1, freezes that percentage of encoder weights)
-* Classify based on a token embedding instead of the CLS embedding (```--token``` -- applies to the event/entity classification setting only, and requires the input to have xml-style tags (`<e>`, `</e>`) around the tokens representing the event/entity)
-* Use class-weighted loss function (```--class_weights```)
+* Use a different layer's CLS token for the classification (e.g., `--layer 10`)
+* Probabilistically freeze weights of the encoder (leaving classifier weights all unfrozen) (`--freeze` alone freezes all encoder weights, `--freeze <float>` when given a parameter between 0 and 1, freezes that percentage of encoder weights)
+* Classify based on a token embedding instead of the CLS embedding (`--token` -- applies to the event/entity classification setting only, and requires the input to have xml-style tags (`<e>`, `</e>`) around the tokens representing the event/entity)
+* Use class-weighted loss function (`--class_weights`)
 
 ## Running REST APIs
 
-There are existing REST APIs in the ```src/cnlpt/api``` folder for a few important clinical NLP tasks:
+There are existing REST APIs in the `src/cnlpt/api` folder for a few important clinical NLP tasks:
 
 1. Negation detection
 2. Time expression tagging (spans + time classes)
@@ -133,7 +138,7 @@ There are existing REST APIs in the ```src/cnlpt/api``` folder for a few importa
 To demo the negation API:
 
 1. Install the `cnlp-transformers` package.
-2. Run `cnlpt_negation_rest [-p PORT]`.
+2. Run `cnlpt rest --model-type negation [-p PORT]`.
 3. Open a python console and run the following commands:
 
 #### Setup variables for negation
@@ -167,7 +172,7 @@ The model correctly classifies both nausea and anosmia as negated.
 To demo the temporal API:
 
 1. Install the `cnlp-transformers` package.
-2. Run `cnlpt_temporal_rest [-p PORT]`
+2. Run `cnlpt rest --model-type temporal [-p PORT]`
 3. Open a python console and run the following commands to test:
 
 #### Setup variables for temporal
@@ -217,20 +222,14 @@ should return:
 
 This output indicates the token spans of events and timexes, and relations between events and timexes, where the suffixes are indices into the respective arrays (e.g., TIMEX-0 in a relation refers to the 0th time expression found, which begins at token 6 and ends at token 9 -- ["March 3, 2010"])
 
-To run only the time expression or event taggers, change the run command to:
-
-```uvicorn cnlpt.api.timex_rest:app --host 0.0.0.0``` or
-
-```uvicorn cnlpt.api.event_rest:app --host 0.0.0.0```
-
-then run the same process commands as above (including the same URL). You will get similar json output, but only one of the dictionary elements (timexes or events) will be populated.
-
 ## Citing cnlp_transformers
+
 Please use the following bibtex to cite cnlp_transformers if you use it in a publication:
-```
+
+```latex
 @misc{cnlp_transformers,
   author       = {CNLPT},
-  title = {Clinical {NLP} {Transformers} (cnlp\_transformers)},
+  title        = {Clinical {NLP} {Transformers} (cnlp\_transformers)},
   year         = {2021},
   publisher    = {GitHub},
   journal      = {GitHub repository},
@@ -239,14 +238,15 @@ Please use the following bibtex to cite cnlp_transformers if you use it in a pub
 ```
 
 ## Publications using cnlp_transformers
+
 Please send us any citations that used this library!
 
-1.  Chen S, Guevara M, Ramirez N, Murray A, Warner JL, Aerts HJWL, et al. Natural Language Processing to Automatically Extract the Presence and Severity of Esophagitis in Notes of Patients Undergoing Radiotherapy. JCO Clin Cancer Inform. 2023 Jul;(7):e2300048.
-2.  Li Y, Miller T, Bethard S, Savova G. Identifying Task Groupings for Multi-Task Learning Using Pointwise V-Usable Information [Internet]. arXiv.org. 2024 [cited 2025 May 22]. Available from: https://arxiv.org/abs/2410.12774v1
-3.  Wang L, Li Y, Miller T, Bethard S, Savova G. Two-Stage Fine-Tuning for Improved Bias and Variance for Large Pretrained Language Models. In: Rogers A, Boyd-Graber J, Okazaki N, editors. Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) [Internet]. Toronto, Canada: Association for Computational Linguistics; 2023 [cited 2025 May 22]. p. 15746–61. Available from: https://aclanthology.org/2023.acl-long.877/
-4.  Miller T, Bethard S, Dligach D, Savova G. End-to-end clinical temporal information extraction with multi-head attention. Proc Conf Assoc Comput Linguist Meet. 2023 Jul;2023:313–9. 
-5.  Yoon W, Ren B, Thomas S, Kim C, Savova G, Hall MH, et al. Aspect-Oriented Summarization for Psychiatric Short-Term Readmission Prediction [Internet]. arXiv; 2025 [cited 2025 May 22]. Available from: http://arxiv.org/abs/2502.10388
-6.  Wang L, Zipursky AR, Geva A, McMurry AJ, Mandl KD, Miller TA. A computable case definition for patients with SARS-CoV2 testing that occurred outside the hospital. JAMIA Open. 2023 Oct 1;6(3):ooad047. 
-7.  Bitterman DS, Goldner E, Finan S, Harris D, Durbin EB, Hochheiser H, et al. An End-to-End Natural Language Processing System for Automatically Extracting Radiation Therapy Events From Clinical Texts. Int J Radiat Oncol Biol Phys. 2023 Sep 1;117(1):262–73.
-8.  McMurry AJ, Gottlieb DI, Miller TA, Jones JR, Atreja A, Crago J, et al. Cumulus: A federated EHR-based learning system powered by FHIR and AI. medRxiv. 2024 Feb 6;2024.02.02.24301940. 
-9.  LCD benchmark: long clinical document benchmark on mortality prediction for language models | Journal of the American Medical Informatics Association | Oxford Academic [Internet]. [cited 2025 Jan 23]. Available from: https://academic.oup.com/jamia/article-abstract/32/2/285/7909835?redirectedFrom=fulltext
+1. Chen S, Guevara M, Ramirez N, Murray A, Warner JL, Aerts HJWL, et al. Natural Language Processing to Automatically Extract the Presence and Severity of Esophagitis in Notes of Patients Undergoing Radiotherapy. JCO Clin Cancer Inform. 2023 Jul;(7):e2300048.
+2. Li Y, Miller T, Bethard S, Savova G. Identifying Task Groupings for Multi-Task Learning Using Pointwise V-Usable Information [Internet]. arXiv.org. 2024 [cited 2025 May 22]. Available from: <https://arxiv.org/abs/2410.12774v1>
+3. Wang L, Li Y, Miller T, Bethard S, Savova G. Two-Stage Fine-Tuning for Improved Bias and Variance for Large Pretrained Language Models. In: Rogers A, Boyd-Graber J, Okazaki N, editors. Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) [Internet]. Toronto, Canada: Association for Computational Linguistics; 2023 [cited 2025 May 22]. p. 15746–61. Available from: <https://aclanthology.org/2023.acl-long.877/>
+4. Miller T, Bethard S, Dligach D, Savova G. End-to-end clinical temporal information extraction with multi-head attention. Proc Conf Assoc Comput Linguist Meet. 2023 Jul;2023:313–9.
+5. Yoon W, Ren B, Thomas S, Kim C, Savova G, Hall MH, et al. Aspect-Oriented Summarization for Psychiatric Short-Term Readmission Prediction [Internet]. arXiv; 2025 [cited 2025 May 22]. Available from: <http://arxiv.org/abs/2502.10388>
+6. Wang L, Zipursky AR, Geva A, McMurry AJ, Mandl KD, Miller TA. A computable case definition for patients with SARS-CoV2 testing that occurred outside the hospital. JAMIA Open. 2023 Oct 1;6(3):ooad047.
+7. Bitterman DS, Goldner E, Finan S, Harris D, Durbin EB, Hochheiser H, et al. An End-to-End Natural Language Processing System for Automatically Extracting Radiation Therapy Events From Clinical Texts. Int J Radiat Oncol Biol Phys. 2023 Sep 1;117(1):262–73.
+8. McMurry AJ, Gottlieb DI, Miller TA, Jones JR, Atreja A, Crago J, et al. Cumulus: A federated EHR-based learning system powered by FHIR and AI. medRxiv. 2024 Feb 6;2024.02.02.24301940.
+9. LCD benchmark: long clinical document benchmark on mortality prediction for language models | Journal of the American Medical Informatics Association | Oxford Academic [Internet]. [cited 2025 Jan 23]. Available from: <https://academic.oup.com/jamia/article-abstract/32/2/285/7909835?redirectedFrom=fulltext>
