@@ -45,7 +45,7 @@ we have instructions for using [uv](https://github.com/astral-sh/uv)
 2. From the project's base directory, run:
 
    ```bash
-   # uv will use python 3.13 and install dev dependencies by default.
+   # uv will use python 3.12 and install dev dependencies by default.
    # If you prefer a different python version, use e.g. `uv sync -p 3.9`
    uv sync 
    source .venv/bin/activate # activate the virtual environment
@@ -58,7 +58,7 @@ we have instructions for using [uv](https://github.com/astral-sh/uv)
 2. Create a new conda environment:
 
    ```bash
-   conda create -n cnlpt python=3.11 # 3.9 and 3.10 are also supported
+   conda create -n cnlpt python=3.12 # 3.9, 3.10, and 3.11 are also supported
    conda activate cnlpt
    ```
 
@@ -113,7 +113,7 @@ The `lint-and-format` workflow should always pass if `make check` reports
 that everything is correct.
 
 The `build-and-test` workflow will run `pytest` on Linux, MacOS, and Windows,
-for each Python version this project supports (currently 3.9, 3.10, and 3.11).
+for each Python version this project supports (currently 3.9, 3.10, 3.11, and 3.12).
 
 You can see the structure of these CI runs in the
 [**Actions**](https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers/actions)
