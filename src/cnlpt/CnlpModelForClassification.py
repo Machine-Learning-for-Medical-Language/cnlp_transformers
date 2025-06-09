@@ -447,14 +447,17 @@ class CnlpModelForClassification(PreTrainedModel):
             loss_fct = MSELoss()
             task_loss = loss_fct(task_logits.view(-1), labels.view(-1))
         else:
-            if self.class_weights[task_name] is not None:
-                class_weights = torch.FloatTensor(self.class_weights[task_name]).to(
-                    self.device
-                )
+            if isinstance(self.class_weights, torch.Tensor):
+                class_weights = self.class_weights
             else:
-                class_weights = None
-            loss_fct = CrossEntropyLoss(weight=class_weights)
+                if self.class_weights[task_name] is not None:
+                    class_weights = torch.FloatTensor(self.class_weights[task_name]).to(
+                        self.device
+                    )
+                else:
+                    class_weights = None
 
+            loss_fct = CrossEntropyLoss(weight=class_weights)
             if self.relations[task_name]:
                 task_labels = labels[
                     :, :, state["task_label_ind"] : state["task_label_ind"] + seq_len
@@ -473,7 +476,7 @@ class CnlpModelForClassification(PreTrainedModel):
                     task_labels = labels[:, :, state["task_label_ind"]]
                 else:
                     task_labels = labels[:, 0, state["task_label_ind"], :]
-
+                
                 state["task_label_ind"] += 1
                 task_loss = loss_fct(
                     task_logits.view(-1, task_num_labels),
@@ -497,7 +500,7 @@ class CnlpModelForClassification(PreTrainedModel):
                         "Have not implemented the case where a classification task "
                         "is part of an MTL setup with relations and sequence tagging"
                     )
-
+                
                 state["task_label_ind"] += 1
                 task_loss = loss_fct(
                     task_logits, task_labels.type(torch.LongTensor).to(labels.device)
@@ -510,6 +513,40 @@ class CnlpModelForClassification(PreTrainedModel):
                 1.0 if task_ind + 1 < len(self.tasks) else self.final_task_weight
             )
             state["loss"] += task_weight * task_loss
+
+    def remove_task_classifiers(self, tasks: list[str] = None):
+        if tasks is None:
+            self.classifiers = nn.ModuleDict()
+            self.tasks = []
+            self.class_weights = {}
+        else:
+            for task in tasks:
+                self.classifiers.pop(task)
+                self.tasks.remove(task)
+                self.class_weights.pop(task)
+    
+    def add_task_classifier(self, task_name: str, label_dictionary: dict[str, list]):
+        self.tasks.append(task_name)
+        task_num_labels = len(label_dictionary)
+        self.classifiers[task_name] = ClassificationHead(
+            self.config, len(label_dictionary)
+        )
+        if self.config.relations[task_name]:
+            hidden_size = self.config.num_rel_attention_heads
+            self.classifiers[task_name] = ClassificationHead(
+                self.config, task_num_labels, hidden_size=hidden_size
+            )
+        else:
+            self.classifiers[task_name] = ClassificationHead(
+                self.config, task_num_labels
+            )
+        self.label_dictionary[task_name] = label_dictionary
+
+    def set_class_weights(self, class_weights: Union[list[float], None] = None):
+        if class_weights is None:
+            self.class_weights = {x: None for x in self.label_dictionary.keys()}
+        else:
+            self.class_weights = class_weights
 
     def forward(
         self,
