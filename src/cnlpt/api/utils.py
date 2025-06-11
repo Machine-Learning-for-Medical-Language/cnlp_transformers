@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Literal
+from typing import Literal, cast
 
 import torch
 from datasets import Dataset
@@ -118,7 +118,14 @@ def initialize_cnlpt_model(
         "none",
     ]
     parser = HfArgumentParser((TrainingArguments,))
-    (training_args,) = parser.parse_args_into_dataclasses(args=args)
+    training_args = cast(
+        TrainingArguments, parser.parse_args_into_dataclasses(args=args)[0]
+    )
+
+    if torch.mps.is_available():
+        # pin_memory is unsupported on MPS, but defaults to True,
+        # so we'll explicitly turn it off to avoid a warning.
+        training_args.dataloader_pin_memory = False
 
     config = AutoConfig.from_pretrained(model_name)
     tokenizer = AutoTokenizer.from_pretrained(model_name, config=config)
@@ -128,11 +135,7 @@ def initialize_cnlpt_model(
 
     model = model.to(resolve_device(device))
 
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        compute_metrics=None,
-    )
+    trainer = Trainer(model=model, args=training_args)
 
     return tokenizer, trainer
 
