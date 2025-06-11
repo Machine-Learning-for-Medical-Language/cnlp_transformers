@@ -1,4 +1,3 @@
-# ruff: noqa: ARG002
 from collections.abc import Iterable
 from dataclasses import asdict
 from typing import Any, Final, Union
@@ -14,7 +13,7 @@ from transformers.training_args import TrainingArguments
 from ..args import CnlpDataArguments, CnlpModelArguments, CnlpTrainingArguments
 from ..data.task_info import TaskInfo
 from .display import TrainSystemDisplay
-from .logging import logger
+from .log import logger
 
 DEFAULT_SELECTION_METRIC: Final = "f1"
 

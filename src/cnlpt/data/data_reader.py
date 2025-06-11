@@ -5,7 +5,7 @@ from typing import Any, Final, Literal, Union, cast
 
 from datasets import Dataset, DatasetDict, concatenate_datasets, load_dataset
 
-from .logging import logger
+from .log import logger
 from .task_info import (
     CLASSIFICATION,
     RELATIONS,

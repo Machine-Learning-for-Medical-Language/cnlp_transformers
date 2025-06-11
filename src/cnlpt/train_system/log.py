@@ -4,7 +4,7 @@ import os
 
 from ..args import CnlpTrainingArguments
 
-logger = logging.getLogger("cnlp_train_system")
+logger = logging.getLogger("cnlpt.train_system")
 
 
 def configure_logger_for_training(training_args: CnlpTrainingArguments):

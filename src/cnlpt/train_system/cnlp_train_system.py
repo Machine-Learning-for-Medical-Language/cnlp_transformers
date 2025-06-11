@@ -15,20 +15,22 @@ from transformers.trainer import Trainer
 from transformers.trainer_callback import PrinterCallback, TrainerCallback
 from transformers.trainer_utils import EvalPrediction, IntervalStrategy, set_seed
 
-from ..args import CnlpDataArguments, CnlpModelArguments, CnlpTrainingArguments
+from ..args import (
+    CnlpDataArguments,
+    CnlpModelArguments,
+    CnlpTrainingArguments,
+    parse_args_dict,
+    parse_args_from_argv,
+    parse_args_json_file,
+    preprocess_args,
+)
 from ..data.cnlp_dataset import CnlpDataset
 from ..data.task_info import RELATIONS, TAGGING, TaskInfo
 from ..models import CnlpConfig, CnlpModelForClassification, HierarchicalModel
 from ..models.baseline import CnnSentenceClassifier, LstmSentenceClassifier
 from .display import TrainSystemDisplay
-from .logging import configure_logger_for_training, logger
+from .log import configure_logger_for_training, logger
 from .metrics import cnlp_compute_metrics
-from .parse_args import (
-    parse_args_dict,
-    parse_args_from_argv,
-    parse_args_json_file,
-    validate_args,
-)
 from .training_callbacks import (
     BasicLoggingCallback,
     DisplayCallback,
@@ -63,20 +65,18 @@ class CnlpTrainSystem:
         training_args: CnlpTrainingArguments,
     ):
         configure_logger_for_training(training_args)
-        validate_args(
+        preprocess_args(
             model_args=model_args, data_args=data_args, training_args=training_args
         )
         self.model_args = model_args
         self.data_args = data_args
         self.training_args = training_args
 
-        del model_args, data_args, training_args
-
         set_seed(self.training_args.seed)
         self._init_tokenizer()
         self._init_dataset()
         self._init_model()
-        self._preprocess_training_args()
+        self._set_eval_strategy()
 
     @classmethod
     def from_json_args(cls, json_file: Union[str, os.PathLike]):
@@ -201,7 +201,7 @@ class CnlpTrainSystem:
         if os.path.exists(model_path):
             model.load_state_dict(torch.load(model_path))
 
-        self.model = cast(CnnSentenceClassifier, model)
+        self.model = model
 
     def _init_lstm_model(self):
         model = LstmSentenceClassifier(
@@ -217,7 +217,7 @@ class CnlpTrainSystem:
         if os.path.exists(model_path):
             model.load_state_dict(torch.load(model_path))
 
-        self.model = cast(LstmSentenceClassifier, model)
+        self.model = model
 
     def _init_hier_model(self):
         encoder_name = (
@@ -401,7 +401,7 @@ class CnlpTrainSystem:
 
         self.model = cast(CnlpModelForClassification, model)
 
-    def _preprocess_training_args(self):
+    def _set_eval_strategy(self):
         if not self.training_args.do_train:
             return
 
@@ -433,11 +433,6 @@ class CnlpTrainSystem:
             self.training_args.eval_strategy = self.training_args.eval_strategy = (
                 IntervalStrategy.EPOCH
             )
-
-        if torch.mps.is_available():
-            # pin_memory is unsupported on MPS, but defaults to True,
-            # so we'll explicitly turn it off to avoid a warning.
-            self.training_args.dataloader_pin_memory = False
 
     def _extract_task_predictions(self, p: EvalPrediction):
         task_predictions: list[TaskEvalPrediction] = []
@@ -525,7 +520,7 @@ class CnlpTrainSystem:
 
         return metrics
 
-    def train(self, rich_display: bool = True):
+    def train(self):
         """Begin the training loop.
 
         Args:
@@ -549,7 +544,7 @@ class CnlpTrainSystem:
 
         trainer_callbacks.append(save_best_model_callback)
 
-        if rich_display:
+        if self.training_args.rich_display:
             self.training_args.disable_tqdm = True
             disp = TrainSystemDisplay(
                 self.model_args,
@@ -570,7 +565,8 @@ class CnlpTrainSystem:
                 callbacks=trainer_callbacks,
             )
 
-            if rich_display:
+            if self.training_args.rich_display:
+                # remove the PrinterCallback added by default when we initialized the trainer
                 trainer.remove_callback(PrinterCallback)
 
             trainer.train()

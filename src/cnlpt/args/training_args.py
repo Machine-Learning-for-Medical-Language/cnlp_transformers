@@ -71,3 +71,10 @@ class CnlpTrainingArguments(TrainingArguments):
     )
 
     logging_strategy: str = field(default="epoch")
+
+    rich_display: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to render a live progress display in the console during training."
+        },
+    )

@@ -61,6 +61,10 @@ def test_init_args():
         "CnlpDataArguments",
         "CnlpModelArguments",
         "CnlpTrainingArguments",
+        "parse_args_dict",
+        "parse_args_from_argv",
+        "parse_args_json_file",
+        "preprocess_args",
     ]
 
 
