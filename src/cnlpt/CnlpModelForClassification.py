@@ -298,7 +298,7 @@ class CnlpModelForClassification(PreTrainedModel):
 
         # part of the motivation for leaving this
         # logic alone for character level models is that
-        # at the time of writing,  CANINE and Flair are the only game in town.
+        # at the time of writing,  CANINE and Flair are the only game in town. 
         # CANINE's hashable embeddings for unicode codepoints allows for
         # additional parameterization, which rn doesn't seem so relevant
         if not config.character_level:
@@ -342,12 +342,12 @@ class CnlpModelForClassification(PreTrainedModel):
                 head_size=config.rel_attention_head_dims,
             )
             if config.relations[task_name]:
-                hidden_size = config.num_rel_attention_heads
-                if config.use_prior_tasks:
-                    hidden_size += total_prev_task_labels
+                # hidden_size = config.num_rel_attention_heads
+                # if config.use_prior_tasks:
+                #     hidden_size += total_prev_task_labels
 
                 self.classifiers[task_name] = ClassificationHead(
-                    config, task_num_labels, hidden_size=hidden_size
+                    config, task_num_labels,
                 )
             else:
                 self.classifiers[task_name] = ClassificationHead(
@@ -511,6 +511,30 @@ class CnlpModelForClassification(PreTrainedModel):
             )
             state["loss"] += task_weight * task_loss
 
+    def remove_task_classifiers(self, tasks: list[str] = None):
+        if tasks is None:
+            self.classifiers = nn.ModuleDict()
+            self.tasks = []
+            self.class_weights = {}
+        else:
+            for task in tasks:
+                self.classifiers.pop(task)
+                self.tasks.remove(task)
+                self.class_weights.pop(task)
+
+    def add_task_classifier(self, task_name: str, label_dictionary: dict[str, list]):
+        self.tasks.append(task_name)
+        self.classifiers[task_name] = ClassificationHead(
+            self.config, len(label_dictionary)
+        )
+        self.label_dictionary[task_name] = label_dictionary
+    
+    def set_class_weights(self, class_weights: Union[list[float], None] = None):
+        if class_weights is None:
+            self.class_weights = {x: None for x in self.label_dictionary.keys()}
+        else:
+            self.class_weights = class_weights
+
     def forward(
         self,
         input_ids=None,
@@ -551,7 +575,6 @@ class CnlpModelForClassification(PreTrainedModel):
 
         Returns: (`transformers.SequenceClassifierOutput`) the output of the model
         """
-
         kwargs = generalize_encoder_forward_kwargs(
             self.encoder,
             attention_mask=attention_mask,

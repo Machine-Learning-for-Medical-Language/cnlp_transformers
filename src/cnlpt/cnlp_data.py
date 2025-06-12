@@ -1155,10 +1155,9 @@ class DaptDataset(Dataset):
             batched=True,
             remove_columns=list(remove_columns),
         )
-        dataset = dataset.map(
-            functools.partial(group_texts, self.args.chunk_size),
-            batched=True,
-        )
+
+        dataset = dataset.remove_columns("word_ids")
+      
 
         if isinstance(dataset, (DatasetDict, IterableDatasetDict)) or args.no_eval:
             self.dataset = dataset
