@@ -7,8 +7,6 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Union
 
-import pdb
-
 import datasets
 import numpy as np
 from datasets import Dataset as HFDataset
@@ -1159,12 +1157,7 @@ class DaptDataset(Dataset):
         )
 
         dataset = dataset.remove_columns("word_ids")
-        # dataset = dataset.map(
-        #     functools.partial(group_texts, self.args.chunk_size),
-        #     batched=True,
-        # )
-
-        
+      
 
         if isinstance(dataset, (DatasetDict, IterableDatasetDict)) or args.no_eval:
             self.dataset = dataset
