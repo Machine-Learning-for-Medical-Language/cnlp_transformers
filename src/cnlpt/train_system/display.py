@@ -43,6 +43,7 @@ class TrainSystemDisplay:
         self.train_metrics: list[dict[str, float]] = []
         self.eval_metrics: dict[str, Any] = {}
         self.best_eval_metrics: dict[str, Any] = {}
+        self.best_checkpoint: str = ""
 
         self.progress = Progress(
             TextColumn("[progress.description]{task.description}"),
@@ -72,8 +73,19 @@ class TrainSystemDisplay:
     def eval_metrics_table(self):
         if len(self.eval_metrics) == 0:
             return "[dim italic]waiting for evaluation"
+
         grid = Table.grid(padding=(0, 1))
-        grid.add_row("[bold]Metric", "[bold]Latest", "[bold]Best")
+
+        if self.best_checkpoint is not None:
+            ckpt_path_str = f" [dim italic]({self.best_checkpoint})"
+        else:
+            ckpt_path_str = ""
+
+        grid.add_row(
+            "[bold]Metric",
+            "[bold]Latest",
+            f"[bold]Best{ckpt_path_str}",
+        )
 
         for metric_name in self.eval_metrics:
             color = "[magenta]" if "." not in metric_name else "[yellow]"

@@ -6,6 +6,7 @@ from transformers.trainer_callback import (
     TrainerControl,
     TrainerState,
 )
+from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, SaveStrategy
 from transformers.training_args import TrainingArguments
 
 from ..args import CnlpDataArguments, CnlpModelArguments, CnlpTrainingArguments
@@ -144,6 +145,22 @@ class DisplayCallback(TrainerCallback):
             or (not args.greater_is_better and metrics[tgt_metric] < best[tgt_metric])
         ):
             self.display.best_eval_metrics = metrics
+
+    def on_save(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
+        if not state.is_world_process_zero:
+            return
+        if args.save_strategy == SaveStrategy.BEST:
+            self.display.best_checkpoint = (
+                f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}"
+            )
+        else:
+            self.display.best_checkpoint = state.best_model_checkpoint
 
     def on_predict(
         self,
