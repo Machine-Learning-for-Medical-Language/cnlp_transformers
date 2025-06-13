@@ -12,7 +12,6 @@ from os import PathLike
 from typing import Any, Union
 
 import torch
-import transformers
 from torch import nn
 from torch.nn import CrossEntropyLoss, MSELoss
 from transformers import AutoConfig, AutoModel
@@ -327,7 +326,6 @@ class CnlpModelForClassification(PreTrainedModel):
         config.encoder_config = encoder_config.to_dict()
         encoder_model = AutoModel.from_config(encoder_config)
 
-        transformers.logging.set_verbosity_error()
         self.encoder = encoder_model.from_pretrained(config.encoder_name)
 
         # part of the motivation for leaving this
@@ -339,7 +337,6 @@ class CnlpModelForClassification(PreTrainedModel):
             self.encoder.resize_token_embeddings(
                 encoder_config.vocab_size, mean_resizing=False
             )
-        transformers.logging.set_verbosity_warning()
         # This would seem to be redundant with the label list, which maps from tasks to labels,
         # but this version is ordered. This will allow the user to specify an order for any methods
         # where we feed the output of one task into the next.

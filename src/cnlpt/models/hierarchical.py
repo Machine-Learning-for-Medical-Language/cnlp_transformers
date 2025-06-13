@@ -9,7 +9,6 @@ from typing import Union, cast
 
 import torch
 import torch.nn.functional as F
-import transformers
 from torch import nn
 from torch.nn import CrossEntropyLoss
 from transformers import AutoConfig, AutoModel
@@ -219,10 +218,8 @@ class HierarchicalModel(PreTrainedModel):
         encoder_config.vocab_size = self.config.vocab_size
         self.config.encoder_config = encoder_config.to_dict()
         encoder_model = AutoModel.from_config(encoder_config)
-        transformers.logging.set_verbosity_error()
         self.encoder = encoder_model.from_pretrained(self.config.encoder_name)
         self.encoder.resize_token_embeddings(encoder_config.vocab_size)
-        transformers.logging.set_verbosity_warning()
         if self.config.layer > self.config.hier_head_config["n_layers"]:
             raise ValueError(
                 f"The layer specified ({self.config.layer}) is too big for the specified chunk transformer which has {self.config.hier_head_config['n_layers']} layers"

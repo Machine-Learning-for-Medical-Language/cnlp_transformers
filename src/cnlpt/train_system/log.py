@@ -1,10 +1,20 @@
 import logging
 import logging.config
 import os
+import re
+
+from transformers import logging as transformers_logging
 
 from ..args import CnlpTrainingArguments
 
 logger = logging.getLogger("cnlpt.train_system")
+
+
+class CleanWhitespaceFormatter(logging.Formatter):
+    def format(self, record):
+        original = super().format(record)
+        cleaned = re.sub(r"\s+", " ", original).strip()
+        return cleaned
 
 
 def configure_logger_for_training(training_args: CnlpTrainingArguments):
@@ -18,7 +28,12 @@ def configure_logger_for_training(training_args: CnlpTrainingArguments):
             "simple": {
                 "format": "%(asctime)s - %(levelname)s - %(name)s - %(message)s",
                 "datefmt": "%Y-%m-%dT%H:%M:%S%z",
-            }
+            },
+            "no_newlines": {
+                "()": CleanWhitespaceFormatter,
+                "format": "%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+                "datefmt": "%Y-%m-%dT%H:%M:%S%z",
+            },
         },
         "handlers": {
             "stdout": {
@@ -28,7 +43,7 @@ def configure_logger_for_training(training_args: CnlpTrainingArguments):
             },
             "logfile": {
                 "class": "logging.FileHandler",
-                "formatter": "simple",
+                "formatter": "no_newlines",
                 "filename": log_file,
                 "mode": "a",
                 "encoding": "utf-8",
@@ -41,11 +56,12 @@ def configure_logger_for_training(training_args: CnlpTrainingArguments):
                     # "stdout",
                     "logfile",
                 ],
-            }
+            },
+            "transformers": {"propagate": True},
         },
     }
     logging.config.dictConfig(LOGGING_CONFIG)
-
+    transformers_logging.set_verbosity_info()
     logger.warning(
         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}, distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
     )

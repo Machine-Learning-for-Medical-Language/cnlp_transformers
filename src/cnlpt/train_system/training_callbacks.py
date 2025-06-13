@@ -1,8 +1,6 @@
-from collections.abc import Iterable
 from dataclasses import asdict
-from typing import Any, Final, Union
+from typing import Union
 
-import numpy as np
 from transformers.trainer_callback import (
     TrainerCallback,
     TrainerControl,
@@ -11,78 +9,16 @@ from transformers.trainer_callback import (
 from transformers.training_args import TrainingArguments
 
 from ..args import CnlpDataArguments, CnlpModelArguments, CnlpTrainingArguments
-from ..data.task_info import TaskInfo
 from .display import TrainSystemDisplay
 from .log import logger
-
-DEFAULT_SELECTION_METRIC: Final = "f1"
-
-
-class SaveBestModelCallback(TrainerCallback):
-    def __init__(
-        self,
-        tasks: Iterable[TaskInfo],
-        selection_metric: Union[str, None],
-        selection_labels: list[str],
-    ):
-        self.tasks = tasks
-        self.selection_metric = selection_metric or DEFAULT_SELECTION_METRIC
-        self.selection_labels = selection_labels
-
-        self.best_score: float | None = None
-        self.latest_metrics: Union[dict[str, dict[str, Any]], None] = None
-        self.best_metrics: Union[dict[str, dict[str, Any]], None] = None
-        self.best_step: Union[int, None] = None
-
-    def get_selection_score_from_metrics(self, metrics: dict[str, dict[str, Any]]):
-        task_scores: list[float] = []
-        for task in self.tasks:
-            task_metrics = metrics[f"eval_{task.name}"]
-            # FIXME(ian) implement custom selection scores (using self.selection_metric and self.selection_labels)
-            # for now, just default to average of positive and negative f1
-            task_scores.append(np.mean(task_metrics[self.selection_metric]))
-        return sum(task_scores) / len(task_scores)
-
-    def on_evaluate(
-        self,
-        args: TrainingArguments,
-        state: TrainerState,
-        control: TrainerControl,
-        **kwargs,
-    ):
-        if not state.is_world_process_zero:
-            return
-
-        metrics: Union[dict[str, dict[str, Any]], None] = kwargs.get("metrics", None)
-        if metrics is None:
-            raise RuntimeError(
-                "trying to use metrics to determine best model in callback but metrics is None"
-            )
-
-        self.latest_metrics = metrics
-
-        selection_score = self.get_selection_score_from_metrics(metrics)
-        logger.info(
-            "Model selection score from eval (%s): %s",
-            self.selection_metric,
-            selection_score,
-        )
-
-        if self.best_score is None or selection_score > self.best_score:
-            self.best_score = selection_score
-            self.best_metrics = metrics
-            self.best_step = state.global_step
-            control.should_save = True
 
 
 class DisplayCallback(TrainerCallback):
     def __init__(
         self,
         display: TrainSystemDisplay,
-        save_best_model_callback: SaveBestModelCallback,
     ):
         self.display = display
-        self.save_best_model_callback = save_best_model_callback
         self.progress = self.display.progress
         self.training_task = None
         self.epoch_task = None
@@ -190,6 +126,7 @@ class DisplayCallback(TrainerCallback):
         args: TrainingArguments,
         state: TrainerState,
         control: TrainerControl,
+        metrics: dict[str, float],
         **kwargs,
     ):
         if not state.is_world_process_zero:
@@ -197,9 +134,16 @@ class DisplayCallback(TrainerCallback):
         if self.eval_task is not None:
             self.progress.remove_task(self.eval_task)
             self.eval_task = None
+        self.display.eval_metrics = metrics
 
-        self.display.eval_metrics = self.save_best_model_callback.latest_metrics
-        self.display.best_eval_metrics = self.save_best_model_callback.best_metrics
+        best = self.display.best_eval_metrics
+        tgt_metric = args.metric_for_best_model
+        if (
+            len(best) == 0
+            or (args.greater_is_better and metrics[tgt_metric] > best[tgt_metric])
+            or (not args.greater_is_better and metrics[tgt_metric] < best[tgt_metric])
+        ):
+            self.display.best_eval_metrics = metrics
 
     def on_predict(
         self,

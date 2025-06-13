@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-from typing import Union
 
 from transformers.training_args import TrainingArguments
 
@@ -36,18 +35,6 @@ class CnlpTrainingArguments(TrainingArguments):
         default=False,
         metadata={
             "help": "Only optimize the bias parameters of the encoder (and the weights of the classifier heads), as proposed in the BitFit paper by Ben Zaken et al. 2021 (https://arxiv.org/abs/2106.10199)"
-        },
-    )
-    model_selection_score: Union[str, None] = field(
-        default=None,
-        metadata={
-            "help": "Score to use in evaluation. Should be one of acc, f1, acc_and_f1, recall, or precision."
-        },
-    )
-    model_selection_label: Union[int, str, list[int], list[str], None] = field(
-        default=None,
-        metadata={
-            "help": "Class whose score should be used in evalutation. Should be an integer if scores are indexed, or a string if they are labeled by name."
         },
     )
     output_prob: bool = field(

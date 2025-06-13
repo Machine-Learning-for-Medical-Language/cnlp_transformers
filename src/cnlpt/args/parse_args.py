@@ -70,12 +70,6 @@ def preprocess_args(
             f"Output directory ({training_args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overcome."
         )
 
-    labels = training_args.model_selection_label
-    if isinstance(labels, list) and any(isinstance(item, int) for item in labels):
-        logger.warning(
-            f"It is not recommended to use ints as model selection labels: {tuple([item for item in labels if isinstance(item, int)])}. Labels should be input in string form."
-        )
-
     if training_args.truncation_side_left:
         if model_args.model == "hier":
             logger.warning(
@@ -87,5 +81,10 @@ def preprocess_args(
         # pin_memory is unsupported on MPS, but defaults to True,
         # so we'll explicitly turn it off to avoid a warning.
         training_args.dataloader_pin_memory = False
+
+    if training_args.metric_for_best_model is None:
+        training_args.metric_for_best_model = "eval_avg_acc"
+    if training_args.load_best_model_at_end is None:
+        training_args.load_best_model_at_end = True
 
     return model_args, data_args, training_args

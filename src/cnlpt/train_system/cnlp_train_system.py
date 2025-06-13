@@ -2,7 +2,6 @@ import contextlib
 import math
 import os
 from collections import Counter
-from dataclasses import dataclass
 from typing import Any, Union, cast
 
 import numpy as np
@@ -25,26 +24,17 @@ from ..args import (
     preprocess_args,
 )
 from ..data.cnlp_dataset import CnlpDataset
-from ..data.task_info import RELATIONS, TAGGING, TaskInfo
+from ..data.task_info import RELATIONS, TAGGING
 from ..models import CnlpConfig, CnlpModelForClassification, HierarchicalModel
 from ..models.baseline import CnnSentenceClassifier, LstmSentenceClassifier
 from .display import TrainSystemDisplay
 from .log import configure_logger_for_training, logger
-from .metrics import cnlp_compute_metrics
+from .metrics import TaskEvalPrediction
 from .training_callbacks import (
     BasicLoggingCallback,
     DisplayCallback,
-    SaveBestModelCallback,
 )
 from .utils import is_external_encoder, simple_softmax
-
-
-@dataclass(frozen=True)
-class TaskEvalPrediction:
-    task: TaskInfo
-    predictions: np.ndarray
-    probs: Union[np.ndarray, None]
-    labels: Union[np.ndarray, None]
 
 
 class CnlpTrainSystem:
@@ -499,26 +489,24 @@ class CnlpTrainSystem:
 
         return task_predictions
 
-    def _get_task_prediction_metrics(self, task_prediction: TaskEvalPrediction):
-        if task_prediction.labels is None:
-            raise RuntimeError(
-                "cannot compute metrics because eval prediction has no labels"
-            )
-        return cnlp_compute_metrics(
-            task_prediction.predictions,
-            task_prediction.labels,
-            task_prediction.task.type,
-            list(task_prediction.task.labels),
-        )
-
     def _compute_metrics(self, p: EvalPrediction):
-        metrics: dict[str, dict[str, Any]] = {}
+        summary_metrics = {
+            "avg_acc": 0,
+            "avg_micro_f1": 0,
+            "avg_macro_f1": 0,
+        }
+
+        metrics: dict[str, float] = {}
 
         for task_prediction in self._extract_task_predictions(p):
-            task = task_prediction.task
-            metrics[task.name] = self._get_task_prediction_metrics(task_prediction)
+            task_metrics = task_prediction.compute_metrics()
+            metrics |= task_metrics
+            for m in summary_metrics:
+                summary_metrics[m] += task_metrics[
+                    f"{task_prediction.task.name}.{m.removeprefix('avg_')}"
+                ]
 
-        return metrics
+        return summary_metrics | metrics
 
     def train(self):
         """Begin the training loop.
@@ -530,19 +518,7 @@ class CnlpTrainSystem:
             BasicLoggingCallback(self.model_args, self.data_args, self.training_args)
         ]
 
-        selection_labels = self.training_args.model_selection_label
-        if not isinstance(selection_labels, list):
-            selection_labels = [selection_labels]
-        selection_labels = [str(label) for label in selection_labels]
-
         assert self.training_args.output_dir is not None
-        save_best_model_callback = SaveBestModelCallback(
-            tasks=self.dataset.tasks,
-            selection_metric=self.training_args.model_selection_score,
-            selection_labels=selection_labels,
-        )
-
-        trainer_callbacks.append(save_best_model_callback)
 
         if self.training_args.rich_display:
             self.training_args.disable_tqdm = True
@@ -551,7 +527,7 @@ class CnlpTrainSystem:
                 self.data_args,
                 self.training_args,
             )
-            trainer_callbacks.append(DisplayCallback(disp, save_best_model_callback))
+            trainer_callbacks.append(DisplayCallback(disp))
         else:
             disp = contextlib.nullcontext()
 
@@ -570,6 +546,7 @@ class CnlpTrainSystem:
                 trainer.remove_callback(PrinterCallback)
 
             trainer.train()
+            trainer.save_model()
 
     def evaluate(self):
         # TODO(ian)

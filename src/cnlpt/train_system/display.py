@@ -1,5 +1,5 @@
 import os
-from typing import Any, Union
+from typing import Any
 
 import numpy as np
 from rich.console import Console
@@ -41,8 +41,8 @@ class TrainSystemDisplay:
         self.training_args = training_args
 
         self.train_metrics: list[dict[str, float]] = []
-        self.eval_metrics: Union[dict[str, Any], None] = None
-        self.best_eval_metrics: Union[dict[str, Any], None] = None
+        self.eval_metrics: dict[str, Any] = {}
+        self.best_eval_metrics: dict[str, Any] = {}
 
         self.progress = Progress(
             TextColumn("[progress.description]{task.description}"),
@@ -69,36 +69,26 @@ class TrainSystemDisplay:
         )
         return f"Training log: {logfile}"
 
-    def eval_metrics_table(self, metrics: Union[dict[str, Any], None]):
-        if metrics is None:
+    def eval_metrics_table(self):
+        if len(self.eval_metrics) == 0:
             return "[dim italic]waiting for evaluation"
         grid = Table.grid(padding=(0, 1))
+        grid.add_row("[bold]Metric", "[bold]Latest", "[bold]Best")
 
-        general_metrics: dict[str, Any] = {}
-        task_metrics: dict[str, dict[str, Any]] = {}
-
-        for k, v in metrics.items():
-            if isinstance(v, dict):
-                task_metrics[k] = v
-            else:
-                general_metrics[k] = v
-
-        general_metrics = {"epoch": general_metrics.pop("epoch")} | general_metrics
-        task_metrics = {"general_metrics": general_metrics} | task_metrics
-
-        for task_name, m in task_metrics.items():
-            items = []
-            for k, v in m.items():
-                items.append(
-                    f"[json.key]{k}[/json.key]: [json.number]{_val_fmt(v)}[/json.number]"
+        for metric_name in self.eval_metrics:
+            color = "[magenta]" if "." not in metric_name else "[yellow]"
+            if metric_name == self.training_args.metric_for_best_model:
+                grid.add_row(
+                    f"[bold][cyan]> {color}{metric_name.removeprefix('eval_')}",
+                    f"[bold]{_val_fmt(self.eval_metrics[metric_name])}",
+                    f"[bold]{_val_fmt(self.best_eval_metrics.get(metric_name, '---'))}",
                 )
-            color = (
-                "[bold magenta]" if task_name == "general_metrics" else "[bold yellow]"
-            )
-            grid.add_row(
-                f"{color}{task_name}",
-                " | ".join(items),
-            )
+            else:
+                grid.add_row(
+                    f"{color}{metric_name.removeprefix('eval_')}",
+                    str(_val_fmt(self.eval_metrics[metric_name])),
+                    str(_val_fmt(self.best_eval_metrics.get(metric_name, "---"))),
+                )
         return grid
 
     def format_train_metrics(self):
@@ -145,10 +135,7 @@ class TrainSystemDisplay:
         stats.add_column(style="blue", justify="right")
         stats.add_column()
         stats.add_row("Train metrics:", self.format_train_metrics())
-        stats.add_row("Eval metrics:", self.eval_metrics_table(self.eval_metrics))
-        stats.add_row(
-            "Best eval metrics:", self.eval_metrics_table(self.best_eval_metrics)
-        )
+        stats.add_row("Eval metrics:", self.eval_metrics_table())
 
         body = Table.grid(expand=True, padding=(1, 0))
         body.add_column()

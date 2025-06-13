@@ -1,223 +1,52 @@
-from typing import Any
+from dataclasses import dataclass
+from typing import Union
 
 import numpy as np
-from seqeval.metrics import classification_report as seq_cls
-from seqeval.metrics import f1_score as seq_f1
 from sklearn.metrics import (
-    accuracy_score,
     classification_report,
-    f1_score,
-    precision_score,
-    recall_score,
 )
 
-from ..data.task_info import CLASSIFICATION, RELATIONS, TAGGING, TaskType
+from ..data.preprocess import MASK_VALUE
+from ..data.task_info import TaskInfo
 
 
-def fix_np_types(input_variable):
-    """In the mtl classification setting, f1 is an array, and when the HF library
-    tries to write out the training history to a json file it will throw an error.
-    Here, we just check whether it's a numpy array and if so convert to a list.
+@dataclass(frozen=True)
+class TaskEvalPrediction:
+    task: TaskInfo
+    predictions: np.ndarray
+    probs: Union[np.ndarray, None]
+    labels: Union[np.ndarray, None]
 
-    :meta private:
-    """
-    if isinstance(input_variable, np.ndarray):
-        return list(input_variable)
+    def compute_metrics(self) -> dict[str, float]:
+        if self.labels is None:
+            raise RuntimeError(
+                "cannot compute metrics because eval prediction has no labels"
+            )
 
-    return input_variable
+        if len(self.predictions) != len(self.labels):
+            raise RuntimeError(
+                f"Predictions and labels have mismatched lengths {len(self.predictions)} and {len(self.labels)}"
+            )
+        preds = self.predictions.flatten()
+        labels = self.labels.flatten().astype("int")
 
+        pred_inds = np.where(labels != MASK_VALUE)
+        preds = preds[pred_inds]
+        labels = labels[pred_inds]
 
-def tagging_metrics(
-    label_set: list[str],
-    preds: np.ndarray,
-    labels: np.ndarray,
-) -> dict[str, Any]:
-    """One of the metrics functions for use in :func:`cnlp_compute_metrics`.
-
-    Generates evaluation metrics for sequence tagging tasks.
-
-    Ignores tags for which the true label is -100.
-
-    The returned dict is structured as follows::
-
-        {
-            'acc': accuracy
-            'token_f1': token-wise F1 score
-            'f1': seqeval F1 score
-            'report': seqeval classification report
-        }
-
-    Args:
-        label_set: The set of labels for this task.
-        preds: The predicted labels from the model.
-        labels: The true labels.
-
-    Returns:
-        A dictionary containing evaluation metrics.
-    """
-    preds = preds.flatten()
-    labels = labels.flatten().astype("int")
-
-    pred_inds = np.where(labels != -100)
-    preds = preds[pred_inds]
-    labels = labels[pred_inds]
-
-    pred_seq = [label_set[x] for x in preds]
-    label_seq = [label_set[x] for x in labels]
-
-    num_correct = (preds == labels).sum()
-
-    acc = num_correct / len(preds)
-    f1 = f1_score(labels, preds, average=None, zero_division=0)
-
-    return {
-        "acc": acc,
-        "token_f1": fix_np_types(f1),
-        "f1": fix_np_types(seq_f1([label_seq], [pred_seq])),
-        "report": "\n" + str(seq_cls([label_seq], [pred_seq])),
-    }
-
-
-def relation_metrics(
-    label_set: list[str],
-    preds: np.ndarray,
-    labels: np.ndarray,
-) -> dict[str, Any]:
-    """One of the metrics functions for use in :func:`cnlp_compute_metrics`.
-
-    Generates evaluation metrics for relation extraction tasks.
-
-    Ignores tags for which the true label is -100.
-
-    The returned dict is structured as follows::
-
-        {
-            'f1': F1 score
-            'acc': accuracy
-            'recall': recall
-            'precision': precision
-        }
-
-    Args:
-        label_set: The set of labels for this task.
-        preds: The predicted labels from the model.
-        labels: The true labels.
-
-    Returns:
-        A dictionary containing evaluation metrics.
-    """
-
-    # If we are using the attention-based relation extractor, many impossible pairs
-    # are set to -100 so pytorch loss functions ignore them. We need to make sure the
-    # scorer also ignores them.
-    relevant_inds = np.where(labels != -100)
-
-    relevant_labels = [label_set[i] for i in labels[relevant_inds].astype("int")]
-    relevant_preds = [label_set[i] for i in preds[relevant_inds].astype("int")]
-    num_correct = np.equal(
-        labels[relevant_inds].astype("int"), preds[relevant_inds].astype("int")
-    ).sum()
-    acc = num_correct / len(relevant_preds)
-
-    recall = recall_score(y_pred=relevant_preds, y_true=relevant_labels, average=None)
-    precision = precision_score(
-        y_pred=relevant_preds, y_true=relevant_labels, average=None, zero_division=0
-    )
-    f1_scores = fix_np_types(
-        f1_score(
-            y_true=relevant_labels, y_pred=relevant_preds, average=None, zero_division=0
+        report = classification_report(
+            y_true=labels,
+            y_pred=preds,
+            target_names=list(self.task.labels),
+            output_dict=True,
+            zero_division=0,
         )
-    )
 
-    string_labels = [label_set[i] for i in labels[relevant_inds].astype("int")]
-    string_preds = [label_set[i] for i in preds[relevant_inds].astype("int")]
-
-    report_dict = classification_report(
-        y_true=string_labels, y_pred=string_preds, output_dict=True
-    )
-    report_str = classification_report(y_true=string_labels, y_pred=string_preds)
-
-    return {
-        "f1": f1_scores,
-        "acc": acc,
-        "recall": fix_np_types(recall),
-        "precision": fix_np_types(precision),
-        "report_dict": report_dict,
-        "report_str": report_str,
-    }
-
-
-def acc_and_f1(preds: np.ndarray, labels: np.ndarray) -> dict[str, Any]:
-    """One of the metrics functions for use in :func:`cnlp_compute_metrics`.
-
-    Generates evaluation metrics for generic tasks.
-
-    The returned dict is structured as follows::
-
-        {
-            'acc': accuracy
-            'f1': F1 score
-            'acc_and_f1': mean of accuracy and F1 score
-            'recall': recall
-            'precision': precision
+        task_metrics = {
+            "acc": report["accuracy"],
+            "macro_f1": report["macro avg"]["f1-score"],
+            "micro_f1": report["weighted avg"]["f1-score"],
+            **{f"{label}.f1": report[label]["f1-score"] for label in self.task.labels},
         }
 
-    Args:
-        preds: The predicted labels from the model.
-        labels: The true labels.
-
-    Returns:
-        A dictionary containing evaluation metrics.
-    """
-    acc = accuracy_score(y_pred=preds, y_true=labels)
-    recall = recall_score(y_true=labels, y_pred=preds, average=None)
-    precision = precision_score(
-        y_true=labels, y_pred=preds, average=None, zero_division=0
-    )
-    f1 = f1_score(y_true=labels, y_pred=preds, average=None, zero_division=0)
-
-    return {
-        "acc": fix_np_types(acc),
-        "f1": fix_np_types(f1),
-        "acc_and_f1": fix_np_types((acc + f1) / 2),
-        "recall": fix_np_types(recall),
-        "precision": fix_np_types(precision),
-    }
-
-
-def cnlp_compute_metrics(
-    preds: np.ndarray,
-    labels: np.ndarray,
-    output_mode: TaskType,
-    label_set: list[str],
-) -> dict[str, Any]:
-    """Function that defines and computes the metrics used for each task.
-
-    When adding a task definition to this file, add a branch to this
-    function defining what its evaluation metric invocation should be.
-    If the new task is a simple classification task, a sensible default
-    is defined; falling back on this will trigger a warning.
-
-    Args:
-        preds: The predicted labels from the model.
-        labels: The true labels.
-        output_mode: The output mode of the classifier.
-        label_set: The set of output label names for the classifier.
-
-    Returns:
-        A dictionary containing evaluation metrics.
-    """
-
-    assert len(preds) == len(labels), (
-        f"Predictions and labels have mismatched lengths {len(preds)} and {len(labels)}"
-    )
-    if output_mode == CLASSIFICATION:
-        return acc_and_f1(preds=preds, labels=labels)
-    elif output_mode == TAGGING:
-        return tagging_metrics(label_set, preds=preds, labels=labels)
-    elif output_mode == RELATIONS:
-        return relation_metrics(label_set, preds=preds, labels=labels)
-    else:
-        raise Exception(
-            "There is no metric defined for this task in function cnlp_compute_metrics()"
-        )
+        return {f"{self.task.name}.{key}": val for key, val in task_metrics.items()}
