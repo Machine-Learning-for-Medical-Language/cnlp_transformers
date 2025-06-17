@@ -506,7 +506,20 @@ class CnlpTrainSystem:
                     f"{task_prediction.task.name}.{m.removeprefix('avg_')}"
                 ]
 
-        return summary_metrics | metrics
+        result = summary_metrics | metrics
+
+        requested_metric = self.training_args.metric_for_best_model
+        if requested_metric is not None and requested_metric not in result:
+            submetrics: list[float] = []
+            for sub in requested_metric.split(","):
+                sub = sub.removeprefix("eval_".strip())
+                if sub not in result:
+                    raise ValueError(f"unknown evaluation metric {sub}")
+                submetrics.append(result[sub])
+
+            result[requested_metric] = sum(submetrics) / len(submetrics)
+
+        return result
 
     def train(self):
         """Begin the training loop.

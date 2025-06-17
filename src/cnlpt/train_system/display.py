@@ -87,20 +87,25 @@ class TrainSystemDisplay:
             f"[bold]Best{ckpt_path_str}",
         )
 
-        for metric_name in self.eval_metrics:
-            color = "[magenta]" if "." not in metric_name else "[yellow]"
-            if metric_name == self.training_args.metric_for_best_model:
-                grid.add_row(
-                    f"[bold][cyan]> {color}{metric_name.removeprefix('eval_')}",
-                    f"[bold]{_val_fmt(self.eval_metrics[metric_name])}",
-                    f"[bold]{_val_fmt(self.best_eval_metrics.get(metric_name, '---'))}",
-                )
+        def format_metric_name(metric_name: str):
+            if "," in metric_name:
+                return f"[cyan]avg({'[cyan], '.join([format_metric_name(m) for m in metric_name.split(',')])}[cyan])"
             else:
-                grid.add_row(
-                    f"{color}{metric_name.removeprefix('eval_')}",
-                    str(_val_fmt(self.eval_metrics[metric_name])),
-                    str(_val_fmt(self.best_eval_metrics.get(metric_name, "---"))),
-                )
+                color = "magenta" if "." not in metric_name else "yellow"
+                return f"[{color}]{metric_name.strip().removeprefix('eval_')}[/{color}]"
+
+        for metric_name in self.eval_metrics:
+            row = [
+                format_metric_name(metric_name),
+                str(_val_fmt(self.eval_metrics[metric_name])),
+                str(_val_fmt(self.best_eval_metrics[metric_name])),
+            ]
+            if metric_name == self.training_args.metric_for_best_model:
+                row[0] = f"[bold][cyan]> {row[0]}"
+                row[1] = f"[bold]{row[1]}"
+                row[2] = f"[bold]{row[2]}"
+
+            grid.add_row(*row)
         return grid
 
     def format_train_metrics(self):

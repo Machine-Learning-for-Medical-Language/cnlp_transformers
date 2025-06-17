@@ -84,6 +84,10 @@ def preprocess_args(
 
     if training_args.metric_for_best_model is None:
         training_args.metric_for_best_model = "eval_avg_acc"
+    elif not training_args.metric_for_best_model.startswith("eval_"):
+        training_args.metric_for_best_model = (
+            f"eval_{training_args.metric_for_best_model}"
+        )
     if training_args.load_best_model_at_end is None:
         training_args.load_best_model_at_end = True
 
