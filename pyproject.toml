@@ -54,7 +54,7 @@ lint = [
     "ruff==0.11.8", # same as in pre-commit hooks and CI
 ]
 build = ["build", "pip>=21.3", "twine"]
-test = ["pytest"]
+test = ["lorem-text>=3.0", "pytest"]
 docs = ["sphinx", "sphinx-autodoc-typehints", "sphinx-rtd-theme", "sphobjinv"]
 dev = [
     { include-group = "build" },
@@ -66,6 +66,9 @@ dev = [
 
 [project.scripts]
 "cnlpt" = "cnlpt.__main__:main"
+
+[tool.pytest.ini_options]
+markers = ["random_cnlp_data"]
 
 [tool.ruff]
 target-version = "py39"

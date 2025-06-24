@@ -394,6 +394,7 @@ build = [
 ]
 dev = [
     { name = "build" },
+    { name = "lorem-text" },
     { name = "pip" },
     { name = "pre-commit" },
     { name = "pytest" },
@@ -422,6 +423,7 @@ lint = [
     { name = "ruff" },
 ]
 test = [
+    { name = "lorem-text" },
     { name = "pytest" },
 ]
 
@@ -453,6 +455,7 @@ build = [
 ]
 dev = [
     { name = "build" },
+    { name = "lorem-text", specifier = ">=3.0" },
     { name = "pip", specifier = ">=21.3" },
     { name = "pre-commit" },
     { name = "pytest" },
@@ -470,7 +473,10 @@ docs = [
     { name = "sphobjinv" },
 ]
 lint = [{ name = "ruff", specifier = "==0.11.8" }]
-test = [{ name = "pytest" }]
+test = [
+    { name = "lorem-text", specifier = ">=3.0" },
+    { name = "pytest" },
+]
 
 [[package]]
 name = "colorama"
@@ -953,6 +959,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/70/09/d904a6e96f76ff214be59e7aa6ef7190008f52a0ab6689760a98de0bf37d/keyring-25.6.0.tar.gz", hash = "sha256:0b39998aa941431eb3d9b0d4b2460bc773b9df6fed7621c2dfb291a7e0187a66", size = 62750, upload-time = "2024-12-25T15:26:45.782Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d3/32/da7f44bcb1105d3e88a0b74ebdca50c59121d2ddf71c9e34ba47df7f3a56/keyring-25.6.0-py3-none-any.whl", hash = "sha256:552a3f7af126ece7ed5c89753650eec89c7eaae8617d0aa4d9ad2b75111266bd", size = 39085, upload-time = "2024-12-25T15:26:44.377Z" },
+]
+
+[[package]]
+name = "lorem-text"
+version = "3.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/31/4a/0d8a3633a51e4c0ed1e9cd20accf6b485584054db323ee0448fabc14dfe0/lorem_text-3.0.tar.gz", hash = "sha256:03013aabdbc33e7280d92c20ba041b9d8f21187e0164a9323fd173be6825c865", size = 4317, upload-time = "2025-05-10T05:27:47.315Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ff/f4/d2b9b52921fbd8c1cc767f818b5dbecb5c572686168896ac8a9aa4fb43f9/lorem_text-3.0-py3-none-any.whl", hash = "sha256:0c7e3e4a64db5a9574e465cfae429d4c8606657f89c02b39eefa88f933d314e2", size = 5580, upload-time = "2025-05-10T05:27:45.868Z" },
 ]
 
 [[package]]

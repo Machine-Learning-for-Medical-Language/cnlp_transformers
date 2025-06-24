@@ -2,19 +2,10 @@
 Test suite for running the API models
 """
 
-import os
-
 import pytest
 from fastapi.testclient import TestClient
 
 from cnlpt.api.utils import EntityDocument
-
-
-@pytest.fixture(autouse=True)
-def disable_mps(monkeypatch):
-    """Disable MPS for CI"""
-    if os.getenv("CI", False):
-        monkeypatch.setattr("torch._C._mps_is_available", lambda: False)
 
 
 class TestNegation:
