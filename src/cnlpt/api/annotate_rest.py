@@ -26,7 +26,7 @@ from pydantic import BaseModel
 from transformers import Trainer
 from transformers.tokenization_utils import PreTrainedTokenizer
 
-from cnlpt.api.utils import (
+from .utils import (
     UnannotatedDocument,
     get_dataset,
     initialize_cnlpt_model,
