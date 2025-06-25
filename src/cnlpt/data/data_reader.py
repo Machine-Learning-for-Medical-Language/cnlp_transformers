@@ -17,7 +17,7 @@ from .task_info import (
 
 DatasetSplit = Literal["train", "test", "validation"]
 CNLP_FILE_FORMATS: Final = ("json", "csv", "tsv")
-RESERVED_COLUMN_NAMES: Final = ("text", "text_a", "text_b")
+RESERVED_COLUMN_NAMES: Final = ("id", "text", "text_a", "text_b")
 NONE_VALUE: Final = "__None__"
 
 
@@ -72,6 +72,7 @@ def _get_sorted_label_set(all_raw_labels: Iterable[str], task_type: TaskType):
             rel_or_none.removesuffix(")").split(",")[-1]
             for rel_or_none in joined.split(" , ")
         )
+        label_set.add("None")
     else:
         raise ValueError(f"invalid task type {TaskType}")
 
@@ -85,9 +86,10 @@ class CnlpDataReader:
     as well as maintain a list of `TaskInfo` instances representing the data's CNLP tasks.
     """
 
-    def __init__(self):
+    def __init__(self, allow_disjoint_labels: bool = False):
         """Initialize an empty `CnlpDataReader` with no data."""
         self.dataset = DatasetDict()
+        self.allow_disjoint_labels = allow_disjoint_labels
         self._tasks: list[TaskInfo] = []
 
     @property
@@ -153,9 +155,11 @@ class CnlpDataReader:
                     # the name, output type, and labels are all the same,
                     # so we don't have to do anything.
                     continue
-                elif existing_label_set.issubset(
-                    new_label_set
-                ) or new_label_set.issubset(existing_label_set):
+                elif (
+                    existing_label_set.issubset(new_label_set)
+                    or new_label_set.issubset(existing_label_set)
+                    or self.allow_disjoint_labels
+                ):
                     logger.warning(
                         f'two different datasets have the same task name "{existing.name}" but not completely equal label lists: '
                         + f"{sorted(existing_label_set)!s} vs. {sorted(new_label_set)!s}. We will merge them."

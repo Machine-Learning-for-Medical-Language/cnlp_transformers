@@ -21,6 +21,9 @@ def configure_logger_for_training(training_args: CnlpTrainingArguments):
     assert training_args.output_dir is not None
     log_file = os.path.join(training_args.output_dir, "train_system.log")
     level = "INFO" if training_args.local_rank in (-1, 0) else "WARNING"
+    handlers = ["logfile"]
+    if not training_args.rich_display:
+        handlers.append("stdout")
     LOGGING_CONFIG = {
         "version": 1,
         "disable_existing_loggers": False,
@@ -52,10 +55,7 @@ def configure_logger_for_training(training_args: CnlpTrainingArguments):
         "loggers": {
             "root": {
                 "level": level,
-                "handlers": [
-                    # "stdout",
-                    "logfile",
-                ],
+                "handlers": handlers,
             },
             "transformers": {"propagate": True},
         },

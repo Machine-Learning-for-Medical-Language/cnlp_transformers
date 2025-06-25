@@ -20,10 +20,7 @@ class DisplayCallback(TrainerCallback):
         display: TrainSystemDisplay,
     ):
         self.display = display
-        self.progress = self.display.progress
-        self.training_task = None
-        self.epoch_task = None
-        self.eval_task = None
+        self.current_eval_step: int = 0
 
     def on_train_begin(
         self,
@@ -32,13 +29,8 @@ class DisplayCallback(TrainerCallback):
         control: TrainerControl,
         **kwargs,
     ):
-        if not state.is_world_process_zero:
-            return
-
-        self.training_task = self.progress.add_task("Training")
-        self.epoch_task = self.progress.add_task(
-            f"Epoch 1/{int(args.num_train_epochs)}"
-        )
+        self.display.start_training(total_epochs=int(args.num_train_epochs))
+        self.display.update()
 
     def on_train_end(
         self,
@@ -47,13 +39,8 @@ class DisplayCallback(TrainerCallback):
         control: TrainerControl,
         **kwargs,
     ):
-        if self.epoch_task is not None:
-            self.progress.remove_task(self.epoch_task)
-            self.epoch_task = None
-
-        if self.training_task is not None:
-            self.progress.remove_task(self.training_task)
-            self.training_task = None
+        self.display.finish_training()
+        self.display.update()
 
     def on_step_end(
         self,
@@ -62,33 +49,26 @@ class DisplayCallback(TrainerCallback):
         control: TrainerControl,
         **kwargs,
     ):
-        if not state.is_world_process_zero:
-            return
+        self.display.training_progress(
+            completed_steps=state.global_step,
+            total_steps=state.max_steps,
+        )
 
         steps_per_epoch = state.max_steps // args.num_train_epochs
+        cur_epoch, epoch_progress = divmod(state.global_step, steps_per_epoch)
 
-        if self.training_task is not None:
-            self.progress.update(
-                self.training_task,
-                total=state.max_steps,
-                completed=state.global_step,
-            )
+        # unless we're just starting (N == 0), prefer rendering
+        # 100% for epoch N instead of 0% for epoch N + 1
+        if epoch_progress == 0 and cur_epoch > 0:
+            epoch_progress = steps_per_epoch
+            cur_epoch -= 1
 
-        if self.epoch_task is not None:
-            cur_epoch, epoch_progress = divmod(state.global_step, steps_per_epoch)
-
-            # unless we're just starting (N == 0), prefer rendering
-            # 100% for epoch N instead of 0% for epoch N + 1
-            if epoch_progress == 0 and cur_epoch > 0:
-                epoch_progress = steps_per_epoch
-                cur_epoch -= 1
-
-            self.progress.update(
-                task_id=self.epoch_task,
-                total=steps_per_epoch,
-                completed=int(epoch_progress),
-                description=f"Epoch {int(cur_epoch + 1)}/{int(args.num_train_epochs)}",
-            )
+        self.display.epoch_progress(
+            epoch=int(cur_epoch + 1),
+            total_epochs=int(args.num_train_epochs),
+            completed_steps=int(epoch_progress),
+            total_steps=steps_per_epoch,
+        )
 
         self.display.update()
 
@@ -100,15 +80,36 @@ class DisplayCallback(TrainerCallback):
         eval_dataloader=None,
         **kwargs,
     ):
-        if not state.is_world_process_zero or eval_dataloader is None:
+        if eval_dataloader is None:
             return
 
-        if self.eval_task is None:
-            self.eval_task = self.progress.add_task(
-                "Evaluation", total=len(eval_dataloader)
-            )
+        self.current_eval_step += 1
+        self.display.eval_progress(
+            completed_steps=self.current_eval_step,
+            total_steps=len(eval_dataloader),
+        )
+        self.display.update()
 
-        self.progress.advance(self.eval_task, advance=1)
+    def on_evaluate(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        metrics: dict[str, float],
+        **kwargs,
+    ):
+        self.display.finish_eval()
+        self.current_eval_step = 0
+
+        self.display.eval_metrics = metrics
+        best = self.display.best_eval_metrics
+        tgt_metric = args.metric_for_best_model
+        if (
+            len(best) == 0
+            or (args.greater_is_better and metrics[tgt_metric] > best[tgt_metric])
+            or (not args.greater_is_better and metrics[tgt_metric] < best[tgt_metric])
+        ):
+            self.display.best_eval_metrics = metrics
 
     def on_log(
         self,
@@ -122,30 +123,6 @@ class DisplayCallback(TrainerCallback):
             self.display.train_metrics.append(logs)
             self.display.update()
 
-    def on_evaluate(
-        self,
-        args: TrainingArguments,
-        state: TrainerState,
-        control: TrainerControl,
-        metrics: dict[str, float],
-        **kwargs,
-    ):
-        if not state.is_world_process_zero:
-            return
-        if self.eval_task is not None:
-            self.progress.remove_task(self.eval_task)
-            self.eval_task = None
-        self.display.eval_metrics = metrics
-
-        best = self.display.best_eval_metrics
-        tgt_metric = args.metric_for_best_model
-        if (
-            len(best) == 0
-            or (args.greater_is_better and metrics[tgt_metric] > best[tgt_metric])
-            or (not args.greater_is_better and metrics[tgt_metric] < best[tgt_metric])
-        ):
-            self.display.best_eval_metrics = metrics
-
     def on_save(
         self,
         args: TrainingArguments,
@@ -153,8 +130,6 @@ class DisplayCallback(TrainerCallback):
         control: TrainerControl,
         **kwargs,
     ):
-        if not state.is_world_process_zero:
-            return
         if args.save_strategy == SaveStrategy.BEST:
             self.display.best_checkpoint = (
                 f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}"
@@ -170,11 +145,8 @@ class DisplayCallback(TrainerCallback):
         metrics,
         **kwargs,
     ):
-        if not state.is_world_process_zero:
-            return
-        if self.eval_task is not None:
-            self.progress.remove_task(self.eval_task)
-            self.eval_task = None
+        self.display.finish_eval()
+        self.current_eval_step = 0
 
 
 class BasicLoggingCallback(TrainerCallback):
@@ -254,4 +226,4 @@ class BasicLoggingCallback(TrainerCallback):
         control: TrainerControl,
         **kwargs,
     ):
-        logger.info("New best model saved! Current step: %s", state.global_step)
+        logger.info("Model saved! Current step: %s", state.global_step)

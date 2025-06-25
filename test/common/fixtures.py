@@ -4,11 +4,20 @@ import random
 import tempfile
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import pytest
 from lorem_text import lorem
 from transformers.models.auto.tokenization_auto import AutoTokenizer
+
+from cnlpt.args import (
+    CnlpDataArguments,
+    CnlpModelArguments,
+    CnlpTrainingArguments,
+    parse_args_dict,
+)
+from cnlpt.data import TaskType
+from cnlpt.train_system import CnlpTrainSystem
 
 
 @pytest.fixture(autouse=True)
@@ -40,10 +49,14 @@ def random_cnlp_data_dir(request):
 
     split_data: dict[str, Any] = {}
 
+    def make_label(task_idx, n_labels):
+        return f"task_{task_idx}_label_{random.randint(0, n_labels - 1)}"
+
     for split, n in (("train", n_train), ("test", n_test), ("dev", n_dev)):
         if n == 0:
             continue
         data = []
+
         for row in range(n):
             seq_len = random.randint(min_seq, max_seq)
 
@@ -53,31 +66,23 @@ def random_cnlp_data_dir(request):
             }
             for task_idx, (task_type, n_labels) in enumerate(tasks):
                 if task_type == "classification":
-                    task_data = (
-                        f"task_{task_idx}_label_{random.randint(0, n_labels - 1)}"
-                    )
+                    task_data = make_label(task_idx, n_labels)
                 elif task_type == "tagging":
                     task_data = " ".join(
-                        [
-                            f"task_{task_idx}_label_{random.randint(0, n_labels - 1)}"
-                            for _ in range(seq_len)
-                        ]
+                        [make_label(task_idx, n_labels) for _ in range(seq_len)]
                     )
                 elif task_type == "relations":
                     relations = []
 
                     for _ in range(random.randint(min_relations, max_relations)):
                         start, end = sorted(random.choices(range(seq_len), k=2))
-                        label = (
-                            f"task_{task_idx}_label_{random.randint(0, n_labels - 1)}"
-                        )
+                        label = make_label(task_idx, n_labels)
                         relations.append(f"({start},{end},{label})")
 
                     if len(relations) == 0:
                         task_data = "None"
                     else:
                         task_data = " , ".join(relations)
-
                 else:
                     raise ValueError(
                         f'unknown task type {task_type}, must be one of ("classification", "tagging", "relations")'
@@ -105,8 +110,8 @@ def random_cnlp_data_dir(request):
 
 def random_cnlp_data_options(
     *,
-    tasks: Iterable[tuple[Literal["classification", "tagging", "relations"], int]],
-    n_train: int = 0,
+    tasks: Iterable[tuple[TaskType, int]],
+    n_train: int = 1,
     n_test: int = 0,
     n_dev: int = 0,
     min_seq: int = 1,
@@ -135,4 +140,48 @@ def random_cnlp_data_options(
         max_seq=max_seq,
         min_relations=min_relations,
         max_relations=max_relations,
+    )
+
+
+@pytest.fixture
+def cnlp_args(request):
+    marker: pytest.Mark = request.node.get_closest_marker("cnlp_args")
+    custom_args = marker.kwargs if marker is not None else {}
+
+    with tempfile.TemporaryDirectory(prefix="cnlp_output_dir") as out_dir:
+        yield parse_args_dict(
+            {
+                "data_dir": [],
+                "encoder_name": "roberta-base",
+                "output_dir": out_dir,
+                "overwrite_output_dir": True,
+                "cache_dir": "cache/",
+                "do_train": True,
+                "do_eval": True,
+                "do_predict": True,
+                "evals_per_epoch": 1,
+                "num_train_epochs": 1,
+                "learning_rate": 1e-5,
+                "report_to": None,
+                "save_strategy": "best",
+                "rich_display": False,
+                "allow_disjoint_labels": True,
+                **custom_args,
+            }
+        )
+
+
+def custom_cnlp_args(**kwargs):
+    return pytest.mark.cnlp_args(**kwargs)
+
+
+@pytest.fixture
+def random_cnlp_train_system(
+    random_cnlp_data_dir,
+    cnlp_args: tuple[CnlpModelArguments, CnlpDataArguments, CnlpTrainingArguments],
+):
+    model_args, data_args, training_args = cnlp_args
+    data_args.data_dir = [random_cnlp_data_dir]
+    yield CnlpTrainSystem(
+        model_args=model_args, data_args=data_args, training_args=training_args
     )

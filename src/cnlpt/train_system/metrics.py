@@ -2,9 +2,7 @@ from dataclasses import dataclass
 from typing import Union
 
 import numpy as np
-from sklearn.metrics import (
-    classification_report,
-)
+from sklearn.metrics import classification_report
 
 from ..data.preprocess import MASK_VALUE
 from ..data.task_info import TaskInfo
@@ -38,6 +36,7 @@ class TaskEvalPrediction:
             y_true=labels,
             y_pred=preds,
             target_names=list(self.task.labels),
+            labels=range(len(self.task.labels)),
             output_dict=True,
             zero_division=0,
         )

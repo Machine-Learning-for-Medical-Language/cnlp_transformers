@@ -47,7 +47,9 @@ def test_init_data():
         "RELATIONS",
         "TAGGING",
         "CnlpDataset",
+        "CnlpPredictions",
         "TaskInfo",
+        "TaskType",
         "get_task_type",
         "preprocess_raw_data",
     ]

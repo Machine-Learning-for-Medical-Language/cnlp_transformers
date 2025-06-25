@@ -1,5 +1,5 @@
 import os
-from typing import Any
+from typing import Any, Union
 
 import numpy as np
 from rich.console import Console
@@ -9,6 +9,7 @@ from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
     Progress,
+    TaskID,
     TextColumn,
     TimeRemainingColumn,
 )
@@ -40,6 +41,10 @@ class TrainSystemDisplay:
         self.data_args = data_args
         self.training_args = training_args
 
+        self.eval_desc = "Evaluating"
+
+        self.show_train_metrics = True
+        self.show_eval_metrics = True
         self.train_metrics: list[dict[str, float]] = []
         self.eval_metrics: dict[str, Any] = {}
         self.best_eval_metrics: dict[str, Any] = {}
@@ -54,6 +59,9 @@ class TrainSystemDisplay:
             auto_refresh=False,
             transient=True,
         )
+        self.training_task: Union[TaskID, None] = None
+        self.epoch_task: Union[TaskID, None] = None
+        self.eval_task: Union[TaskID, None] = None
 
         self.live = Live(self.panel(), console=console)
 
@@ -151,8 +159,10 @@ class TrainSystemDisplay:
         stats = Table.grid(padding=(1, 1))
         stats.add_column(style="blue", justify="right")
         stats.add_column()
-        stats.add_row("Train metrics:", self.format_train_metrics())
-        stats.add_row("Eval metrics:", self.eval_metrics_table())
+        if self.show_train_metrics:
+            stats.add_row("Train metrics:", self.format_train_metrics())
+        if self.show_eval_metrics:
+            stats.add_row("Eval metrics:", self.eval_metrics_table())
 
         body = Table.grid(expand=True, padding=(1, 0))
         body.add_column()
@@ -177,6 +187,58 @@ class TrainSystemDisplay:
     def update(self):
         self.progress.refresh()
         self.live.update(self.panel())
+
+    def start_training(self, total_epochs: int):
+        self.training_task = self.progress.add_task(description="Training")
+        self.epoch_task = self.progress.add_task(description=f"Epoch 1/{total_epochs}")
+
+    def finish_training(self):
+        if self.training_task is not None:
+            self.progress.remove_task(self.training_task)
+            self.training_task = None
+
+        if self.epoch_task is not None:
+            self.progress.remove_task(self.epoch_task)
+            self.epoch_task = None
+
+    def finish_eval(self):
+        if self.eval_task is not None:
+            self.progress.remove_task(self.eval_task)
+            self.eval_task = None
+
+    def training_progress(self, completed_steps: int, total_steps: int):
+        if self.training_task is None:
+            self.training_task = self.progress.add_task(description="Training")
+
+        self.progress.update(
+            task_id=self.training_task,
+            total=total_steps,
+            completed=completed_steps,
+        )
+
+    def epoch_progress(
+        self, epoch: int, total_epochs: int, completed_steps: int, total_steps: int
+    ):
+        if self.epoch_task is None:
+            self.epoch_task = self.progress.add_task()
+
+        self.progress.update(
+            task_id=self.epoch_task,
+            total=total_steps,
+            completed=completed_steps,
+            description=f"Epoch {epoch}/{total_epochs}",
+        )
+
+    def eval_progress(self, completed_steps: int, total_steps: int):
+        if self.eval_task is None:
+            self.eval_task = self.progress.add_task(description=self.eval_desc)
+
+        self.progress.update(
+            task_id=self.eval_task,
+            total=total_steps,
+            completed=completed_steps,
+            description=self.eval_desc,
+        )
 
     def __enter__(self):
         self.live.__enter__()

@@ -39,7 +39,7 @@ class CnlpDataset:
 
         self.hierarchical = hierarchical
 
-        reader = CnlpDataReader()
+        reader = CnlpDataReader(allow_disjoint_labels=args.allow_disjoint_labels)
         for data_dir in args.data_dir:
             reader.load_dir(data_dir)
 
@@ -51,6 +51,9 @@ class CnlpDataset:
 
         if (train_limit := (args.max_train_items or 0)) > 0:
             self.dataset["train"] = self.dataset["train"].take(train_limit)
+
+        if (test_limit := (args.max_test_items or 0)) > 0:
+            self.dataset["test"] = self.dataset["test"].take(test_limit)
 
         split_data: Dataset
         for split_name, split_data in self.dataset.items():

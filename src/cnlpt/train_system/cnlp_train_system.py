@@ -7,6 +7,7 @@ from typing import Any, Union, cast
 import numpy as np
 import numpy.typing as npt
 import torch
+from datasets import Dataset
 from transformers.models.auto.configuration_auto import AutoConfig
 from transformers.models.auto.modeling_auto import AutoModel
 from transformers.models.auto.tokenization_auto import AutoTokenizer
@@ -23,17 +24,13 @@ from ..args import (
     parse_args_json_file,
     preprocess_args,
 )
-from ..data.cnlp_dataset import CnlpDataset
-from ..data.task_info import RELATIONS, TAGGING
+from ..data import RELATIONS, TAGGING, CnlpDataset, CnlpPredictions
 from ..models import CnlpConfig, CnlpModelForClassification, HierarchicalModel
 from ..models.baseline import CnnSentenceClassifier, LstmSentenceClassifier
 from .display import TrainSystemDisplay
 from .log import configure_logger_for_training, logger
 from .metrics import TaskEvalPrediction
-from .training_callbacks import (
-    BasicLoggingCallback,
-    DisplayCallback,
-)
+from .training_callbacks import BasicLoggingCallback, DisplayCallback
 from .utils import is_external_encoder, simple_softmax
 
 
@@ -61,6 +58,8 @@ class CnlpTrainSystem:
         self.model_args = model_args
         self.data_args = data_args
         self.training_args = training_args
+
+        self.disp: Union[TrainSystemDisplay, None] = None
 
         set_seed(self.training_args.seed)
         self._init_tokenizer()
@@ -521,30 +520,25 @@ class CnlpTrainSystem:
 
         return result
 
-    def train(self):
-        """Begin the training loop.
-
-        Args:
-            rich_display: Whether to display training progress in a rich status panel. Defaults to True.
-        """
+    @contextlib.contextmanager
+    def trainer(self):
         trainer_callbacks: list[TrainerCallback] = [
             BasicLoggingCallback(self.model_args, self.data_args, self.training_args)
         ]
 
-        assert self.training_args.output_dir is not None
-
-        if self.training_args.rich_display:
+        if self.training_args.rich_display and self.training_args.local_rank in (-1, 0):
             self.training_args.disable_tqdm = True
-            disp = TrainSystemDisplay(
+            self.disp = TrainSystemDisplay(
                 self.model_args,
                 self.data_args,
                 self.training_args,
             )
-            trainer_callbacks.append(DisplayCallback(disp))
+            display_callback = DisplayCallback(self.disp)
+            trainer_callbacks.append(display_callback)
         else:
-            disp = contextlib.nullcontext()
+            display_callback = None
 
-        with disp:
+        with self.disp or contextlib.nullcontext():
             trainer = Trainer(
                 model=self.model,
                 args=self.training_args,
@@ -553,23 +547,71 @@ class CnlpTrainSystem:
                 compute_metrics=self._compute_metrics,
                 callbacks=trainer_callbacks,
             )
-
             if self.training_args.rich_display:
                 # remove the PrinterCallback added by default when we initialized the trainer
                 trainer.remove_callback(PrinterCallback)
 
+            yield trainer
+
+        self.disp = None
+
+    def train(self):
+        """Begin the training loop."""
+
+        with self.trainer() as trainer:
+            if self.disp:
+                self.disp.eval_desc = "Evaluating"
+
             trainer.train()
             trainer.save_model()
 
-    def evaluate(self):
-        # TODO(ian)
-        # This method should just run a single evaluation (on the validation data) with the current model.
-        pass
+            if self.training_args.do_predict:
+                predictions = self._predict(trainer, self.dataset.test_data)
+                predictions_dir = os.path.join(
+                    self.training_args.output_dir, "predictions"
+                )
+                os.mkdir(predictions_dir)
+                predictions.save(
+                    predictions_dir,
+                    include_probs=self.training_args.output_prob,
+                )
 
-    def predict(self):
-        # TODO(ian)
-        # This method should run predictions on the test data with the current model.
-        pass
+    def _evaluate(self, trainer: Trainer):
+        if self.disp:
+            self.disp.eval_desc = "Evaluating"
+        return trainer.evaluate()
+
+    def _predict(self, trainer: Trainer, dataset: Dataset):
+        if self.disp:
+            self.disp.eval_desc = "Predicting"
+        raw_prediction = trainer.predict(dataset)
+        return CnlpPredictions(
+            dataset, raw_prediction, self.dataset.tasks, self.data_args
+        )
+
+    def evaluate(self) -> dict[str, float]:
+        """Run an evaluation on the valdiation set.
+
+        Returns:
+            Evaluation metrics.
+        """
+
+        with self.trainer() as trainer:
+            return self._evaluate(trainer)
+
+    def predict(self, dataset: Union[Dataset, None] = None) -> CnlpPredictions:
+        """Run predictions on the test set.
+
+        Args:
+            dataset: Dataset to run predictions. Optional, defaults to the test data in this
+            train system's dataset.
+
+        Returns:
+            The prediction output.
+        """
+
+        with self.trainer() as trainer:
+            return self._predict(trainer, dataset or self.dataset.test_data)
 
 
 def main(argv: Union[list[str], None] = None):

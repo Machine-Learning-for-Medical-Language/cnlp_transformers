@@ -91,3 +91,17 @@ class CnlpDataArguments:
             "help": "Set a number of validation instances to use during training (useful if a dataset has been created using dumb logic like 80/10/10 and 10%% takes forever to evaluate on. Default is evaluate on all validation data."
         },
     )
+
+    max_test_items: Union[int, None] = field(
+        default=-1,
+        metadata={
+            "help": "Set a number of test instances to use during prediction (useful for debugging)"
+        },
+    )
+
+    allow_disjoint_labels: bool = field(
+        default=False,
+        metadata={
+            "help": "Allow tasks to have disjoint label sets in different data splits (useful for testing)."
+        },
+    )
