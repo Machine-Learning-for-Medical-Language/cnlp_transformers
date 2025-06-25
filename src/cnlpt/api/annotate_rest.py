@@ -28,7 +28,7 @@ from transformers.tokenization_utils import PreTrainedTokenizer
 
 from .utils import (
     UnannotatedDocument,
-    get_dataset,
+    create_dataset,
     initialize_cnlpt_model,
 )
 
@@ -74,7 +74,7 @@ def return_labels(doc: UnannotatedDocument):
     if not lines:
         return AnnotateResults(labels=[])
 
-    dataset = get_dataset(lines, app.state.tokenizer, LABELS, [TASK], MAX_LENGTH) 
+    dataset = create_dataset(lines, app.state.tokenizer, LABELS, [TASK], MAX_LENGTH) 
     preproc_end = time()
 
     output = app.state.trainer.predict(test_dataset=dataset)
