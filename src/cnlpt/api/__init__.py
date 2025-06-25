@@ -12,7 +12,11 @@ MODEL_TYPES = (
 
 
 def get_rest_app(model_type: str):
-    if model_type == "cnn":
+    if model_type == "annotate":
+        from .annotate_rest import app
+
+        return app
+    elif model_type == "cnn":
         from .cnn_rest import app
 
         return app
