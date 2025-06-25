@@ -1,4 +1,5 @@
 MODEL_TYPES = (
+    "annotate",
     "cnn",
     "current",
     "dtr",
