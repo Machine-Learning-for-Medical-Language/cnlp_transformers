@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import random
 import tempfile
@@ -188,6 +189,9 @@ def random_cnlp_train_system(
     )
 
     # we must close the logfile handler or tearing down the temporary output directory will fail
-    for handler in train_system_logger.handlers:
-        handler.close()
-        train_system_logger.removeHandler(handler)
+    for handler in logging.root.handlers:
+        if isinstance(handler, logging.FileHandler) and handler.baseFilename.endswith(
+            "train_system.log"
+        ):
+            handler.close()
+            train_system_logger.removeHandler(handler)
