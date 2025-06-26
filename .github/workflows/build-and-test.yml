@@ -36,6 +36,13 @@ jobs:
         with:
           version: "0.7.11"
           enable-cache: true
+      - name: Cache HF models
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/huggingface
+          key: ${{ runner.os }}-hf-${{ hashFiles('**/*.py') }}
+          restore-keys: |
+            ${{ runner.os }}-hf-
       - name: Test with pytest
         run: |
           uv run --frozen --group test -p ${{ matrix.python-version }} pytest -vv test/
