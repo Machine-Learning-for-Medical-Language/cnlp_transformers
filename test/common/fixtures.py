@@ -18,6 +18,7 @@ from cnlpt.args import (
 )
 from cnlpt.data import TaskType
 from cnlpt.train_system import CnlpTrainSystem
+from cnlpt.train_system.log import logger as train_system_logger
 
 
 @pytest.fixture(autouse=True)
@@ -185,3 +186,7 @@ def random_cnlp_train_system(
     yield CnlpTrainSystem(
         model_args=model_args, data_args=data_args, training_args=training_args
     )
+
+    # we must close the logfile handler or tearing down the temporary output directory will fail
+    for handler in train_system_logger.handlers:
+        handler.close()
