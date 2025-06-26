@@ -1,5 +1,4 @@
 import json
-import logging
 import os
 import random
 import tempfile
@@ -19,6 +18,7 @@ from cnlpt.args import (
 )
 from cnlpt.data import TaskType
 from cnlpt.train_system import CnlpTrainSystem
+from cnlpt.train_system.log import logger as train_system_logger
 
 
 @pytest.fixture(autouse=True)
@@ -187,6 +187,7 @@ def random_cnlp_train_system(
         model_args=model_args, data_args=data_args, training_args=training_args
     )
 
-    # on windows we get an error if the train logfile is still open
-    # when we try to tear down the tempdir it's in
-    logging.shutdown()
+    # we must close the logfile handler or tearing down the temporary output directory will fail
+    for handler in train_system_logger.handlers:
+        handler.close()
+        train_system_logger.removeHandler(handler)
