@@ -1,8 +1,8 @@
 import json
 import os
 from collections.abc import Iterable
-from dataclasses import dataclass
-from typing import Any, Literal, Union
+from dataclasses import asdict, dataclass
+from typing import Any, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -32,7 +32,12 @@ class TaskPrediction:
 
 @dataclass
 class CnlpPredictions:
+    input_data: Dataset
+    tokens: list[list[str]]
     raw: PredictionOutput
+    tasks: list[TaskInfo]
+    data_args: CnlpDataArguments
+
     task_predictions: dict[str, TaskPrediction]
 
     def __init__(
@@ -45,13 +50,13 @@ class CnlpPredictions:
     ):
         self.input_data = input_data
         self.tokens = tokens
+        self.raw = raw_prediction
+        self.tasks = sorted(tasks, key=lambda t: t.index)
         self.data_args = data_args
 
-        tasks = sorted(tasks, key=lambda t: t.index)
         # task indices must start at zero and increase by 1
         assert all(idx == t.index for idx, t in enumerate(tasks))
 
-        self.raw = raw_prediction
         self.task_predictions: dict[str, TaskPrediction] = {}
 
         task_labels: dict[str, npt.NDArray]
@@ -93,18 +98,11 @@ class CnlpPredictions:
             for t in tasks
         }
 
-    def get(self, task_name: str):
-        return self.task_predictions[task_name]
-
     def to_data_frame(
         self,
-        *tasks: str,
         include_logits: bool = True,
         include_probs: bool = False,
     ):
-        if len(tasks) == 0:
-            tasks = self.task_predictions.keys()
-
         cols: list[pl.Series] = []
 
         idxs = pl.Series("sample_idx", list(range(len(self.input_data))))
@@ -127,8 +125,8 @@ class CnlpPredictions:
 
         result = pl.DataFrame(cols)
 
-        for task_name in tasks:
-            task_pred = self.get(task_name)
+        for task_name in self.task_predictions.keys():
+            task_pred = self.task_predictions[task_name]
             task_cols = [
                 idxs,
                 pl.Series("raw_label", self.input_data[task_name]),
@@ -148,36 +146,60 @@ class CnlpPredictions:
 
         return result
 
-    def save(
-        self,
-        save_dir: Union[str, os.PathLike],
-        save_fmt: Literal["parquet", "csv", "json"] = "parquet",
-        include_logits: bool = True,
-        include_probs: bool = False,
-        allow_overwrite: bool = False,
-        polars_write_kwargs: Union[dict[str, Any], None] = None,
-    ):
-        if not os.path.isdir(save_dir):
-            raise ValueError(f"{save_dir:!s} does not exist or is not a directory")
+    def to_dict(self):
+        def arr_to_list(obj):
+            if obj is None:
+                return None
+            return np.array(obj).tolist()
 
-        df = self.to_data_frame(
-            include_logits=include_logits, include_probs=include_probs
+        return {
+            "input_data": self.input_data.to_dict(),
+            "tokens": self.tokens,
+            "raw": {
+                "predictions": arr_to_list(self.raw.predictions),
+                "label_ids": arr_to_list(self.raw.label_ids),
+                "metrics": self.raw.metrics,
+            },
+            "tasks": [asdict(t) for t in self.tasks],
+            "data_args": asdict(self.data_args),
+        }
+
+    def save_json(
+        self,
+        json_filepath: Union[str, os.PathLike],
+        allow_overwrite: bool = False,
+    ):
+        write_mode = "w" if allow_overwrite else "x"
+
+        with open(json_filepath, write_mode) as preds_file:
+            json.dump(self.to_dict(), preds_file, indent=2)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]):
+        def list_to_arr(obj, dtype):
+            if obj is None:
+                return None
+            return np.array(obj, dtype=dtype)
+
+        input_data = Dataset.from_dict(data["input_data"])
+        tokens = data["tokens"]
+        raw = PredictionOutput(
+            predictions=list_to_arr(data["raw"]["predictions"], np.float64),
+            label_ids=list_to_arr(data["raw"]["label_ids"], np.int64),
+            metrics=data["raw"]["metrics"],
+        )
+        tasks = [TaskInfo(**t) for t in data["tasks"]]
+        data_args = CnlpDataArguments(**data["data_args"])
+
+        return cls(
+            input_data=input_data,
+            tokens=tokens,
+            raw_prediction=raw,
+            tasks=tasks,
+            data_args=data_args,
         )
 
-        write_mode = "w" if allow_overwrite else "x"
-        if polars_write_kwargs is None:
-            polars_write_kwargs = dict()
-
-        preds_filepath = os.path.join(save_dir, f"predictions.{save_fmt}")
-        with open(preds_filepath, write_mode) as preds_file:
-            if save_fmt == "parquet":
-                df.write_parquet(preds_file, **polars_write_kwargs)
-            elif save_fmt == "csv":
-                df.write_csv(preds_file, **polars_write_kwargs)
-            elif save_fmt == "json":
-                df.write_json(preds_file, **polars_write_kwargs)
-
-        if self.raw.metrics is not None:
-            metrics_filepath = os.path.join(save_dir, "metrics.json")
-            with open(metrics_filepath, write_mode) as metrics_file:
-                json.dump(self.raw.metrics, metrics_file, indent=2)
+    @classmethod
+    def load_json(cls, filepath: Union[str, os.PathLike]):
+        with open(filepath) as f:
+            return cls.from_dict(json.load(f))

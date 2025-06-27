@@ -570,14 +570,10 @@ class CnlpTrainSystem:
 
             if self.training_args.do_predict:
                 predictions = self._predict(trainer, self.dataset.test_data)
-                predictions_dir = os.path.join(
-                    self.training_args.output_dir, "predictions"
+                predictions_file = os.path.join(
+                    self.training_args.output_dir, "predictions.json"
                 )
-                os.mkdir(predictions_dir)
-                predictions.save(
-                    predictions_dir,
-                    include_probs=self.training_args.output_prob,
-                )
+                predictions.save_json(predictions_file)
 
     def _evaluate(self, trainer: Trainer):
         if self.disp:
