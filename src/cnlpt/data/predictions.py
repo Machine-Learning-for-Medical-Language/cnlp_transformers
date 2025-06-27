@@ -38,11 +38,13 @@ class CnlpPredictions:
     def __init__(
         self,
         input_data: Dataset,
+        tokens: list[list[str]],
         raw_prediction: PredictionOutput,
         tasks: Iterable[TaskInfo],
         data_args: CnlpDataArguments,
     ):
         self.input_data = input_data
+        self.tokens = tokens
         self.data_args = data_args
 
         tasks = sorted(tasks, key=lambda t: t.index)
@@ -96,11 +98,11 @@ class CnlpPredictions:
 
     def to_data_frame(
         self,
-        tasks: Union[Iterable[str], None] = None,
+        *tasks: str,
         include_logits: bool = True,
         include_probs: bool = False,
     ):
-        if tasks is None:
+        if len(tasks) == 0:
             tasks = self.task_predictions.keys()
 
         cols: list[pl.Series] = []
@@ -113,6 +115,14 @@ class CnlpPredictions:
 
         cols.append(
             pl.Series("text", self.input_data["text"]),
+        )
+
+        cols.append(
+            pl.Series(
+                "tokens",
+                self.tokens,
+                dtype=pl.Array(pl.String, shape=len(self.tokens[0])),
+            )
         )
 
         result = pl.DataFrame(cols)

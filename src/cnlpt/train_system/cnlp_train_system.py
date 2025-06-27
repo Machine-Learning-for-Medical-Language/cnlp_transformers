@@ -11,6 +11,7 @@ from datasets import Dataset
 from transformers.models.auto.configuration_auto import AutoConfig
 from transformers.models.auto.modeling_auto import AutoModel
 from transformers.models.auto.tokenization_auto import AutoTokenizer
+from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.trainer import Trainer
 from transformers.trainer_callback import PrinterCallback, TrainerCallback
 from transformers.trainer_utils import EvalPrediction, IntervalStrategy, set_seed
@@ -58,13 +59,14 @@ class CnlpTrainSystem:
         self.model_args = model_args
         self.data_args = data_args
         self.training_args = training_args
-
         self.disp: Union[TrainSystemDisplay, None] = None
 
         set_seed(self.training_args.seed)
-        self._init_tokenizer()
-        self._init_dataset()
-        self._init_model()
+
+        self.tokenizer = self._init_tokenizer()
+        self.dataset = self._init_dataset()
+        self.model = self._init_model()
+
         self._set_eval_strategy()
 
     @classmethod
@@ -117,7 +119,7 @@ class CnlpTrainSystem:
     def _init_tokenizer(self):
         tokenizer_name = self.model_args.tokenizer_name or self.model_args.encoder_name
         assert tokenizer_name is not None
-        self.tokenizer = AutoTokenizer.from_pretrained(
+        tokenizer = AutoTokenizer.from_pretrained(
             tokenizer_name,
             cache_dir=self.model_args.cache_dir,
             add_prefix_space=True,
@@ -130,9 +132,10 @@ class CnlpTrainSystem:
                 else None
             ),
         )
+        return cast(PreTrainedTokenizer, tokenizer)
 
     def _init_dataset(self):
-        self.dataset = CnlpDataset(
+        return CnlpDataset(
             self.data_args,
             tokenizer=self.tokenizer,
             hierarchical=(self.model_args.model == "hier"),
@@ -141,13 +144,13 @@ class CnlpTrainSystem:
     def _init_model(self):
         model_name = self.model_args.model
         if model_name == "cnn":
-            self._init_cnn_model()
+            return self._init_cnn_model()
         elif model_name == "lstm":
-            self._init_lstm_model()
+            return self._init_lstm_model()
         elif model_name == "hier":
-            self._init_hier_model()
+            return self._init_hier_model()
         else:
-            self._init_cnlpt_model()
+            return self._init_cnlpt_model()
 
     def _get_class_weights(self):
         if not self.data_args.weight_classes:
@@ -190,7 +193,7 @@ class CnlpTrainSystem:
         if os.path.exists(model_path):
             model.load_state_dict(torch.load(model_path))
 
-        self.model = model
+        return model
 
     def _init_lstm_model(self):
         model = LstmSentenceClassifier(
@@ -206,7 +209,7 @@ class CnlpTrainSystem:
         if os.path.exists(model_path):
             model.load_state_dict(torch.load(model_path))
 
-        self.model = model
+        return model
 
     def _init_hier_model(self):
         encoder_name = (
@@ -297,7 +300,7 @@ class CnlpTrainSystem:
             # TODO(ian) as far as I can tell, this was always just None?
             model.set_class_weights(None)
 
-        self.model = cast(HierarchicalModel, model)
+        return cast(HierarchicalModel, model)
 
     def _init_cnlpt_model(self):
         # by default cnlpt model, but need to check which encoder they want
@@ -388,7 +391,7 @@ class CnlpTrainSystem:
                 bias_fit=self.training_args.bias_fit,
             )
 
-        self.model = cast(CnlpModelForClassification, model)
+        return cast(CnlpModelForClassification, model)
 
     def _set_eval_strategy(self):
         if not self.training_args.do_train:
@@ -585,8 +588,11 @@ class CnlpTrainSystem:
         if self.disp:
             self.disp.eval_desc = "Predicting"
         raw_prediction = trainer.predict(dataset)
+        tokens = [
+            self.tokenizer.batch_decode(token_ids) for token_ids in dataset["input_ids"]
+        ]
         return CnlpPredictions(
-            dataset, raw_prediction, self.dataset.tasks, self.data_args
+            dataset, tokens, raw_prediction, self.dataset.tasks, self.data_args
         )
 
     def evaluate(self) -> dict[str, float]:
