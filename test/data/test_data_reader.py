@@ -36,7 +36,7 @@ def test_load_single_json_file(tmp_path, json_dataset_obj):
             name="task_c",
             type="relations",
             index=2,
-            labels=("BAR", "BAZ", "FOO", "None"),
+            labels=("None", "BAR", "BAZ", "FOO"),
         ),
     )
 
@@ -59,7 +59,7 @@ def test_load_multiple_json_files(tmp_path, json_dataset_obj):
             name="task_c",
             type="relations",
             index=2,
-            labels=("BAR", "BAZ", "FOO", "None"),
+            labels=("None", "BAR", "BAZ", "FOO"),
         ),
     )
 
@@ -83,7 +83,7 @@ def test_load_dir_of_json_files(tmp_path, json_dataset_obj):
             name="task_c",
             type="relations",
             index=2,
-            labels=("BAR", "BAZ", "FOO", "None"),
+            labels=("None", "BAR", "BAZ", "FOO"),
         ),
     )
 

@@ -100,6 +100,7 @@ class CnlpPredictions:
 
     def to_data_frame(
         self,
+        *task_names: str,
         include_logits: bool = True,
         include_probs: bool = False,
     ):
@@ -125,7 +126,10 @@ class CnlpPredictions:
 
         result = pl.DataFrame(cols)
 
-        for task_name in self.task_predictions.keys():
+        if len(task_names) == 0:
+            task_names = self.task_predictions.keys()
+
+        for task_name in task_names:
             task_pred = self.task_predictions[task_name]
             task_cols = [
                 idxs,

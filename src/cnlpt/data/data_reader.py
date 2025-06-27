@@ -51,32 +51,30 @@ def _infer_tasks(dataset: Dataset) -> list[TaskInfo]:
     for i, column_name in enumerate(column_names):
         raw_labels = set(str(label) for label in dataset[column_name])
         task_type = _infer_task_type_from_labels(raw_labels)
-        labels = _get_sorted_label_set(raw_labels, task_type)
+        labels = _get_sorted_labels(raw_labels, task_type)
 
-        tasks.append(
-            TaskInfo(name=column_name, type=task_type, index=i, labels=tuple(labels))
-        )
+        tasks.append(TaskInfo(name=column_name, type=task_type, index=i, labels=labels))
 
     return tasks
 
 
-def _get_sorted_label_set(all_raw_labels: Iterable[str], task_type: TaskType):
+def _get_sorted_labels(all_raw_labels: Iterable[str], task_type: TaskType):
     if task_type == CLASSIFICATION:
-        label_set = set(all_raw_labels)
+        return tuple(sorted(set(all_raw_labels)))
     elif task_type == TAGGING:
         joined = " ".join(all_raw_labels)
-        label_set = set(joined.split(" "))
+        return tuple(sorted(set(joined.split(" "))))
     elif task_type == RELATIONS:
         joined = " , ".join(all_raw_labels)
         label_set = set(
             rel_or_none.removesuffix(")").split(",")[-1]
             for rel_or_none in joined.split(" , ")
         )
-        label_set.add("None")
+        if "None" in label_set:
+            label_set.remove("None")
+        return tuple(["None", *sorted(label_set)])
     else:
         raise ValueError(f"invalid task type {TaskType}")
-
-    return sorted(label_set)
 
 
 class CnlpDataReader:
@@ -162,18 +160,21 @@ class CnlpDataReader:
                 ):
                     logger.warning(
                         f'two different datasets have the same task name "{existing.name}" but not completely equal label lists: '
-                        + f"{sorted(existing_label_set)!s} vs. {sorted(new_label_set)!s}. We will merge them."
+                        + f"{existing.labels!s} vs. {new_task.labels!s}. We will merge them."
                     )
                     self._tasks[existing.index] = TaskInfo(
                         name=existing.name,
                         type=existing.type,
                         index=existing.index,
-                        labels=tuple(sorted(existing_label_set.union(new_label_set))),
+                        labels=_get_sorted_labels(
+                            existing_label_set.union(new_label_set),
+                            existing.type,
+                        ),
                     )
                 else:
                     raise ValueError(
                         f"the task {existing.name} has disjoint sets of labels in different datasets: "
-                        + f"{sorted(existing_label_set)!s} vs. {sorted(new_label_set)!s}"
+                        + f"{existing.labels!s} vs. {new_task.labels!s}"
                     )
 
         # ensure all splits have all columns
@@ -254,7 +255,7 @@ class CnlpDataReader:
                         f'task "{task}" found in metadata but not in dataset for {json_filepath}'
                     )
                 task_type = get_task_type(task["output_mode"])
-                label_set = _get_sorted_label_set(dataset[split][task_name], task_type)
+                label_set = _get_sorted_labels(dataset[split][task_name], task_type)
                 tasks.append(
                     TaskInfo(
                         name=task_name,
