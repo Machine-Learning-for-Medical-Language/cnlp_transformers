@@ -573,7 +573,10 @@ class CnlpTrainSystem:
                 predictions_file = os.path.join(
                     self.training_args.output_dir, "predictions.json"
                 )
-                predictions.save_json(predictions_file)
+                predictions.save_json(
+                    predictions_file,
+                    allow_overwrite=self.training_args.overwrite_output_dir,
+                )
 
     def _evaluate(self, trainer: Trainer):
         if self.disp:
