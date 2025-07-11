@@ -587,11 +587,8 @@ class CnlpTrainSystem:
         if self.disp:
             self.disp.eval_desc = "Predicting"
         raw_prediction = trainer.predict(dataset)
-        tokens = [
-            self.tokenizer.batch_decode(token_ids) for token_ids in dataset["input_ids"]
-        ]
         return CnlpPredictions(
-            dataset, tokens, raw_prediction, self.dataset.tasks, self.data_args
+            dataset, raw_prediction, self.dataset.tasks, self.data_args
         )
 
     def evaluate(self) -> dict[str, float]:

@@ -6,17 +6,17 @@ from typing import Any, Union
 
 import numpy as np
 import numpy.typing as npt
-import polars as pl
 from datasets import Dataset
 from scipy.special import softmax
 from transformers.trainer_utils import PredictionOutput
 
 from ..args.data_args import CnlpDataArguments
+from ..data.preprocess import MASK_VALUE
 from .task_info import CLASSIFICATION, TAGGING, TaskInfo
 
 
 @dataclass
-class TaskPrediction:
+class TaskPredictions:
     task: TaskInfo
     logits: npt.NDArray
     labels: Union[npt.NDArray, None]
@@ -26,30 +26,39 @@ class TaskPrediction:
         return softmax(self.logits, axis=-1)
 
     @property
-    def predicted_labels(self) -> npt.NDArray:
+    def predicted_int_labels(self) -> npt.NDArray:
         return np.argmax(self.logits, axis=-1)
+
+    @property
+    def predicted_str_labels(self) -> npt.NDArray:
+        return np.array(self.task.labels)[self.predicted_int_labels]
+
+    @property
+    def target_str_labels(self) -> Union[npt.NDArray, None]:
+        if self.labels is None:
+            return None
+        masked = self.labels.copy()
+        masked[masked == MASK_VALUE] = len(self.task.labels)
+        return np.array((*self.task.labels, "[MASK]"))[masked]
 
 
 @dataclass
 class CnlpPredictions:
     input_data: Dataset
-    tokens: list[list[str]]
     raw: PredictionOutput
     tasks: list[TaskInfo]
     data_args: CnlpDataArguments
 
-    task_predictions: dict[str, TaskPrediction]
+    task_predictions: dict[str, TaskPredictions]
 
     def __init__(
         self,
         input_data: Dataset,
-        tokens: list[list[str]],
         raw_prediction: PredictionOutput,
         tasks: Iterable[TaskInfo],
         data_args: CnlpDataArguments,
     ):
         self.input_data = input_data
-        self.tokens = tokens
         self.raw = raw_prediction
         self.tasks = sorted(tasks, key=lambda t: t.index)
         self.data_args = data_args
@@ -57,7 +66,7 @@ class CnlpPredictions:
         # task indices must start at zero and increase by 1
         assert all(idx == t.index for idx, t in enumerate(tasks))
 
-        self.task_predictions: dict[str, TaskPrediction] = {}
+        self.task_predictions: dict[str, TaskPredictions] = {}
 
         task_labels: dict[str, npt.NDArray]
 
@@ -78,19 +87,23 @@ class CnlpPredictions:
             for task in tasks:
                 if task.type == CLASSIFICATION:
                     # for classification tasks we only use the first token in the sequence
-                    task_labels[task.name] = self.raw.label_ids[:, 0, offset]
+                    task_labels[task.name] = self.raw.label_ids[:, 0, offset].astype(
+                        int
+                    )
                     offset += 1
                 elif task.type == TAGGING:
-                    task_labels[task.name] = self.raw.label_ids[:, :, offset]
+                    task_labels[task.name] = self.raw.label_ids[:, :, offset].astype(
+                        int
+                    )
                     offset += 1
                 else:  # task.type == RELATIONS
                     task_labels[task.name] = self.raw.label_ids[
                         :, :, offset : offset + self.data_args.max_seq_length
-                    ]
+                    ].astype(int)
                     offset += self.data_args.max_seq_length
 
         self.task_predictions = {
-            t.name: TaskPrediction(
+            t.name: TaskPredictions(
                 task=t,
                 logits=self.raw.predictions[t.index],
                 labels=task_labels[t.name].squeeze(),
@@ -98,67 +111,17 @@ class CnlpPredictions:
             for t in tasks
         }
 
-    def to_data_frame(
-        self,
-        *task_names: str,
-        include_logits: bool = True,
-        include_probs: bool = False,
-    ):
-        cols: list[pl.Series] = []
-
-        idxs = pl.Series("sample_idx", list(range(len(self.input_data))))
-        cols.append(idxs)
-
-        if "id" in self.input_data.column_names:
-            cols.append(pl.Series("sample_id", self.input_data["id"]))
-
-        cols.append(
-            pl.Series("text", self.input_data["text"]),
-        )
-
-        cols.append(
-            pl.Series(
-                "tokens",
-                self.tokens,
-                dtype=pl.Array(pl.String, shape=len(self.tokens[0])),
-            )
-        )
-
-        result = pl.DataFrame(cols)
-
-        if len(task_names) == 0:
-            task_names = self.task_predictions.keys()
-
-        for task_name in task_names:
-            task_pred = self.task_predictions[task_name]
-            task_cols = [
-                idxs,
-                pl.Series("raw_label", self.input_data[task_name]),
-                pl.Series("label", task_pred.labels),
-                pl.Series("predicted_label", task_pred.predicted_labels),
-            ]
-            if include_logits:
-                task_cols.append(pl.Series("logits", task_pred.logits))
-            if include_probs:
-                task_cols.append(pl.Series("probs", task_pred.probs))
-
-            task_df = pl.DataFrame(task_cols).select(
-                "sample_idx",
-                pl.struct(pl.all().exclude("sample_idx")).alias(task_name),
-            )
-            result = result.join(task_df, on="sample_idx")
-
-        return result
-
     def to_dict(self):
         def arr_to_list(obj):
-            if obj is None:
-                return None
-            return np.array(obj).tolist()
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, list):
+                return [arr_to_list(item) for item in obj]
+            else:
+                return obj
 
         return {
             "input_data": self.input_data.to_dict(),
-            "tokens": self.tokens,
             "raw": {
                 "predictions": arr_to_list(self.raw.predictions),
                 "label_ids": arr_to_list(self.raw.label_ids),
@@ -186,9 +149,8 @@ class CnlpPredictions:
             return np.array(obj, dtype=dtype)
 
         input_data = Dataset.from_dict(data["input_data"])
-        tokens = data["tokens"]
         raw = PredictionOutput(
-            predictions=list_to_arr(data["raw"]["predictions"], np.float64),
+            predictions=data["raw"]["predictions"],
             label_ids=list_to_arr(data["raw"]["label_ids"], np.int64),
             metrics=data["raw"]["metrics"],
         )
@@ -197,7 +159,6 @@ class CnlpPredictions:
 
         return cls(
             input_data=input_data,
-            tokens=tokens,
             raw_prediction=raw,
             tasks=tasks,
             data_args=data_args,
