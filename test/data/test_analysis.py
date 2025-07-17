@@ -83,12 +83,34 @@ def test_predict(random_cnlp_train_system):
                         {
                             "ids": pl.Array(pl.Int64, shape=(seq_len, seq_len)),
                             "values": pl.Array(pl.String, shape=(seq_len, seq_len)),
+                            "relations": pl.List(
+                                pl.Struct(
+                                    {
+                                        "arg1_wid": pl.Int64,
+                                        "arg1_text": pl.String,
+                                        "arg2_wid": pl.Int64,
+                                        "arg2_text": pl.String,
+                                        "label": pl.String,
+                                    }
+                                )
+                            ),
                         }
                     ),
                     "predictions": pl.Struct(
                         {
                             "ids": pl.Array(pl.Int64, shape=(seq_len, seq_len)),
                             "values": pl.Array(pl.String, shape=(seq_len, seq_len)),
+                            "relations": pl.List(
+                                pl.Struct(
+                                    {
+                                        "arg1_wid": pl.Int64,
+                                        "arg1_text": pl.String,
+                                        "arg2_wid": pl.Int64,
+                                        "arg2_text": pl.String,
+                                        "label": pl.String,
+                                    }
+                                )
+                            ),
                         }
                     ),
                     "model_output": pl.Struct(

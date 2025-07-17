@@ -1,3 +1,6 @@
+from typing import Any
+
+import numpy as np
 import polars as pl
 
 from .predictions import CnlpPredictions
@@ -71,10 +74,107 @@ def _bio_tags_to_spans(df: pl.DataFrame, tags_col: pl.Expr):
     )
 
 
+# TODO(ian) This is not very fast! I experimented with pure polars and pure numpy approaches,
+# and this hybrid approach was faster than either. If we end up needing to optimize this,
+# maybe multiprocessing can help? (i.e., do multiple rows simultaneously)
+# There might also be a polars-only approach where we break the dataframe into small chunks first,
+# avoiding the memory bottleneck that arises when exploding the matrix row.
+def _rel_matrix_to_rels(df: pl.DataFrame, matrix_col: pl.Expr):
+    def extract_relations(input) -> list[dict[str, Any]]:
+        matrix, word_ids, text = input["matrix"], input["word_ids"], input["text"]
+
+        if matrix is None or word_ids is None:
+            return []
+
+        arr = np.array(matrix)
+        word_ids_arr = np.array(word_ids)
+
+        words = np.array(text)
+
+        rel_idxs = (
+            (arr != "None") & (arr != "[MASK]") & ~np.eye(arr.shape[0]).astype(bool)
+        )
+        rel_positions = np.argwhere(rel_idxs)
+
+        if len(rel_positions) == 0:
+            return []
+
+        def remove_nulls(arr, fill):
+            return np.where(arr == None, fill, arr)  # noqa: E711
+
+        arg1_wids = word_ids_arr[rel_positions[:, 0]]
+        arg1_words = np.where(
+            arg1_wids == None,  # noqa: E711
+            None,
+            words[remove_nulls(arg1_wids, 0).astype(int)],
+        )
+
+        arg2_wids = word_ids_arr[rel_positions[:, 1]]
+        arg2_words = np.where(
+            arg2_wids == None,  # noqa: E711
+            None,
+            words[remove_nulls(arg2_wids, 0).astype(int)],
+        )
+
+        labels = arr[rel_positions[:, 0], rel_positions[:, 1]]
+
+        valid_word_mask = (arg1_wids != None) & (arg2_wids != None)  # noqa: E711
+
+        return [
+            {
+                "arg1_wid": int(wida),
+                "arg1_text": wa,
+                "arg2_wid": int(widb),
+                "arg2_text": wb,
+                "label": label,
+            }
+            for wida, wa, widb, wb, label in zip(
+                arg1_wids[valid_word_mask],
+                arg1_words[valid_word_mask],
+                arg2_wids[valid_word_mask],
+                arg2_words[valid_word_mask],
+                labels[valid_word_mask],
+            )
+        ]
+
+    return df.select(
+        "sample_idx",
+        relations=pl.struct(
+            "word_ids", matrix=matrix_col, text=pl.col("text").str.split(" ")
+        ).map_elements(
+            extract_relations,
+            strategy="threading",
+            return_dtype=pl.List(
+                pl.Struct(
+                    {
+                        "arg1_wid": pl.Int64,
+                        "arg1_text": pl.String,
+                        "arg2_wid": pl.Int64,
+                        "arg2_text": pl.String,
+                        "label": pl.String,
+                    }
+                )
+            ),
+        ),
+    )
+
+
 def make_preds_df(
     predictions: CnlpPredictions,
     *task_names: str,
 ):
+    """Create a polars DataFrame for analysis from a CnlpPredictions instance.
+
+    For relations tasks, this will likely be slow! Converting the model's output matrix
+    into relations is expensive.
+
+    Args:
+        predictions: The CnlpPredictions instance.
+        task_names: One or more tasks to include in the analysis. If omitted, all tasks will be included.
+
+    Returns:
+        The DataFrame for analysis.
+    """
     seq_len = len(predictions.input_data["input_ids"][0])
 
     df_data = {
@@ -145,8 +245,33 @@ def make_preds_df(
                 )
             ).drop("target_spans", "predicted_spans")
         elif task.type == RELATIONS:
-            # TODO(ian) convert raw relation output to human-readable format
-            pass
+            df = df.join(
+                _rel_matrix_to_rels(
+                    df, pl.col(task.name).struct.field("labels").struct.field("values")
+                ),
+                on="sample_idx",
+                how="left",
+            ).rename({"relations": "target_relations"})
+
+            df = df.join(
+                _rel_matrix_to_rels(
+                    df,
+                    pl.col(task.name)
+                    .struct.field("predictions")
+                    .struct.field("values"),
+                ),
+                on="sample_idx",
+                how="left",
+            ).rename({"relations": "predicted_relations"})
+
+            df = df.with_columns(
+                pl.col(task.name).struct.with_fields(
+                    pl.field("labels").struct.with_fields(relations="target_relations"),
+                    pl.field("predictions").struct.with_fields(
+                        relations="predicted_relations"
+                    ),
+                )
+            ).drop("target_relations", "predicted_relations")
         else:
             raise ValueError(f"unknown task type {task.type}")
 
