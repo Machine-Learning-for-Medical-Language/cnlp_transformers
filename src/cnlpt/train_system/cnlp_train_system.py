@@ -508,6 +508,9 @@ class CnlpTrainSystem:
                     f"{task_prediction.task.name}.{m.removeprefix('avg_')}"
                 ]
 
+        for m in summary_metrics:
+            summary_metrics[m] /= len(self.dataset.tasks)
+
         result = summary_metrics | metrics
 
         requested_metric = self.training_args.metric_for_best_model
