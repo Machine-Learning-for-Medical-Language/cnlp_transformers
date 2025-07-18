@@ -1,7 +1,6 @@
 import os
 from typing import Any, Union
 
-import numpy as np
 from rich.console import Console
 from rich.live import Live
 from rich.panel import Panel
@@ -21,13 +20,7 @@ console = Console()
 
 
 def _val_fmt(x):
-    ndigits = 4
-    if isinstance(x, (float, int)):
-        return round(x, ndigits)
-    elif isinstance(x, (list, np.ndarray)):
-        return np.asarray(np.round(x, ndigits)).tolist()
-    else:
-        return x
+    return f"{x:.4n}"
 
 
 class TrainSystemDisplay:
@@ -84,7 +77,7 @@ class TrainSystemDisplay:
 
         grid = Table.grid(padding=(0, 1))
 
-        if self.best_checkpoint is not None:
+        if self.best_checkpoint is not None and self.best_checkpoint != "":
             ckpt_path_str = f" [dim italic]({self.best_checkpoint})"
         else:
             ckpt_path_str = ""
@@ -105,8 +98,8 @@ class TrainSystemDisplay:
         for metric_name in self.eval_metrics:
             row = [
                 format_metric_name(metric_name),
-                str(_val_fmt(self.eval_metrics[metric_name])),
-                str(_val_fmt(self.best_eval_metrics[metric_name])),
+                _val_fmt(self.eval_metrics[metric_name]),
+                _val_fmt(self.best_eval_metrics[metric_name]),
             ]
             if metric_name == self.training_args.metric_for_best_model:
                 row[0] = f"[bold][cyan]> {row[0]}"
