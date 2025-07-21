@@ -32,7 +32,11 @@ from .display import TrainSystemDisplay
 from .log import configure_logger_for_training, logger
 from .metrics import TaskEvalPrediction
 from .training_callbacks import BasicLoggingCallback, DisplayCallback
-from .utils import is_external_encoder, simple_softmax, warn_if_old_checkpoint
+from .utils import (
+    is_external_encoder,
+    simple_softmax,
+    warn_if_chekpoint_version_mismatch,
+)
 
 
 class CnlpTrainSystem:
@@ -570,7 +574,7 @@ class CnlpTrainSystem:
 
             resume_from_checkpoint = self.training_args.resume_from_checkpoint
             if resume_from_checkpoint is not None:
-                warn_if_old_checkpoint(resume_from_checkpoint, logger)
+                warn_if_chekpoint_version_mismatch(resume_from_checkpoint, logger)
 
             trainer.train(resume_from_checkpoint=resume_from_checkpoint)
             trainer.save_model()
