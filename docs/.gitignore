@@ -1,0 +1,6 @@
+*.rst
+!index.rst
+
+*.inv
+
+build/

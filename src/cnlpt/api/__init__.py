@@ -1,4 +1,8 @@
-MODEL_TYPES = (
+"""Serve REST APIs for CNLPT models over your network."""
+
+from typing import Final
+
+MODEL_TYPES: Final = (
     "cnn",
     "current",
     "dtr",
@@ -9,9 +13,18 @@ MODEL_TYPES = (
     # "termexists",
     # "timex",
 )
+"""The available model types for :func:`get_rest_app`."""
 
 
 def get_rest_app(model_type: str):
+    """Get a FastAPI app for a certain model type.
+
+    Args:
+        model_type: The type of model to serve.
+
+    Returns:
+        The FastAPI app.
+    """
     if model_type == "cnn":
         from .cnn_rest import app
 
@@ -50,3 +63,9 @@ def get_rest_app(model_type: str):
     #     return app
     else:
         raise ValueError(f"unknown model type: {model_type}")
+
+
+__all__ = [
+    "MODEL_TYPES",
+    "get_rest_app",
+]

@@ -11,7 +11,7 @@ authors = [
 description = "Transformers for Clinical NLP"
 
 readme = "README.md"
-requires-python = ">=3.9, <3.12"
+requires-python = ">=3.9, <3.13"
 dependencies = [
     "anaforatools~=1.1.0",
     "click>=8.1.7",
@@ -22,12 +22,13 @@ dependencies = [
     "nltk~=3.5",
     "numpy~=2.0.2",
     "pandas~=2.2.3",
+    "polars>=1.30.0",
     "pydantic~=1.10.8",
     "requests~=2.32.2",
     "scikit-learn~=1.5.2",
     "seqeval~=1.2.2",
-    "torch",
-    "transformers[torch]~=4.45",
+    "torch>=2.6",
+    "transformers[torch]~=4.51",
     "uvicorn[standard]~=0.32.0",
 ]
 
@@ -44,7 +45,6 @@ Homepage = "https://github.com/Machine-Learning-for-Medical-Language/cnlp_transf
 "Bug Tracker" = "https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers/issues"
 
 [tool.setuptools_scm]
-fallback_version = "0.7.1"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -52,10 +52,10 @@ include = ["cnlpt*"]
 
 [dependency-groups]
 lint = [
-    "ruff==0.7.0", # same as in pre-commit hooks
+    "ruff==0.11.8", # same as in pre-commit hooks and CI
 ]
 build = ["build", "pip>=21.3", "twine"]
-test = ["pytest"]
+test = ["lorem-text>=3.0", "pytest"]
 docs = ["sphinx", "sphinx-autodoc-typehints", "sphinx-rtd-theme", "sphobjinv"]
 dev = [
     { include-group = "build" },
@@ -68,8 +68,12 @@ dev = [
 [project.scripts]
 "cnlpt" = "cnlpt.__main__:main"
 
+[tool.pytest.ini_options]
+markers = ["random_cnlp_data"]
+
 [tool.ruff]
 target-version = "py39"
+extend-exclude = ["src/cnlpt/legacy/*"]
 
 [tool.ruff.lint]
 select = [
@@ -84,9 +88,11 @@ select = [
     "G",   # logging
     "FA",  # future annotations
     "PIE", # misc
+    "RUF", # misc
 ]
 
 ignore = [
+    "G003", # string concatenation logging statements
     "G004", # f-strings in logging statements
 ]
 

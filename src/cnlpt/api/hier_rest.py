@@ -100,5 +100,5 @@ async def classify(doc: UnannotatedDocument):
         int(torch.argmax(logits.to("cpu").detach()).numpy())
         for logits in result["logits"]
     ]
-    labels = [list(model.label_dictionary.values())[0][x] for x in predictions]
+    labels = [next(iter(model.label_dictionary.values()))[x] for x in predictions]
     return {"result": labels}

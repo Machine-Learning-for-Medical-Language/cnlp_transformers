@@ -1,26 +1,22 @@
 import logging
 import os
-from typing import Literal
+from typing import Literal, cast
 
 import torch
-import torch.backends
-import torch.backends.mps
 from datasets import Dataset
 from pydantic import BaseModel
+from transformers.hf_argparser import HfArgumentParser
 
 # Modeling imports
-from transformers import (
-    AutoConfig,
-    AutoModel,
-    AutoTokenizer,
-    HfArgumentParser,
-    Trainer,
-    TrainingArguments,
-)
+from transformers.models.auto.configuration_auto import AutoConfig
+from transformers.models.auto.modeling_auto import AutoModel
+from transformers.models.auto.tokenization_auto import AutoTokenizer
 from transformers.tokenization_utils import PreTrainedTokenizer
+from transformers.trainer import Trainer
+from transformers.training_args import TrainingArguments
 
-from ..cnlp_data import cnlp_preprocess_data
-from ..CnlpModelForClassification import CnlpConfig
+from ..data.preprocess import preprocess_raw_data
+from ..models import CnlpConfig
 
 
 class UnannotatedDocument(BaseModel):
@@ -48,21 +44,21 @@ def create_dataset(
     """Use a tokenizer to create a dataset from a list of strings."""
     dataset = Dataset.from_dict({"text": inst_list})
     task_dataset = dataset.map(
-        cnlp_preprocess_data,
+        preprocess_raw_data,
         batched=True,
         load_from_cache_file=False,
         desc="Running tokenizer on dataset, organizing labels, creating hierarchical segments if necessary",
         batch_size=100,
         fn_kwargs={
             "tokenizer": tokenizer,
+            "tasks": None,
             "max_length": max_length,
-            "inference": True,
+            "inference_only": True,
             "hierarchical": hier,
             # TODO: need to get this from the model if necessary
             "chunk_len": chunk_len,
             "num_chunks": num_chunks,
             "insert_empty_chunk_at_beginning": insert_empty_chunk_at_beginning,
-            "truncate_examples": True,
         },
     )
     return task_dataset
@@ -82,8 +78,11 @@ def create_instance_string(doc_text: str, offsets: list[int]):
 
 
 def resolve_device(
-    device: Literal["cuda", "mps", "cpu", "auto"],
+    device: str,
 ) -> Literal["cuda", "mps", "cpu"]:
+    device = device.lower()
+    if device not in ("cuda", "mps", "cpu", "auto"):
+        raise ValueError(f"invalid device {device}")
     if device == "auto":
         if torch.cuda.is_available():
             device = "cuda"
@@ -119,7 +118,14 @@ def initialize_cnlpt_model(
         "none",
     ]
     parser = HfArgumentParser((TrainingArguments,))
-    (training_args,) = parser.parse_args_into_dataclasses(args=args)
+    training_args = cast(
+        TrainingArguments, parser.parse_args_into_dataclasses(args=args)[0]
+    )
+
+    if torch.mps.is_available():
+        # pin_memory is unsupported on MPS, but defaults to True,
+        # so we'll explicitly turn it off to avoid a warning.
+        training_args.dataloader_pin_memory = False
 
     config = AutoConfig.from_pretrained(model_name)
     tokenizer = AutoTokenizer.from_pretrained(model_name, config=config)
@@ -129,11 +135,7 @@ def initialize_cnlpt_model(
 
     model = model.to(resolve_device(device))
 
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        compute_metrics=None,
-    )
+    trainer = Trainer(model=model, args=training_args)
 
     return tokenizer, trainer
 
