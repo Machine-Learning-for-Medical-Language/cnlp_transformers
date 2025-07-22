@@ -42,9 +42,7 @@ def simple_softmax(x: list):
     return np.exp(x) / np.sum(np.exp(x), axis=0)
 
 
-def warn_if_chekpoint_version_mismatch(
-    checkpoint_dir: str, logger: logging.Logger
-) -> Union[str, None]:
+def warn_if_chekpoint_version_mismatch(checkpoint_dir: str, logger: logging.Logger):
     warning: Union[str, None] = None
 
     checkpoint_config_path = os.path.join(checkpoint_dir, "config.json")
