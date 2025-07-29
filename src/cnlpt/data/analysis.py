@@ -175,6 +175,7 @@ def make_preds_df(
     Returns:
         The DataFrame for analysis.
     """
+
     seq_len = len(predictions.input_data["input_ids"][0])
 
     df_data = {
@@ -195,37 +196,53 @@ def make_preds_df(
     else:
         tasks = predictions.tasks
 
+    unlabeled = predictions.raw.label_ids is None
+
     for task in tasks:
         task_pred = predictions.task_predictions[task.name]
-        df = df.with_columns(
-            pl.struct(
-                labels=pl.struct(
+
+        fields = []
+        if not unlabeled:
+            fields.append(
+                pl.struct(
                     ids=task_pred.labels,
                     values=task_pred.target_str_labels,
-                ),
-                predictions=pl.struct(
+                ).alias("labels")
+            )
+
+        fields.extend(
+            [
+                pl.struct(
                     ids=task_pred.predicted_int_labels,
                     values=task_pred.predicted_str_labels,
-                ),
-                model_output=pl.struct(
+                ).alias("predictions"),
+                pl.struct(
                     logits=task_pred.logits,
                     probs=task_pred.probs,
-                ),
-            ).alias(task.name)
+                ).alias("model_output"),
+            ]
         )
+
+        df = df.with_columns(pl.struct(fields).alias(task.name))
 
         if task.type == CLASSIFICATION:
             # classification output is already pretty human-interpretable
             pass
         elif task.type == TAGGING:
             # for tagging, we'll convert BIO tags to labeled spans
-            df = df.join(
-                _bio_tags_to_spans(
-                    df, pl.col(task.name).struct.field("labels").struct.field("values")
-                ),
-                on="sample_idx",
-                how="left",
-            ).rename({"spans": "target_spans"})
+            tagging_fields = []
+            if not unlabeled:
+                df = df.join(
+                    _bio_tags_to_spans(
+                        df,
+                        pl.col(task.name).struct.field("labels").struct.field("values"),
+                    ),
+                    on="sample_idx",
+                    how="left",
+                ).rename({"spans": "target_spans"})
+                tagging_fields.append(
+                    pl.field("labels").struct.with_fields(spans="target_spans")
+                )
 
             df = df.join(
                 _bio_tags_to_spans(
@@ -238,20 +255,27 @@ def make_preds_df(
                 how="left",
             ).rename({"spans": "predicted_spans"})
 
+            tagging_fields.append(
+                pl.field("predictions").struct.with_fields(spans="predicted_spans")
+            )
+
             df = df.with_columns(
-                pl.col(task.name).struct.with_fields(
-                    pl.field("labels").struct.with_fields(spans="target_spans"),
-                    pl.field("predictions").struct.with_fields(spans="predicted_spans"),
-                )
-            ).drop("target_spans", "predicted_spans")
+                pl.col(task.name).struct.with_fields(tagging_fields)
+            ).drop("target_spans", "predicted_spans", strict=False)
         elif task.type == RELATIONS:
-            df = df.join(
-                _rel_matrix_to_rels(
-                    df, pl.col(task.name).struct.field("labels").struct.field("values")
-                ),
-                on="sample_idx",
-                how="left",
-            ).rename({"relations": "target_relations"})
+            relations_fields = []
+            if not unlabeled:
+                df = df.join(
+                    _rel_matrix_to_rels(
+                        df,
+                        pl.col(task.name).struct.field("labels").struct.field("values"),
+                    ),
+                    on="sample_idx",
+                    how="left",
+                ).rename({"relations": "target_relations"})
+                relations_fields.append(
+                    pl.field("labels").struct.with_fields(relations="target_relations")
+                )
 
             df = df.join(
                 _rel_matrix_to_rels(
@@ -263,15 +287,15 @@ def make_preds_df(
                 on="sample_idx",
                 how="left",
             ).rename({"relations": "predicted_relations"})
+            relations_fields.append(
+                pl.field("predictions").struct.with_fields(
+                    relations="predicted_relations"
+                )
+            )
 
             df = df.with_columns(
-                pl.col(task.name).struct.with_fields(
-                    pl.field("labels").struct.with_fields(relations="target_relations"),
-                    pl.field("predictions").struct.with_fields(
-                        relations="predicted_relations"
-                    ),
-                )
-            ).drop("target_relations", "predicted_relations")
+                pl.col(task.name).struct.with_fields(relations_fields)
+            ).drop("target_relations", "predicted_relations", strict=False)
         else:
             raise ValueError(f"unknown task type {task.type}")
 

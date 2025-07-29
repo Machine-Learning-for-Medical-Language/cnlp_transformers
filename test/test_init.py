@@ -71,7 +71,7 @@ def test_init_args():
 
 
 def test_init_api():
-    import cnlpt.api
+    import cnlpt.rest
 
-    assert cnlpt.api.__package__ == "cnlpt.api"
-    assert cnlpt.api.__all__ == ["MODEL_TYPES", "get_rest_app"]
+    assert cnlpt.rest.__package__ == "cnlpt.rest"
+    assert cnlpt.rest.__all__ == ["CnlpRestApp"]

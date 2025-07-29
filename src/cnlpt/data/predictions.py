@@ -106,7 +106,9 @@ class CnlpPredictions:
             t.name: TaskPredictions(
                 task=t,
                 logits=self.raw.predictions[t.index],
-                labels=task_labels[t.name].squeeze(),
+                labels=task_labels[t.name].squeeze()
+                if task_labels[t.name] is not None
+                else None,
             )
             for t in tasks
         }
