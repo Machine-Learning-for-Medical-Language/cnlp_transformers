@@ -27,36 +27,38 @@ class TestNegation:
         )
         response = test_client.post("/process", content=doc.json())
         response.raise_for_status()
-        assert response.json() == [
-            {
-                "text": "The patient has a <e>sore knee</e> and headache but denies nausea and has no anosmia.",
-                "Negation": {
-                    "prediction": "-1",
-                    "probs": {"1": 0.0002379878715146333, "-1": 0.9997619986534119},
+        assert response.json() == pytest.approx(
+            [
+                {
+                    "text": "The patient has a <e>sore knee</e> and headache but denies nausea and has no anosmia.",
+                    "Negation": {
+                        "prediction": "-1",
+                        "probs": {"1": 0.0002379878715146333, "-1": 0.9997619986534119},
+                    },
                 },
-            },
-            {
-                "text": "The patient has a sore knee and <e>headache</e> but denies nausea and has no anosmia.",
-                "Negation": {
-                    "prediction": "-1",
-                    "probs": {"1": 0.0004393413255456835, "-1": 0.9995606541633606},
+                {
+                    "text": "The patient has a sore knee and <e>headache</e> but denies nausea and has no anosmia.",
+                    "Negation": {
+                        "prediction": "-1",
+                        "probs": {"1": 0.0004393413255456835, "-1": 0.9995606541633606},
+                    },
                 },
-            },
-            {
-                "text": "The patient has a sore knee and headache but denies <e>nausea</e> and has no anosmia.",
-                "Negation": {
-                    "prediction": "1",
-                    "probs": {"1": 0.9921413660049438, "-1": 0.007858583703637123},
+                {
+                    "text": "The patient has a sore knee and headache but denies <e>nausea</e> and has no anosmia.",
+                    "Negation": {
+                        "prediction": "1",
+                        "probs": {"1": 0.9921413660049438, "-1": 0.007858583703637123},
+                    },
                 },
-            },
-            {
-                "text": "The patient has a sore knee and headache but denies nausea and has no <e>anosmia</e>.",
-                "Negation": {
-                    "prediction": "1",
-                    "probs": {"1": 0.9928833246231079, "-1": 0.0071166763082146645},
+                {
+                    "text": "The patient has a sore knee and headache but denies nausea and has no <e>anosmia</e>.",
+                    "Negation": {
+                        "prediction": "1",
+                        "probs": {"1": 0.9928833246231079, "-1": 0.0071166763082146645},
+                    },
                 },
-            },
-        ]
+            ]
+        )
 
 
 class TestTemporal:
