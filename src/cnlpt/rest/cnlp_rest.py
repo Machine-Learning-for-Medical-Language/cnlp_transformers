@@ -1,7 +1,7 @@
 import logging
 import os
 from collections.abc import Iterable
-from typing import Self, Union
+from typing import Union
 
 import polars as pl
 import torch
@@ -13,6 +13,7 @@ from transformers.models.auto.modeling_auto import AutoModel
 from transformers.models.auto.tokenization_auto import AutoTokenizer
 from transformers.trainer import Trainer
 from transformers.training_args import TrainingArguments
+from typing_extensions import Self
 
 from ..args.data_args import CnlpDataArguments
 from ..data.analysis import make_preds_df
@@ -216,7 +217,7 @@ class CnlpRestApp:
         return app
 
     @classmethod
-    def multi_app(cls, apps: Iterable[tuple[Self, str]]):  # type: ignore
+    def multi_app(cls, apps: Iterable[tuple[Self, str]]):
         multi_app = FastAPI()
         for app, router_prefix in apps:
             multi_app.include_router(app.router(router_prefix))
