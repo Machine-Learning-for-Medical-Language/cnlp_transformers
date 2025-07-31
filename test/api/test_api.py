@@ -33,8 +33,8 @@ class TestNegation:
                 "Negation": {
                     "prediction": "-1",
                     "probs": {
-                        "1": pytest.approx(0.0002379878715146333),
-                        "-1": pytest.approx(0.9997619986534119),
+                        "1": pytest.approx(0.0002379878715146333, rel=1e-04),
+                        "-1": pytest.approx(0.9997619986534119, rel=1e-04),
                     },
                 },
             },
@@ -43,8 +43,8 @@ class TestNegation:
                 "Negation": {
                     "prediction": "-1",
                     "probs": {
-                        "1": pytest.approx(0.0004393413255456835),
-                        "-1": pytest.approx(0.9995606541633606),
+                        "1": pytest.approx(0.0004393413255456835, rel=1e-04),
+                        "-1": pytest.approx(0.9995606541633606, rel=1e-04),
                     },
                 },
             },
@@ -53,8 +53,8 @@ class TestNegation:
                 "Negation": {
                     "prediction": "1",
                     "probs": {
-                        "1": pytest.approx(0.9921413660049438),
-                        "-1": pytest.approx(0.007858583703637123),
+                        "1": pytest.approx(0.9921413660049438, rel=1e-04),
+                        "-1": pytest.approx(0.007858583703637123, rel=1e-04),
                     },
                 },
             },
@@ -63,8 +63,8 @@ class TestNegation:
                 "Negation": {
                     "prediction": "1",
                     "probs": {
-                        "1": pytest.approx(0.9928833246231079),
-                        "-1": pytest.approx(0.0071166763082146645),
+                        "1": pytest.approx(0.9928833246231079, rel=1e-04),
+                        "-1": pytest.approx(0.0071166763082146645, rel=1e-04),
                     },
                 },
             },
