@@ -156,7 +156,6 @@ def cnlp_args(request):
                 "encoder_name": "roberta-base",
                 "output_dir": out_dir,
                 "overwrite_output_dir": True,
-                "cache_dir": "cache/",
                 "do_train": True,
                 "do_eval": True,
                 "do_predict": True,
