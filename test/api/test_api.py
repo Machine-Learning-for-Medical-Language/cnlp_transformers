@@ -5,94 +5,159 @@ Test suite for running the API models
 import pytest
 from fastapi.testclient import TestClient
 
-from cnlpt.api.utils import EntityDocument
+from cnlpt.rest.cnlp_rest import CnlpRestApp, InputDocument
 
 
 class TestNegation:
     @pytest.fixture
     def test_client(self):
-        from cnlpt.api.negation_rest import app
-
-        with TestClient(app) as client:
+        with TestClient(
+            CnlpRestApp("mlml-chip/negation_pubmedbert_sharpseed").fastapi()
+        ) as client:
             yield client
 
     def test_negation_startup(self, test_client):
         pass
 
     def test_negation_process(self, test_client: TestClient):
-        from cnlpt.api.negation_rest import NegationResults
-
-        doc = EntityDocument(
-            doc_text="The patient has a sore knee and headache "
+        doc = InputDocument(
+            text="The patient has a sore knee and headache "
             "but denies nausea and has no anosmia.",
-            entities=[[18, 27], [32, 40], [52, 58], [70, 77]],
+            entity_spans=[(18, 27), (32, 40), (52, 58), (70, 77)],
         )
-        response = test_client.post("/negation/process", content=doc.json())
+        response = test_client.post("/process", content=doc.json())
         response.raise_for_status()
-        assert response.json() == NegationResults.parse_obj(
-            {"statuses": [-1, -1, 1, 1]}
-        )
+        assert response.json() == [
+            {
+                "text": "The patient has a <e>sore knee</e> and headache but denies nausea and has no anosmia.",
+                "Negation": {
+                    "prediction": "-1",
+                    "probs": {
+                        "1": pytest.approx(0.0002379878715146333, rel=1e-04),
+                        "-1": pytest.approx(0.9997619986534119, rel=1e-04),
+                    },
+                },
+            },
+            {
+                "text": "The patient has a sore knee and <e>headache</e> but denies nausea and has no anosmia.",
+                "Negation": {
+                    "prediction": "-1",
+                    "probs": {
+                        "1": pytest.approx(0.0004393413255456835, rel=1e-04),
+                        "-1": pytest.approx(0.9995606541633606, rel=1e-04),
+                    },
+                },
+            },
+            {
+                "text": "The patient has a sore knee and headache but denies <e>nausea</e> and has no anosmia.",
+                "Negation": {
+                    "prediction": "1",
+                    "probs": {
+                        "1": pytest.approx(0.9921413660049438, rel=1e-04),
+                        "-1": pytest.approx(0.007858583703637123, rel=1e-04),
+                    },
+                },
+            },
+            {
+                "text": "The patient has a sore knee and headache but denies nausea and has no <e>anosmia</e>.",
+                "Negation": {
+                    "prediction": "1",
+                    "probs": {
+                        "1": pytest.approx(0.9928833246231079, rel=1e-04),
+                        "-1": pytest.approx(0.0071166763082146645, rel=1e-04),
+                    },
+                },
+            },
+        ]
 
 
 class TestTemporal:
     @pytest.fixture
     def test_client(self):
-        from cnlpt.api.temporal_rest import app
-
-        with TestClient(app) as client:
+        with TestClient(CnlpRestApp("mlml-chip/thyme2_colon_e2e").fastapi()) as client:
             yield client
 
     def test_temporal_startup(self, test_client: TestClient):
         pass
 
     def test_temporal_process_sentence(self, test_client: TestClient):
-        from cnlpt.api.temporal_rest import (
-            SentenceDocument,
-            TemporalResults,
-        )
-
-        doc = SentenceDocument(
-            sentence="The patient was diagnosed with adenocarcinoma "
+        doc = InputDocument(
+            text="The patient was diagnosed with adenocarcinoma "
             "March 3, 2010 and will be returning for "
             "chemotherapy next week."
         )
-        response = test_client.post("/temporal/process_sentence", content=doc.json())
+        response = test_client.post("/process", content=doc.json())
         response.raise_for_status()
-        out = response.json()
-        expected_out = TemporalResults.parse_obj(
+        assert response.json() == [
             {
-                "events": [
-                    [
-                        {"begin": 3, "dtr": "BEFORE", "end": 3},
-                        {"begin": 5, "dtr": "BEFORE", "end": 5},
-                        {"begin": 13, "dtr": "AFTER", "end": 13},
-                        {"begin": 15, "dtr": "AFTER", "end": 15},
-                    ]
-                ],
-                "relations": [
-                    [
+                "text": "The patient was diagnosed with adenocarcinoma March 3, 2010 and will be returning for chemotherapy next week.",
+                "timex": {
+                    "spans": [
                         {
-                            "arg1": "TIMEX-0",
-                            "arg1_start": 6,
-                            "arg2": "EVENT-0",
-                            "arg2_start": 3,
-                            "category": "CONTAINS",
+                            "text": "March 3, 2010 ",
+                            "tag": "DATE",
+                            "start": 6,
+                            "end": 8,
+                            "valid": True,
                         },
                         {
-                            "arg1": "TIMEX-1",
-                            "arg1_start": 16,
-                            "arg2": "EVENT-2",
-                            "arg2_start": 13,
-                            "category": "CONTAINS",
+                            "text": "next week.",
+                            "tag": "DATE",
+                            "start": 15,
+                            "end": 16,
+                            "valid": True,
                         },
                     ]
-                ],
-                "timexes": [
-                    [
-                        {"begin": 6, "end": 9, "timeClass": "DATE"},
-                        {"begin": 16, "end": 17, "timeClass": "DATE"},
+                },
+                "event": {
+                    "spans": [
+                        {
+                            "text": "diagnosed ",
+                            "tag": "BEFORE",
+                            "start": 3,
+                            "end": 3,
+                            "valid": True,
+                        },
+                        {
+                            "text": "adenocarcinoma ",
+                            "tag": "BEFORE",
+                            "start": 5,
+                            "end": 5,
+                            "valid": True,
+                        },
+                        {
+                            "text": "returning ",
+                            "tag": "AFTER",
+                            "start": 12,
+                            "end": 12,
+                            "valid": True,
+                        },
+                        {
+                            "text": "chemotherapy ",
+                            "tag": "AFTER",
+                            "start": 14,
+                            "end": 14,
+                            "valid": True,
+                        },
                     ]
-                ],
+                },
+                "tlinkx": {
+                    "relations": [
+                        {
+                            "arg1_wid": 6,
+                            "arg1_text": "March",
+                            "arg2_wid": 3,
+                            "arg2_text": "diagnosed",
+                            "label": "CONTAINS",
+                        },
+                        {
+                            "arg1_wid": 15,
+                            "arg1_text": "next",
+                            "arg2_wid": 12,
+                            "arg2_text": "returning",
+                            "label": "CONTAINS",
+                        },
+                    ]
+                },
             }
-        )
-        assert out == expected_out
+        ]
