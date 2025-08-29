@@ -380,8 +380,6 @@ def train(
     logging_strategy: LoggingStrategyArg = "epoch",
     logging_first_step: LoggingFirstStepArg = True,
     cache_dir: CacheDirArg = None,
-    # --------------------- #
-    **kwargs,
 ):
     # TODO(ian): it's probably worth making this docstring pretty descriptive
     """Run the cnlp_transformers training system."""
