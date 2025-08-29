@@ -220,7 +220,7 @@ LstmHiddenSizeArg = Annotated[
     model_arg_option(
         "--lstm_hidden_size",
         compatibility=["lstm"],
-        help="LSTM models, the dimension of the hidden layer.",
+        help="For LSTM models, the dimension of the hidden layer.",
     ),
 ]
 
