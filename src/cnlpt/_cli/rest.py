@@ -1,33 +1,56 @@
-import click
+from typing import Annotated
 
-from ..api import MODEL_TYPES, get_rest_app
+import typer
 
 
-@click.command("rest", context_settings={"show_default": True})
-@click.option(
-    "--model-type",
-    type=click.Choice(MODEL_TYPES),
-    required=True,
-)
-@click.option(
-    "-h",
-    "--host",
-    type=str,
-    default="0.0.0.0",
-    help="Host address to serve the REST app.",
-)
-@click.option(
-    "-p", "--port", type=int, default=8000, help="Port to serve the REST app."
-)
-@click.option(
-    "--reload",
-    type=bool,
-    is_flag=True,
-    default=False,
-    help="Auto-reload the REST app.",
-)
-def rest_command(model_type: str, host: str, port: int, reload: bool):
+def parse_models(ctx: typer.Context, param: typer.CallbackParam, value: str):
+    if value is None:
+        return None
+
+    models: list[tuple[str, str]] = []
+    if isinstance(value, str):
+        value = [value]
+    for item in value:
+        if "=" in item:
+            prefix, path = item.split("=", 1)
+            if not prefix.startswith("/"):
+                raise typer.BadParameter(
+                    f"route prefix must start with '/': {prefix}", param=param
+                )
+        elif len(value) > 1:
+            raise typer.BadParameter(
+                "route prefixes are required when serving more than one model",
+                param=param,
+            )
+        else:
+            path = item
+            prefix = ""
+        models.append((prefix, path))
+    return models
+
+
+def rest(
+    models: Annotated[
+        list[str],
+        typer.Option(
+            "--model",
+            callback=parse_models,
+            help="Model definition as [ROUTER_PREFIX=]PATH_TO_MODEL. Route prefix must start with '/'. This option can be specified multiple times to serve multiple models simultaneously. Route prefixes are required when serving more than one model.",
+        ),
+    ],
+    host: Annotated[
+        str, typer.Option("-h", "--host", help="Host address to serve the REST app.")
+    ] = "0.0.0.0",
+    port: Annotated[
+        int, typer.Option("-p", "--port", help="Port to serve the REST app.")
+    ] = 8000,
+):
     """Start a REST application from a model."""
     import uvicorn
 
-    uvicorn.run(get_rest_app(model_type), host=host, port=port, reload=reload)
+    from ..rest import CnlpRestApp
+
+    app = CnlpRestApp.multi_app(
+        [(CnlpRestApp(model_path=path), prefix) for prefix, path in models]
+    )
+    uvicorn.run(app, host=host, port=port)

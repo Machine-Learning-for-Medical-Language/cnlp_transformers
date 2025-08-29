@@ -1,8 +1,8 @@
-from ._cli.main import cli
+from ._cli.main import main as cli_main
 
 
 def main():
-    cli()
+    cli_main()
 
 
 if __name__ == "__main__":

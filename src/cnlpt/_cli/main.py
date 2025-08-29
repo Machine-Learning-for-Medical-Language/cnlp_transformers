@@ -1,30 +1,46 @@
-import click
+from typing import Annotated
 
-from .. import __version__
-from .rest import rest_command
-from .train import train_command
+import rich
+import typer
+from typer.core import DEFAULT_MARKUP_MODE
+
+from .. import __version__ as cnlpt_version
+from . import rest, train
+
+app = typer.Typer(add_completion=False, rich_markup_mode=DEFAULT_MARKUP_MODE)
 
 
-@click.group(invoke_without_command=True)
-@click.option(
-    "--version",
-    type=bool,
-    is_flag=True,
-    default=False,
-    help="Print the cnlp_transformers version.",
-)
-@click.pass_context
-def cli(ctx: click.Context, version: bool):
-    if ctx.invoked_subcommand is not None:
-        return
+app.command(no_args_is_help=True)(rest.rest)
+app.command(
+    no_args_is_help=True,
+    context_settings={
+        "allow_extra_args": True,
+        "ignore_unknown_options": True,
+    },
+    epilog=train.TRAIN_EPILOG,
+)(train.train)
 
+
+def version_callback(version: bool):
     if version:
-        print(__version__)
-        ctx.exit()
-    else:
-        click.echo(ctx.get_help())
-        ctx.exit()
+        rich.print(f"cnlp_transformers version: [b cyan]{cnlpt_version}")
+        raise typer.Exit()
 
 
-cli.add_command(rest_command)
-cli.add_command(train_command)
+@app.callback(no_args_is_help=True)
+def cli(
+    version: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            help="Show the cnlp_transformers version and exit.",
+            is_eager=True,
+            callback=version_callback,
+        ),
+    ] = False,
+):
+    pass
+
+
+def main():
+    app()
