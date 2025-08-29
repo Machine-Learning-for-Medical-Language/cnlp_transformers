@@ -13,7 +13,7 @@ from ..common.fixtures import random_cnlp_data_options
 )
 def test_predict(random_cnlp_train_system):
     predictions = random_cnlp_train_system.predict()
-    seq_len = random_cnlp_train_system.data_args.max_seq_length
+    seq_len = random_cnlp_train_system.dataset.max_seq_length
     df = make_preds_df(predictions)
     assert df.schema == pl.Schema(
         {
