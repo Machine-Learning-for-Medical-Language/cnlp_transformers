@@ -1,4 +1,4 @@
-from .cnlp_dataset import CnlpDataset
+from .cnlp_dataset import CnlpDataset, HierarchicalDataConfig
 from .predictions import CnlpPredictions
 from .preprocess import preprocess_raw_data
 from .task_info import (
@@ -16,6 +16,7 @@ __all__ = [
     "TAGGING",
     "CnlpDataset",
     "CnlpPredictions",
+    "HierarchicalDataConfig",
     "TaskInfo",
     "TaskType",
     "get_task_type",

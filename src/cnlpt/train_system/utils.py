@@ -14,7 +14,7 @@ def is_cnlpt_model(model_path: str) -> bool:
         Whether the model is a cnlpt classifier model.
     """
     encoder_config = AutoConfig.from_pretrained(model_path)
-    return encoder_config.model_type == "cnlpt"
+    return hasattr(encoder_config, "cnlpt_version")
 
 
 def is_external_encoder(model_name_or_path: str) -> bool:

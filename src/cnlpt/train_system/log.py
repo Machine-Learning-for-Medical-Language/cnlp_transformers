@@ -5,7 +5,7 @@ import re
 
 from transformers import logging as transformers_logging
 
-from ..args import CnlpTrainingArguments
+from .args import CnlpTrainingArguments
 
 logger = logging.getLogger("cnlpt.train_system")
 

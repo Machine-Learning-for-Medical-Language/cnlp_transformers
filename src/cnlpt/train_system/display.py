@@ -1,5 +1,5 @@
 import os
-from typing import Any, Union
+from typing import TYPE_CHECKING, Any, Union
 
 from rich.console import Console
 from rich.live import Live
@@ -14,7 +14,8 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from ..args import CnlpDataArguments, CnlpModelArguments, CnlpTrainingArguments
+if TYPE_CHECKING:
+    from .cnlp_train_system import CnlpTrainSystem
 
 console = Console()
 
@@ -24,15 +25,8 @@ def _val_fmt(x):
 
 
 class TrainSystemDisplay:
-    def __init__(
-        self,
-        model_args: CnlpModelArguments,
-        data_args: CnlpDataArguments,
-        training_args: CnlpTrainingArguments,
-    ):
-        self.model_args = model_args
-        self.data_args = data_args
-        self.training_args = training_args
+    def __init__(self, train_system: "CnlpTrainSystem"):
+        self.train_system = train_system
 
         self.eval_desc = "Evaluating"
 
@@ -64,10 +58,10 @@ class TrainSystemDisplay:
 
     @property
     def subtitle(self):
-        if self.training_args.output_dir is None:
+        if self.train_system.args.output_dir is None:
             return "?"
         logfile = os.path.join(
-            os.path.abspath(self.training_args.output_dir), "train_system.log"
+            os.path.abspath(self.train_system.args.output_dir), "train_system.log"
         )
         return f"Training log: {logfile}"
 
@@ -101,7 +95,7 @@ class TrainSystemDisplay:
                 _val_fmt(self.eval_metrics[metric_name]),
                 _val_fmt(self.best_eval_metrics[metric_name]),
             ]
-            if metric_name == self.training_args.metric_for_best_model:
+            if metric_name == self.train_system.args.metric_for_best_model:
                 row[0] = f"[bold][cyan]> {row[0]}"
                 row[1] = f"[bold]{row[1]}"
                 row[2] = f"[bold]{row[2]}"
@@ -140,14 +134,13 @@ class TrainSystemDisplay:
         meta.add_column(style="blue", justify="right")
         meta.add_column()
         out_dir_abspath = (
-            os.path.abspath(self.training_args.output_dir)
-            if self.training_args.output_dir is not None
+            os.path.abspath(self.train_system.args.output_dir)
+            if self.train_system.args.output_dir is not None
             else "?"
         )
         meta.add_row("Output dir:", out_dir_abspath)
-        meta.add_row("Dataset:", ", ".join(self.data_args.data_dir))
-        meta.add_row("Encoder:", str(self.model_args.encoder_name))
-        meta.add_row("Model type:", str(self.model_args.model))
+        meta.add_row("Dataset:", str(self.train_system.dataset.data_dir))
+        meta.add_row("Model type:", type(self.train_system.model).__name__)
 
         stats = Table.grid(padding=(1, 1))
         stats.add_column(style="blue", justify="right")

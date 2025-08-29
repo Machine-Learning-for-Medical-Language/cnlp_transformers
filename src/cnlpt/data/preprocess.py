@@ -1,12 +1,15 @@
 import logging
 from collections.abc import Iterable
-from typing import Any, Final, Union
+from typing import TYPE_CHECKING, Any, Final, Union
 
 import numpy as np
 from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.tokenization_utils_base import BatchEncoding
 
 from .task_info import CLASSIFICATION, RELATIONS, TAGGING, TaskInfo
+
+if TYPE_CHECKING:
+    from .cnlp_dataset import HierarchicalDataConfig
 
 logger = logging.getLogger(__name__)
 MISSING_DATA_STR: Final = "__None__"
@@ -19,11 +22,8 @@ def preprocess_raw_data(
     tasks: Union[Iterable[TaskInfo], None],
     max_length: Union[int, None] = None,
     inference_only: bool = False,
-    hierarchical: bool = False,
     character_level: bool = False,
-    chunk_len: int = -1,
-    num_chunks: int = -1,
-    insert_empty_chunk_at_beginning: bool = False,
+    hier_config: Union["HierarchicalDataConfig", None] = None,
 ) -> BatchEncoding:
     """Preprocess raw CNLP data for training/evaluation.
 
@@ -52,7 +52,7 @@ def preprocess_raw_data(
         batch=batch,
         tokenizer=tokenizer,
         max_length=max_length,
-        hierarchical=hierarchical,
+        hierarchical=hier_config is not None,
         character_level=character_level,
     )
 
@@ -88,15 +88,15 @@ def preprocess_raw_data(
         tokenized_input["event_mask"] = _build_event_mask_character(
             tokenized_input=tokenized_input
         )
-    if hierarchical:
+    if hier_config is not None:
         tokenized_input = _convert_features_to_hierarchical(
             tokenized_input,
-            chunk_len=chunk_len,
-            num_chunks=num_chunks,
+            chunk_len=hier_config.chunk_len,
+            num_chunks=hier_config.num_chunks,
             cls_id=tokenizer.cls_token_id,
             sep_id=tokenizer.sep_token_id,
             pad_id=tokenizer.pad_token_id,
-            insert_empty_chunk_at_beginning=insert_empty_chunk_at_beginning,
+            insert_empty_chunk_at_beginning=hier_config.prepend_empty_chunk,
         )
 
     return tokenized_input
@@ -313,15 +313,19 @@ def _tokenize_batch(
             'The data does not seem to have a text column (literally a column labeled "text" is required)'
         )
 
-    if hierarchical:
-        padding = False
-    else:
-        padding = "max_length"
+    # TODO(ian) Why was padding for hierarchical models disabled? At a glance it seems like it's ok
+    # to enable it, but this should be confirmed before merging.
+
+    # if hierarchical:
+    #     padding = False
+    # else:
+    #     padding = "max_length"
 
     tokenized_batch = tokenizer(
         sentences,
         max_length=max_length,
-        padding=padding,
+        # padding=padding,  # TODO(ian) See above.
+        padding="max_length",
         truncation=True,
         is_split_into_words=not character_level,
     )
