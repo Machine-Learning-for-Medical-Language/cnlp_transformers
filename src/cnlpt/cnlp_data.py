@@ -1109,7 +1109,7 @@ def group_texts(chunk_size, examples):
 
 
 def tokenize_fn(tokenizer, examples):
-    result = tokenizer(examples["text"])
+    result = tokenizer(examples["text"], truncation=True, max_length=512)
     if tokenizer.is_fast:
         result["word_ids"] = [
             result.word_ids(i) for i in range(len(result["input_ids"]))

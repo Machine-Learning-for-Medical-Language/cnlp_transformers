@@ -157,6 +157,8 @@ def main(
         ),
         cache_dir=dapt_args.cache_dir,
         add_prefix_space=True,
+        truncation=True,
+        max_length=256,
         # additional_special_tokens=['<e>', '</e>', '<a1>', '</a1>', '<a2>', '</a2>', '<cr>', '<neg>']
     )
 
