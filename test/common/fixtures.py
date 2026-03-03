@@ -168,6 +168,8 @@ def random_cnlp_train_system(
 ):
     custom_train_args = _get_marker_kwargs(request, "cnlp_train_args")
     custom_dataset_args = _get_marker_kwargs(request, "cnlp_dataset_args")
+    if "allow_disjoint_labels" not in custom_dataset_args:
+        custom_dataset_args["allow_disjoint_labels"] = True
     custom_model_config_args = _get_marker_kwargs(request, "cnlp_model_config_args")
 
     with tempfile.TemporaryDirectory(prefix="cnlp_output_dir") as out_dir:
