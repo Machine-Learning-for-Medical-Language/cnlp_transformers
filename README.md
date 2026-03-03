@@ -103,7 +103,7 @@ To use the library for fine-tuning, you'll need to take the following steps:
 
       Instance labels should be formatted the same way as in the csv/tsv example above, see specifically the formats for tagging and relations. The 'metadata' field can either be included in the train/dev/test files or as a separate metadata.json file.
 
-2. Run train_system.py with a ```--task_name``` from your data files and the ```--data-dir``` argument from Step 1. If no ```--task_name``` is provided, all tasks will be trained.
+2. Run train_system.py with a `--model-type` (one of `cnn`, `lstm`, `hier`, or `proj`), and a `--data-dir` (path to the folder you created in step 1). Optionally specify one or more `--task` names to train on. By default all tasks will be trained.
 
 ### Step-by-step finetuning examples
 
@@ -118,7 +118,7 @@ We provided the following step-by-step examples how to finetune in clinical NLP 
 Run `cnlpt train -h` to see all the available options. In addition to inherited Huggingface Transformers options, there are options to do the following:
 
 * Select different models: `--model hier` uses a hierarchical transformer layer on top of a specified encoder model. We recommend using a very small encoder: `--encoder microsoft/xtremedistil-l6-h256-uncased` so that the full model fits into memory.
-* Run simple baselines (use ``--model cnn|lstm --tokenizer_name roberta-base`` -- since there is no HF model then you must specify the tokenizer explicitly)
+* Run simple baselines (use `--model cnn|lstm --tokenizer roberta-base` -- since there is no HF model then you must specify the tokenizer explicitly)
 * Use a different layer's CLS token for the classification (e.g., `--layer 10`)
 * Probabilistically freeze weights of the encoder (leaving classifier weights all unfrozen) (`--freeze` alone freezes all encoder weights, `--freeze <float>` when given a parameter between 0 and 1, freezes that percentage of encoder weights)
 * Classify based on a token embedding instead of the CLS embedding (`--token` -- applies to the event/entity classification setting only, and requires the input to have xml-style tags (`<e>`, `</e>`) around the tokens representing the event/entity)

@@ -243,7 +243,7 @@ TokenizerArg = Annotated[
     Union[str, None],
     data_arg_option(
         "--tokenizer",
-        help=f'Name or path to a model to use for tokenization. For projection and hierarchical models, this will default to the --encoder_name if left unspecified; otherwise defaults to "{DEFAULT_ENCODER}".',
+        help=f'Name or path to a model to use for tokenization. For projection and hierarchical models, this will default to the --encoder if left unspecified; otherwise defaults to "{DEFAULT_ENCODER}".',
     ),
 ]
 TruncationSideArg = Annotated[
