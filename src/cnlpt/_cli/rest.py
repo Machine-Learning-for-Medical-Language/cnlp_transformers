@@ -40,12 +40,16 @@ def rest(
     ],
     host: Annotated[
         str, typer.Option("-h", "--host", help="Host address to serve the REST app.")
-    ] = "0.0.0.0",
+    ] = "localhost",
     port: Annotated[
         int, typer.Option("-p", "--port", help="Port to serve the REST app.")
     ] = 8000,
 ):
     """Start a REST application from a model."""
+    import asyncio
+    import logging
+
+    import click
     import uvicorn
 
     from ..rest import CnlpRestApp
@@ -53,4 +57,28 @@ def rest(
     app = CnlpRestApp.multi_app(
         [(CnlpRestApp(model_path=path), prefix) for prefix, path in models]
     )
-    uvicorn.run(app, host=host, port=port)
+
+    async def serve():
+        config = uvicorn.Config(app, host=host, port=port, log_level="info")
+        server = uvicorn.Server(config)
+
+        task = asyncio.create_task(server.serve())
+
+        # Wait until server is fully started
+        while not server.started:
+            await asyncio.sleep(0.1)
+
+        logger = logging.getLogger("uvicorn.error")
+        docs_addr_format = "http://%s:%s/docs"
+        logger.info(
+            f"Point your browser at {docs_addr_format} for interactive documentation.",
+            host,
+            port,
+            extra={
+                "color_message": f"Point your browser at {click.style(docs_addr_format, bold=True)} for interactive documentation."
+            },
+        )
+
+        await task
+
+    asyncio.run(serve())
