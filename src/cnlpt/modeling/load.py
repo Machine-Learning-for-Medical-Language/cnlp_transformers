@@ -67,7 +67,7 @@ def try_load_config(
 
     if model_type == "cnlpt":
         config_data["architectures"] = ["ProjectionModel"]
-        config_data["model_type"] = ["cnlpt.proj"]
+        config_data["model_type"] = "cnlpt.proj"
         tagged_mode = config_data.pop("tokens")
         config_data["classification_mode"] = "tagged" if tagged_mode else "cls"
 
