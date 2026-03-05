@@ -70,7 +70,7 @@ def try_load_config(
         config_data["model_type"] = "cnlpt.proj"
         tagged_mode = config_data.pop("tokens")
         config_data["classification_mode"] = "tagged" if tagged_mode else "cls"
-
+        config_data["encoder_layer"] = config_data.pop("layer")
         return ProjectionModelConfig(**config_data)
     else:
         raise NotImplementedError(
