@@ -11,18 +11,16 @@ import pytest
 from lorem_text import lorem
 from transformers.models.auto.tokenization_auto import AutoTokenizer
 
-from cnlpt.args import (
-    CnlpDataArguments,
-    CnlpModelArguments,
-    CnlpTrainingArguments,
-    parse_args_dict,
-)
 from cnlpt.data import TaskType
-from cnlpt.train_system import CnlpTrainSystem
+from cnlpt.data.cnlp_dataset import CnlpDataset
+from cnlpt.modeling import (
+    ModelType,
+)
+from cnlpt.train_system import CnlpTrainingArguments, CnlpTrainSystem
 
 
 @pytest.fixture(autouse=True)
-def disable_mps(monkeypatch):
+def disable_mps_for_ci(monkeypatch):
     """Disable MPS for CI"""
     if os.getenv("CI", False):
         monkeypatch.setattr("torch._C._mps_is_available", lambda: False)
@@ -144,52 +142,77 @@ def random_cnlp_data_options(
     )
 
 
-@pytest.fixture
-def cnlp_args(request):
-    marker: pytest.Mark = request.node.get_closest_marker("cnlp_args")
-    custom_args = marker.kwargs if marker is not None else {}
-
-    with tempfile.TemporaryDirectory(prefix="cnlp_output_dir") as out_dir:
-        yield parse_args_dict(
-            {
-                "data_dir": [],
-                "encoder_name": "roberta-base",
-                "output_dir": out_dir,
-                "overwrite_output_dir": True,
-                "do_train": True,
-                "do_eval": True,
-                "do_predict": True,
-                "evals_per_epoch": 1,
-                "num_train_epochs": 1,
-                "learning_rate": 1e-5,
-                "report_to": None,
-                "save_strategy": "best",
-                "rich_display": False,
-                "allow_disjoint_labels": True,
-                **custom_args,
-            }
-        )
+def custom_cnlp_train_args(**kwargs):
+    return pytest.mark.cnlp_train_args(**kwargs)
 
 
-def custom_cnlp_args(**kwargs):
-    return pytest.mark.cnlp_args(**kwargs)
+def custom_cnlp_dataset_args(**kwargs):
+    return pytest.mark.cnlp_dataset_args(**kwargs)
+
+
+def custom_cnlp_model_config(model_type: ModelType, **kwargs):
+    return pytest.mark.cnlp_model_config(model_type=model_type, **kwargs)
+
+
+def _get_marker_kwargs(
+    request: pytest.FixtureRequest, marker_name: str
+) -> dict[str, Any]:
+    marker: pytest.Mark = request.node.get_closest_marker(marker_name)
+    return marker.kwargs if marker is not None else {}
 
 
 @pytest.fixture
 def random_cnlp_train_system(
+    request,
     random_cnlp_data_dir,
-    cnlp_args: tuple[CnlpModelArguments, CnlpDataArguments, CnlpTrainingArguments],
 ):
-    model_args, data_args, training_args = cnlp_args
-    data_args.data_dir = [random_cnlp_data_dir]
-    yield CnlpTrainSystem(
-        model_args=model_args, data_args=data_args, training_args=training_args
-    )
+    custom_train_args = _get_marker_kwargs(request, "cnlp_train_args")
+    custom_dataset_args = _get_marker_kwargs(request, "cnlp_dataset_args")
+    if "allow_disjoint_labels" not in custom_dataset_args:
+        custom_dataset_args["allow_disjoint_labels"] = True
+    custom_model_config_args = _get_marker_kwargs(request, "cnlp_model_config_args")
 
-    # we must close the logfile handler or tearing down the temporary output directory will fail
-    for handler in logging.root.handlers:
-        if isinstance(handler, logging.FileHandler) and handler.baseFilename.endswith(
-            "train_system.log"
-        ):
-            handler.close()
-            logging.root.removeHandler(handler)
+    with tempfile.TemporaryDirectory(prefix="cnlp_output_dir") as out_dir:
+        train_args = CnlpTrainingArguments(
+            **(
+                dict(
+                    output_dir=out_dir,
+                    overwrite_output_dir=True,
+                    do_train=True,
+                    do_eval=True,
+                    do_predict=True,
+                    evals_per_epoch=1,
+                    num_train_epochs=1,
+                    rich_display=False,
+                )
+                | custom_train_args
+            ),
+        )
+
+        dataset = CnlpDataset(random_cnlp_data_dir, **custom_dataset_args)
+
+        model_type: ModelType = custom_model_config_args.pop(
+            "model_type", ModelType.PROJ
+        )
+
+        config = model_type.config_class(
+            tasks=list(dataset.tasks),
+            vocab_size=len(dataset.tokenizer),
+            **custom_model_config_args,
+        )
+
+        model = model_type.model_class(config)
+
+        yield CnlpTrainSystem(
+            model=model,
+            dataset=dataset,
+            training_args=train_args,
+        )
+
+        # we must close the logfile handler or tearing down the temporary output directory will fail
+        for handler in logging.root.handlers:
+            if isinstance(
+                handler, logging.FileHandler
+            ) and handler.baseFilename.endswith("train_system.log"):
+                handler.close()
+                logging.root.removeHandler(handler)

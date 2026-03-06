@@ -4,7 +4,7 @@ from transformers.models.auto.configuration_auto import AutoConfig
 from transformers.models.auto.tokenization_auto import AutoTokenizer
 
 from cnlpt.legacy.train_system import is_hub_model
-from cnlpt.models import CnlpModelForClassification, HierarchicalModel
+from cnlpt.modeling import CnlpModelForClassification, HierarchicalModel
 
 
 def pre_initialize_cnlpt_model(model_name, cuda=True, batch_size=8):

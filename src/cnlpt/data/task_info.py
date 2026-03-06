@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import Final, Literal, Union
 
+# TODO(ian) convert this to an enum for consistency?
 TaskType = Literal["classification", "tagging", "relations"]
 "A type of task that this library can train a model to solve."
 

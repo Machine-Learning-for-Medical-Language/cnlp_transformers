@@ -1,22 +1,48 @@
+import os
+from collections import Counter
+from dataclasses import dataclass
+from enum import Enum
+from typing import Literal, Union
+
+import torch
 from datasets import Dataset
+from transformers.models.auto.tokenization_auto import AutoTokenizer
 from transformers.tokenization_utils import PreTrainedTokenizer
 
-from ..args.data_args import CnlpDataArguments
 from .data_reader import CnlpDataReader
 from .preprocess import preprocess_raw_data
 
 
-def _validate_dataset_args(args: CnlpDataArguments, hierarchical: bool):
-    if hierarchical:
-        if args.chunk_len is None or args.num_chunks is None:
-            raise ValueError(
-                "For the hierarchical model, data_args.chunk_len and data_args.num_chunks must be specified."
-            )
-        implicit_max_len = args.chunk_len * args.num_chunks
-        if args.max_seq_length < implicit_max_len:
-            raise ValueError(
-                "For the hierarchical model, the max seq length should be equal to the chunk length * num_chunks, otherwise what is the point?"
-            )
+@dataclass(frozen=True)
+class HierarchicalDataConfig:
+    chunk_len: int
+    num_chunks: int
+    prepend_empty_chunk: bool
+
+
+def load_tokenizer(
+    model_name_or_path: str,
+    hf_cache_dir: Union[str, None] = None,
+    truncation_side: Literal["left", "right"] = "right",
+    character_level: bool = False,
+) -> PreTrainedTokenizer:
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name_or_path,
+        cache_dir=hf_cache_dir,
+        add_prefix_space=True,
+        truncation_side=truncation_side,
+        additional_special_tokens=(
+            ["<e>", "</e>", "<a1>", "</a1>", "<a2>", "</a2>", "<cr>", "<neg>"]
+            if not character_level
+            else None
+        ),
+    )
+    return tokenizer
+
+
+class TruncationSide(str, Enum):
+    LEFT = "left"
+    RIGHT = "right"
 
 
 class CnlpDataset:
@@ -24,9 +50,19 @@ class CnlpDataset:
 
     def __init__(
         self,
-        args: CnlpDataArguments,
-        tokenizer: PreTrainedTokenizer,
-        hierarchical: bool = False,
+        data_dir: Union[str, os.PathLike],
+        tokenizer: Union[str, PreTrainedTokenizer] = "roberta-base",
+        task_names: Union[list[str], None] = None,
+        hier_config: Union[HierarchicalDataConfig, None] = None,
+        truncation_side: TruncationSide = TruncationSide.RIGHT,
+        max_seq_length: int = 128,
+        use_data_cache: bool = True,
+        max_train: Union[int, None] = None,
+        max_eval: Union[int, None] = None,
+        max_test: Union[int, None] = None,
+        allow_disjoint_labels: bool = False,
+        character_level: bool = False,
+        hf_cache_dir: Union[str, None] = None,
     ):
         """Create a new `CnlpDataset`.
 
@@ -35,25 +71,44 @@ class CnlpDataset:
             tokenizer: Tokenizer to tokenize the raw data.
             hierarchical: Whether this data is being preprocessed for a hierarchical model. Defaults to False.
         """
-        _validate_dataset_args(args, hierarchical)
 
-        self.hierarchical = hierarchical
+        if hier_config is not None:
+            implicit_max_len = hier_config.chunk_len * hier_config.num_chunks
 
-        reader = CnlpDataReader(allow_disjoint_labels=args.allow_disjoint_labels)
-        for data_dir in args.data_dir:
-            reader.load_dir(data_dir)
+            # TODO(ian) should this be `!=`` instead of `<`?
+            if max_seq_length < implicit_max_len:
+                raise ValueError(
+                    "For the hierarchical model, the max seq length should be equal to the chunk length * num_chunks, otherwise what is the point?"
+                )
 
-        self.tasks = reader.get_tasks(args.task_name or None)
+        self.data_dir = data_dir
+        if isinstance(tokenizer, str):
+            self.tokenizer = load_tokenizer(
+                tokenizer,
+                hf_cache_dir=hf_cache_dir,
+                truncation_side=truncation_side,
+                character_level=character_level,
+            )
+        else:
+            self.tokenizer = tokenizer
+
+        reader = CnlpDataReader(allow_disjoint_labels=allow_disjoint_labels)
+        reader.load_dir(data_dir)
+
+        self.tasks = reader.get_tasks(task_names)
         self.dataset = reader.dataset
 
-        if (val_limit := (args.max_eval_items or 0)) > 0:
-            self.dataset["validation"] = self.dataset["validation"].take(val_limit)
+        if max_train is not None:
+            self.dataset["train"] = self.dataset["train"].take(max_train)
+        if max_eval is not None:
+            self.dataset["validation"] = self.dataset["validation"].take(max_eval)
+        if max_test is not None:
+            self.dataset["test"] = self.dataset["test"].take(max_test)
 
-        if (train_limit := (args.max_train_items or 0)) > 0:
-            self.dataset["train"] = self.dataset["train"].take(train_limit)
-
-        if (test_limit := (args.max_test_items or 0)) > 0:
-            self.dataset["test"] = self.dataset["test"].take(test_limit)
+        self.hier_config = hier_config
+        self.truncation_side = truncation_side
+        self.max_seq_length = max_seq_length
+        self.character_level = character_level
 
         split_data: Dataset
         for split_name, split_data in self.dataset.items():
@@ -61,19 +116,16 @@ class CnlpDataset:
                 preprocess_raw_data,
                 desc=f"Preprocessing {split_name} data",
                 batched=True,
-                load_from_cache_file=not args.overwrite_cache,
+                load_from_cache_file=use_data_cache,
                 batch_size=100,
                 num_proc=1,
                 fn_kwargs={
-                    "tokenizer": tokenizer,
+                    "tokenizer": self.tokenizer,
                     "tasks": self.tasks,
-                    "max_length": args.max_seq_length,
+                    "max_length": self.max_seq_length,
                     "inference_only": "train" not in reader.split_names,
-                    "hierarchical": self.hierarchical,
-                    "character_level": args.character_level,
-                    "chunk_len": args.chunk_len,
-                    "num_chunks": args.num_chunks,
-                    "insert_empty_chunk_at_beginning": args.insert_empty_chunk_at_beginning,
+                    "character_level": self.character_level,
+                    "hier_config": self.hier_config,
                 },
             )
 
@@ -91,3 +143,23 @@ class CnlpDataset:
     def test_data(self):
         """This dataset's test split."""
         return self.dataset["test"]
+
+    def get_class_weights(self, device: torch.device):
+        class_weights: dict[str, torch.FloatTensor] = {}
+        for task in self.tasks:
+            train_labels = self.train_data[task.name]
+            weights: list[float] = []
+            train_label_counts = Counter(train_labels)
+            for label in task.labels:
+                # class weights are determined by severity of class imbalance
+                weights.append(
+                    len(train_labels) / (len(task.labels) * train_label_counts[label])
+                )
+
+            class_weights[task.name] = torch.tensor(
+                # if we just have the one class, simplify the tensor or pytorch will be mad
+                # TODO(ian) why would we ever have just one class??
+                weights[0] if len(weights) == 1 else weights
+            ).to(device)
+
+        return class_weights

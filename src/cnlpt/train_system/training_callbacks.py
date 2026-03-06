@@ -1,5 +1,5 @@
 from dataclasses import asdict
-from typing import Union
+from typing import TYPE_CHECKING, Union
 
 from transformers.trainer_callback import (
     TrainerCallback,
@@ -9,9 +9,11 @@ from transformers.trainer_callback import (
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, SaveStrategy
 from transformers.training_args import TrainingArguments
 
-from ..args import CnlpDataArguments, CnlpModelArguments, CnlpTrainingArguments
 from .display import TrainSystemDisplay
 from .log import logger
+
+if TYPE_CHECKING:
+    from .cnlp_train_system import CnlpTrainSystem
 
 
 class DisplayCallback(TrainerCallback):
@@ -146,19 +148,15 @@ class DisplayCallback(TrainerCallback):
         **kwargs,
     ):
         self.display.finish_eval()
+        self.display.update()
         self.current_eval_step = 0
 
 
 class BasicLoggingCallback(TrainerCallback):
-    def __init__(
-        self,
-        model_args: CnlpModelArguments,
-        data_args: CnlpDataArguments,
-        training_args: CnlpTrainingArguments,
-    ):
-        self.model_args = model_args
-        self.data_args = data_args
-        self.training_args = training_args
+    def __init__(self, train_system: "CnlpTrainSystem"):
+        self.train_system = train_system
+        for arg_name, arg_value in asdict(train_system.args).items():
+            logger.info(f"{arg_name}={arg_value}")
 
     def on_train_begin(
         self,
@@ -167,14 +165,6 @@ class BasicLoggingCallback(TrainerCallback):
         control: TrainerControl,
         **kwargs,
     ):
-        logger.info("*** TRAIN SYSTEM ARGS ***")
-        for args_data, prefix in (
-            (self.model_args, "model_args"),
-            (self.data_args, "data_args"),
-            (self.training_args, "training_args"),
-        ):
-            for arg, val in sorted(asdict(args_data).items()):
-                logger.info("%s.%s: %s", prefix, arg, val)
         logger.info("*** STARTING TRAINING ***")
 
     def on_log(

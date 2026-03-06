@@ -1,19 +1,24 @@
 import bisect
 import itertools
-import os
 import re
 from dataclasses import dataclass
-from sys import argv
-from typing import Any, Union
+from pathlib import Path
+from typing import Any
 
 import polars as pl
 from datasets import load_dataset
 from datasets.dataset_dict import Dataset, DatasetDict
+from datasets.utils import disable_progress_bars, enable_progress_bars
 from rich.console import Console
 
 
 def load_chemprot_dataset(cache_dir="./cache") -> DatasetDict:
-    return load_dataset("bigbio/chemprot", "chemprot_full_source", cache_dir=cache_dir)
+    disable_progress_bars()
+    dataset = load_dataset(
+        "bigbio/chemprot", "chemprot_full_source", cache_dir=cache_dir
+    )
+    enable_progress_bars()
+    return dataset
 
 
 def clean_text(text: str):
@@ -156,25 +161,18 @@ def preprocess_data(split: Dataset):
     )
 
 
-def main(out_dir: Union[str, os.PathLike]):
+if __name__ == "__main__":
     console = Console()
-
-    if not os.path.isdir(out_dir):
-        os.mkdir(out_dir)
+    out_dir = Path(__file__).parent / "dataset"
+    out_dir.mkdir(exist_ok=True)
 
     with console.status("Loading dataset...") as st:
         dataset = load_chemprot_dataset()
         for split in ("train", "test", "validation"):
             st.update(f"Preprocessing {split} data...")
             preprocessed = preprocess_data(dataset[split])
-            preprocessed.write_csv(
-                os.path.join(out_dir, f"{split}.tsv"), separator="\t"
-            )
+            preprocessed.write_csv(out_dir / f"{split}.tsv", separator="\t")
 
     console.print(
         f"[green i]Preprocessed chemprot data saved to [repr.filename]{out_dir}[/]."
     )
-
-
-if __name__ == "__main__":
-    main(argv[1])

@@ -103,7 +103,7 @@ To use the library for fine-tuning, you'll need to take the following steps:
 
       Instance labels should be formatted the same way as in the csv/tsv example above, see specifically the formats for tagging and relations. The 'metadata' field can either be included in the train/dev/test files or as a separate metadata.json file.
 
-2. Run train_system.py with a ```--task_name``` from your data files and the ```--data-dir``` argument from Step 1. If no ```--task_name``` is provided, all tasks will be trained.
+2. Run train_system.py with a `--model-type` (one of `cnn`, `lstm`, `hier`, or `proj`), and a `--data-dir` (path to the folder you created in step 1). Optionally specify one or more `--task` names to train on. By default all tasks will be trained.
 
 ### Step-by-step finetuning examples
 
@@ -115,10 +115,10 @@ We provided the following step-by-step examples how to finetune in clinical NLP 
 
 ### Fine-tuning options
 
-Run `cnlpt train -h` to see all the available options. In addition to inherited Huggingface Transformers options, there are options to do the following:
+Run `cnlpt train --help` to see all the available options. In addition to inherited Huggingface Transformers options, there are options to do the following:
 
 * Select different models: `--model hier` uses a hierarchical transformer layer on top of a specified encoder model. We recommend using a very small encoder: `--encoder microsoft/xtremedistil-l6-h256-uncased` so that the full model fits into memory.
-* Run simple baselines (use ``--model cnn|lstm --tokenizer_name roberta-base`` -- since there is no HF model then you must specify the tokenizer explicitly)
+* Run simple baselines (use `--model cnn|lstm --tokenizer roberta-base` -- since there is no HF model then you must specify the tokenizer explicitly)
 * Use a different layer's CLS token for the classification (e.g., `--layer 10`)
 * Probabilistically freeze weights of the encoder (leaving classifier weights all unfrozen) (`--freeze` alone freezes all encoder weights, `--freeze <float>` when given a parameter between 0 and 1, freezes that percentage of encoder weights)
 * Classify based on a token embedding instead of the CLS embedding (`--token` -- applies to the event/entity classification setting only, and requires the input to have xml-style tags (`<e>`, `</e>`) around the tokens representing the event/entity)
@@ -126,101 +126,49 @@ Run `cnlpt train -h` to see all the available options. In addition to inherited 
 
 ## Running REST APIs
 
-There are existing REST APIs in the `src/cnlpt/api` folder for a few important clinical NLP tasks:
+This library supports serving a REST API for your model with a single `/process` endpoint to process text and generate predictions, via the `cnlpt rest` command.
 
-1. Negation detection
-2. Time expression tagging (spans + time classes)
-3. Event detection (spans + document creation time relation)
-4. End-to-end temporal relation extraction (event spans+DTR+timex spans+time classes+narrative container [CONTAINS] relation extraction)
+Run `cnlpt rest --help` to see available options. The only required option is `--model`, which must be either a HuggingFace repository or a local directory containing your model. By default, the model will be served at [http://localhost:8000](http://localhost:8000).
 
-### Negation API
+For example, to run our negation detection model from HuggingFace:
 
-To demo the negation API:
-
-1. Install the `cnlp-transformers` package.
-2. Run `cnlpt rest --model-type negation [-p PORT]`.
-3. Open a python console and run the following commands:
-
-#### Setup variables for negation
-
-```ipython
->>> import requests
->>> process_url = 'http://hostname:8000/negation/process'  ## Replace hostname with your host name
+```bash
+cnlpt rest --model mlml-chip/negation_pubmedbert_sharpseed
 ```
 
-#### Prepare the document
-
-```ipython
->>> sent = 'The patient has a sore knee and headache but denies nausea and has no anosmia.'
->>> ents = [[18, 27], [32, 40], [52, 58], [70, 77]]
->>> doc = {'doc_text':sent, 'entities':ents}
-```
-
-#### Process the document
-
-```ipython
->>> r = requests.post(process_url, json=doc)
->>> r.json()
-```
-
-Output: `{'statuses': [-1, -1, 1, 1]}`
-
-The model correctly classifies both nausea and anosmia as negated.
-
-### Temporal API (End-to-end temporal information extraction)
-
-To demo the temporal API:
-
-1. Install the `cnlp-transformers` package.
-2. Run `cnlpt rest --model-type temporal [-p PORT]`
-3. Open a python console and run the following commands to test:
-
-#### Setup variables for temporal
+Once the application is running, you can either interact with it via web interface at [http://localhost:8000/docs](http://localhost:8000/docs), or manually send requests to the `/process` endpoint:
 
 ```ipython
 >>> import requests
 >>> from pprint import pprint
->>> process_url = 'http://hostname:8000/temporal/process_sentence'  ## Replace hostname with your host name
+>>> sent = "The patient has a sore knee and headache but denies nausea and has no anosmia."
+>>> ents = [(18, 27), (32, 40), (52, 58), (70, 77)]
+>>> doc = {"text": sent, "entity_spans": ents}
+>>> resp = requests.post("http://localhost:8000/process", json=doc)
+>>> pprint(resp.json())
+[{'Negation': {'prediction': '-1',
+               'probs': {'-1': 0.9997619986534119, '1': 0.0002379878715146333}},
+  'text': 'The patient has a <e>sore knee</e> and headache but denies nausea '
+          'and has no anosmia.'},
+ {'Negation': {'prediction': '-1',
+               'probs': {'-1': 0.9995606541633606, '1': 0.0004393413255456835}},
+  'text': 'The patient has a sore knee and <e>headache</e> but denies nausea '
+          'and has no anosmia.'},
+ {'Negation': {'prediction': '1',
+               'probs': {'-1': 0.007858583703637123, '1': 0.9921413660049438}},
+  'text': 'The patient has a sore knee and headache but denies <e>nausea</e> '
+          'and has no anosmia.'},
+ {'Negation': {'prediction': '1',
+               'probs': {'-1': 0.0071166763082146645, '1': 0.9928833246231079}},
+  'text': 'The patient has a sore knee and headache but denies nausea and has '
+          'no <e>anosmia</e>.'}]
 ```
 
-#### Prepare and process the document
+You can also serve multiple models at once by providing a router prefix for each model, e.g.:
 
-```ipython
->>> sent = 'The patient was diagnosed with adenocarcinoma March 3, 2010 and will be returning for chemotherapy next week.'
->>> r = requests.post(process_url, json={'sentence':sent})
->>> pprint(r.json())
+```bash
+cnlpt rest --model /negation=mlml-chip/negation_pubmedbert_sharpseed --model /temporal=mlml-chip/thyme2_colon_e2e
 ```
-
-should return:
-
-```json
-{
-  "events": [
-    [
-      {"begin": 3, "dtr": "BEFORE", "end": 3},
-      {"begin": 5, "dtr": "BEFORE", "end": 5},
-      {"begin": 13, "dtr": "AFTER", "end": 13},
-      {"begin": 15, "dtr": "AFTER", "end": 15}
-    ]
-  ],
-  "relations": [
-    [
-      {"arg1": "TIMEX-0", "arg2": "EVENT-0", "category": "CONTAINS"},
-      {"arg1": "EVENT-2", "arg2": "EVENT-3", "category": "CONTAINS"},
-      {"arg1": "TIMEX-1", "arg2": "EVENT-2", "category": "CONTAINS"},
-      {"arg1": "TIMEX-1", "arg2": "EVENT-3", "category": "CONTAINS"}
-    ]
-  ],
-  "timexes": [
-    [
-      {"begin": 6, "end": 9, "timeClass": "DATE"},
-      {"begin": 16, "end": 17, "timeClass": "DATE"}
-    ]
-  ]
-}
-```
-
-This output indicates the token spans of events and timexes, and relations between events and timexes, where the suffixes are indices into the respective arrays (e.g., TIMEX-0 in a relation refers to the 0th time expression found, which begins at token 6 and ends at token 9 -- ["March 3, 2010"])
 
 ## Citing cnlp_transformers
 

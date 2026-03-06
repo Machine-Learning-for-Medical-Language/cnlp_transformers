@@ -14,7 +14,6 @@ readme = "README.md"
 requires-python = ">=3.9, <3.13"
 dependencies = [
     "anaforatools~=1.1.0",
-    "click>=8.1.7",
     "datasets~=2.21.0",
     "fastapi~=0.115.2",
     "httpx>=0.27.2",
@@ -25,10 +24,12 @@ dependencies = [
     "polars>=1.30.0",
     "pydantic~=1.10.8",
     "requests~=2.32.2",
+    "rich>=14.0.0",
     "scikit-learn~=1.5.2",
     "seqeval~=1.2.2",
     "torch>=2.6",
     "transformers[torch]~=4.51",
+    "typer~=0.16.0",
     "uvicorn[standard]~=0.32.0",
 ]
 
@@ -57,11 +58,13 @@ lint = [
 build = ["build", "pip>=21.3", "twine"]
 test = ["lorem-text>=3.0", "pytest"]
 docs = ["sphinx", "sphinx-autodoc-typehints", "sphinx-rtd-theme", "sphobjinv"]
+notebooks = ["ipykernel", "ipywidgets"]
 dev = [
     { include-group = "build" },
     { include-group = "docs" },
     { include-group = "lint" },
     { include-group = "test" },
+    { include-group = "notebooks" },
     "pre-commit",
 ]
 

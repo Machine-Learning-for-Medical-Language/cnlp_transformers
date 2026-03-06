@@ -6,11 +6,11 @@ from typing import Any, Union
 
 import numpy as np
 import numpy.typing as npt
+import polars as pl
 from datasets import Dataset
 from scipy.special import softmax
 from transformers.trainer_utils import PredictionOutput
 
-from ..args.data_args import CnlpDataArguments
 from ..data.preprocess import MASK_VALUE
 from .task_info import CLASSIFICATION, TAGGING, TaskInfo
 
@@ -47,7 +47,6 @@ class CnlpPredictions:
     input_data: Dataset
     raw: PredictionOutput
     tasks: list[TaskInfo]
-    data_args: CnlpDataArguments
 
     task_predictions: dict[str, TaskPredictions]
 
@@ -56,19 +55,20 @@ class CnlpPredictions:
         input_data: Dataset,
         raw_prediction: PredictionOutput,
         tasks: Iterable[TaskInfo],
-        data_args: CnlpDataArguments,
+        max_seq_length: int,
     ):
         self.input_data = input_data
         self.raw = raw_prediction
         self.tasks = sorted(tasks, key=lambda t: t.index)
-        self.data_args = data_args
+        self.max_seq_length = max_seq_length
 
         # task indices must start at zero and increase by 1
-        assert all(idx == t.index for idx, t in enumerate(tasks))
+        if not all(idx == t.index for idx, t in enumerate(tasks)):
+            raise RuntimeError("task indices should start at zero and increase by one")
 
         self.task_predictions: dict[str, TaskPredictions] = {}
 
-        task_labels: dict[str, npt.NDArray]
+        task_labels: dict[str, Union[npt.NDArray, None]]
 
         if self.raw.label_ids is None:
             task_labels = {t.name: None for t in tasks}
@@ -98,15 +98,17 @@ class CnlpPredictions:
                     offset += 1
                 else:  # task.type == RELATIONS
                     task_labels[task.name] = self.raw.label_ids[
-                        :, :, offset : offset + self.data_args.max_seq_length
+                        :, :, offset : offset + self.max_seq_length
                     ].astype(int)
-                    offset += self.data_args.max_seq_length
+                    offset += self.max_seq_length
 
         self.task_predictions = {
             t.name: TaskPredictions(
                 task=t,
                 logits=self.raw.predictions[t.index],
-                labels=task_labels[t.name].squeeze(),
+                labels=task_labels[t.name].squeeze()
+                if task_labels[t.name] is not None
+                else None,
             )
             for t in tasks
         }
@@ -128,7 +130,7 @@ class CnlpPredictions:
                 "metrics": self.raw.metrics,
             },
             "tasks": [asdict(t) for t in self.tasks],
-            "data_args": asdict(self.data_args),
+            "max_seq_length": self.max_seq_length,
         }
 
     def save_json(
@@ -155,16 +157,29 @@ class CnlpPredictions:
             metrics=data["raw"]["metrics"],
         )
         tasks = [TaskInfo(**t) for t in data["tasks"]]
-        data_args = CnlpDataArguments(**data["data_args"])
+        max_seq_length = data["max_seq_length"]
 
         return cls(
             input_data=input_data,
             raw_prediction=raw,
             tasks=tasks,
-            data_args=data_args,
+            max_seq_length=max_seq_length,
         )
 
     @classmethod
     def load_json(cls, filepath: Union[str, os.PathLike]):
         with open(filepath) as f:
             return cls.from_dict(json.load(f))
+
+    @property
+    def metrics(self):
+        return {k.removeprefix("test_"): v for k, v in self.raw.metrics.items()}
+
+    def metrics_df(self):
+        metrics = self.metrics.items()
+        return pl.DataFrame(
+            {
+                "metric": [m for m, v in metrics],
+                "value": [v for m, v in metrics],
+            }
+        )

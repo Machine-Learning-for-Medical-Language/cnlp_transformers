@@ -1,6 +1,5 @@
 import numpy as np
 
-from cnlpt.args import CnlpDataArguments
 from cnlpt.data import CnlpDataset
 
 from ..common.fixtures import random_cnlp_data_options
@@ -13,8 +12,7 @@ from ..common.fixtures import random_cnlp_data_options
     n_dev=7,
 )
 def test_create_random_dataset(tokenizer, random_cnlp_data_dir):
-    args = CnlpDataArguments([random_cnlp_data_dir])
-    cnlp_dataset = CnlpDataset(args=args, tokenizer=tokenizer, hierarchical=False)
+    cnlp_dataset = CnlpDataset(random_cnlp_data_dir, tokenizer=tokenizer)
     assert len(cnlp_dataset.train_data) == 5
     assert len(cnlp_dataset.test_data) == 6
     assert len(cnlp_dataset.validation_data) == 7
@@ -29,14 +27,10 @@ def test_labels_shape_classification_only(tokenizer, random_cnlp_data_dir):
     generates labels with the shape (batch, n_tasks).
     """
     batch_size = 3
-    max_seq_len = 128
 
-    args = CnlpDataArguments(
-        [random_cnlp_data_dir],
-        max_seq_length=max_seq_len,
-        overwrite_cache=True,
+    cnlp_dataset = CnlpDataset(
+        random_cnlp_data_dir, tokenizer=tokenizer, use_data_cache=False
     )
-    cnlp_dataset = CnlpDataset(args=args, tokenizer=tokenizer, hierarchical=False)
     batch = next(cnlp_dataset.train_data.iter(batch_size))
     labels = np.array(batch["label"])
 
@@ -56,12 +50,12 @@ def test_labels_shape_mixed_tasks(tokenizer, random_cnlp_data_dir):
     batch_size = 3
     max_seq_len = 128
 
-    args = CnlpDataArguments(
-        [random_cnlp_data_dir],
+    cnlp_dataset = CnlpDataset(
+        random_cnlp_data_dir,
+        tokenizer=tokenizer,
         max_seq_length=max_seq_len,
-        overwrite_cache=True,
+        use_data_cache=False,
     )
-    cnlp_dataset = CnlpDataset(args=args, tokenizer=tokenizer, hierarchical=False)
     batch = next(cnlp_dataset.train_data.iter(batch_size))
     labels = np.array(batch["label"])
 
