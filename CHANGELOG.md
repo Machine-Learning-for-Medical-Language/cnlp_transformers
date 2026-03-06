@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.8.0 (Mar 2026)
+
+* Refactored cli entry points
+* Refactored cli argument handling for better presentation
+* Unified REST commands into a single interface
+* Unified model configs and model definitions
+* Updated documentation, examples
+
 ## 0.7.1 (Nov 2024)
 
 * Update release build instructions to fix versioning issue.
