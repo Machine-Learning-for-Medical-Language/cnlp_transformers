@@ -502,6 +502,7 @@ def train(
     )
     train_system = CnlpTrainSystem(model, dataset, training_args)
     train_system.train()
+    dataset.tokenizer.save_pretrained(training_args.output_dir)
 
 
 TRAIN_EPILOG = """[red]More training arguments are available, see the

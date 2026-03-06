@@ -8,13 +8,12 @@ from datasets import Dataset
 from fastapi import APIRouter, FastAPI
 from pydantic import BaseModel
 from transformers.models.auto.modeling_auto import AutoModel
-from transformers.models.auto.tokenization_auto import AutoTokenizer
 from transformers.trainer import Trainer
 from transformers.training_args import TrainingArguments
 from typing_extensions import Self
 
 from ..data.analysis import make_preds_df
-from ..data.cnlp_dataset import HierarchicalDataConfig
+from ..data.cnlp_dataset import HierarchicalDataConfig, load_tokenizer
 from ..data.predictions import CnlpPredictions
 from ..data.preprocess import preprocess_raw_data
 from ..data.task_info import CLASSIFICATION, RELATIONS, TAGGING, TaskInfo
@@ -91,7 +90,18 @@ class CnlpRestApp:
             training_args.dataloader_pin_memory = False
 
         self.config = try_load_config(self.model_path)
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
+        try:
+            self.tokenizer = load_tokenizer(
+                self.model_path,
+                character_level=self.config.character_level,
+            )
+        except KeyError:
+            self.tokenizer = load_tokenizer(
+                self.config.encoder_name,
+                character_level=self.config.character_level,
+            )
+
+        # self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
         self.model = AutoModel.from_pretrained(
             self.model_path,
             config=self.config,
