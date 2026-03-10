@@ -333,7 +333,7 @@ def train(
     #     MODEL ARGS     #
     # ------------------ #
     model_type: ModelTypeArg = ...,
-    encoder_name: EncoderArg = DEFAULT_ENCODER,
+    encoder: EncoderArg = DEFAULT_ENCODER,
     use_prior_tasks: UsePriorTasksArg = False,
     encoder_layer: EncoderLayerArg = -1,
     classification_mode: ClassificationModeArg = "cls",
@@ -381,15 +381,63 @@ def train(
     logging_first_step: LoggingFirstStepArg = True,
     cache_dir: CacheDirArg = None,
 ):
-    # TODO(ian): it's probably worth making this docstring pretty descriptive
-    """Run the cnlp_transformers training system."""
+    """Train a model on one or more NLP tasks using the cnlp_transformers training system.
+
+    Requires a data directory containing CNLPT-formatted data
+    (https://github.com/Machine-Learning-for-Medical-Language/cnlp_transformers#workflow)
+    and a model type. The model will be evaluated on the dev split
+    after each epoch, and predictions on the test split will be written to the output
+    directory if --do_predict is set.
+
+    \b
+    MODEL TYPES
+      proj  (Projection)    Transformer encoder + task-specific projection heads.
+                            The recommended choice for most NLP tasks. Supports
+                            sequence classification, NER/tagging, and relation
+                            extraction.
+      hier  (Hierarchical)  Two-stage model for long documents: a transformer
+                            encoder processes chunks, then a secondary transformer
+                            aggregates across chunks. Use when inputs exceed the
+                            encoder's max sequence length.
+      cnn   (CNN)           Lightweight convolutional model trained from scratch
+                            (no pretrained encoder). Fast and low-resource, but
+                            typically lower accuracy than transformer-based models.
+      lstm  (LSTM)          Lightweight recurrent model trained from scratch
+                            (no pretrained encoder). Similar trade-offs to CNN.
+
+    \b
+    MULTI-TASK TRAINING
+      Multiple tasks can be trained jointly using --task/-t to select which tasks to include.
+      Omitting --task will train on all tasks found in the dataset.
+
+    \b
+    ADDITIONAL HUGGINGFACE TRAINING ARGUMENTS
+      This command accepts all arguments supported by the HuggingFace Trainer
+      (e.g. --learning_rate, --num_train_epochs, --output_dir, --do_predict).
+      These are passed through directly and are not listed in the help below.
+      See: https://huggingface.co/docs/transformers/main/en/main_classes/trainer#transformers.TrainingArguments
+    """
+
+    # Warn if any explicitly-set args are incompatible with the selected model type.
+    compat_map = ctx.meta.get(_ARG_COMPAT_METADATA_KEY, {})
+    for param_name, compatible_types in compat_map.items():
+        if model_type.value not in compatible_types and (
+            ctx.get_parameter_source(param_name) == ParameterSource.COMMANDLINE
+        ):
+            cli_name = f"--{param_name.replace('_', '-')}"
+            compatible_str = "/".join(compatible_types)
+            typer.echo(
+                f"Warning: {cli_name} is only used for {compatible_str} models "
+                f"and will be ignored for model type '{model_type.value}'.",
+                err=True,
+            )
 
     # If the tokenizer wasn't explicitly specified and this is a model
     # that accepts an encoder, use the encoder's tokenizer.
     if ctx.get_parameter_source("tokenizer") != ParameterSource.COMMANDLINE and (
         model_type in (ModelType.HIER, ModelType.PROJ)
     ):
-        tokenizer = encoder_name
+        tokenizer = encoder
 
     dataset = CnlpDataset(
         data_dir=data_dir,
@@ -463,7 +511,7 @@ def train(
         config = HierarchicalModelConfig(
             tasks=list(dataset.tasks),
             vocab_size=len(dataset.tokenizer),
-            encoder_name=encoder_name,
+            encoder_name=encoder,
             layer=hier_use_layer,
             n_layers=hier_layers,
             d_inner=hier_hidden_dim,
@@ -476,7 +524,7 @@ def train(
         config = ProjectionModelConfig(
             tasks=list(dataset.tasks),
             vocab_size=len(dataset.tokenizer),
-            encoder_name=encoder_name,
+            encoder_name=encoder,
             encoder_layer=encoder_layer,
             use_prior_tasks=use_prior_tasks,
             classification_mode=classification_mode,
