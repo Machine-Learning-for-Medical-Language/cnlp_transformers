@@ -333,7 +333,7 @@ def train(
     #     MODEL ARGS     #
     # ------------------ #
     model_type: ModelTypeArg = ...,
-    encoder_name: EncoderArg = DEFAULT_ENCODER,
+    encoder: EncoderArg = DEFAULT_ENCODER,
     use_prior_tasks: UsePriorTasksArg = False,
     encoder_layer: EncoderLayerArg = -1,
     classification_mode: ClassificationModeArg = "cls",
@@ -418,12 +418,26 @@ def train(
       See: https://huggingface.co/docs/transformers/main/en/main_classes/trainer#transformers.TrainingArguments
     """
 
+    # Warn if any explicitly-set args are incompatible with the selected model type.
+    compat_map = ctx.meta.get(_ARG_COMPAT_METADATA_KEY, {})
+    for param_name, compatible_types in compat_map.items():
+        if model_type.value not in compatible_types and (
+            ctx.get_parameter_source(param_name) == ParameterSource.COMMANDLINE
+        ):
+            cli_name = f"--{param_name.replace('_', '-')}"
+            compatible_str = "/".join(compatible_types)
+            typer.echo(
+                f"Warning: {cli_name} is only used for {compatible_str} models "
+                f"and will be ignored for model type '{model_type.value}'.",
+                err=True,
+            )
+
     # If the tokenizer wasn't explicitly specified and this is a model
     # that accepts an encoder, use the encoder's tokenizer.
     if ctx.get_parameter_source("tokenizer") != ParameterSource.COMMANDLINE and (
         model_type in (ModelType.HIER, ModelType.PROJ)
     ):
-        tokenizer = encoder_name
+        tokenizer = encoder
 
     dataset = CnlpDataset(
         data_dir=data_dir,
@@ -497,7 +511,7 @@ def train(
         config = HierarchicalModelConfig(
             tasks=list(dataset.tasks),
             vocab_size=len(dataset.tokenizer),
-            encoder_name=encoder_name,
+            encoder_name=encoder,
             layer=hier_use_layer,
             n_layers=hier_layers,
             d_inner=hier_hidden_dim,
@@ -510,7 +524,7 @@ def train(
         config = ProjectionModelConfig(
             tasks=list(dataset.tasks),
             vocab_size=len(dataset.tokenizer),
-            encoder_name=encoder_name,
+            encoder_name=encoder,
             encoder_layer=encoder_layer,
             use_prior_tasks=use_prior_tasks,
             classification_mode=classification_mode,
