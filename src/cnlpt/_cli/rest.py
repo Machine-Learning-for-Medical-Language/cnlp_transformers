@@ -35,7 +35,13 @@ def rest(
         typer.Option(
             "--model",
             callback=parse_models,
-            help="Model definition as [ROUTER_PREFIX=]PATH_TO_MODEL. Route prefix must start with '/'. This option can be specified multiple times to serve multiple models simultaneously. Route prefixes are required when serving more than one model.",
+            help=(
+                "Model to serve, specified as PATH_TO_MODEL or ROUTE_PREFIX=PATH_TO_MODEL. "
+                "PATH_TO_MODEL can be a local directory or a HuggingFace model repository (e.g. 'mlml-chip/negation_pubmedbert_sharpseed'). "
+                "ROUTE_PREFIX must start with '/' and is required when serving more than one model. "
+                "This option can be repeated to serve multiple models simultaneously "
+                "(e.g. --model /negation=mlml-chip/negation_pubmedbert_sharpseed --model /temporal=mlml-chip/thyme2_colon_e2e)."
+            ),
         ),
     ],
     host: Annotated[
@@ -45,7 +51,34 @@ def rest(
         int, typer.Option("-p", "--port", help="Port to serve the REST app.")
     ] = 8000,
 ):
-    """Start a REST application from a model."""
+    """Start a REST API server for one or more cnlpt models.
+
+    Serves a FastAPI application with a /process endpoint that accepts text
+    (and optionally entity spans) and returns model predictions. Interactive
+    API documentation is available at /docs once the server is running.
+
+    \b
+    Examples:
+
+      Serve a single model from HuggingFace:
+
+        cnlpt rest --model mlml-chip/negation_pubmedbert_sharpseed
+
+      Serve a single model from a local directory:
+
+        cnlpt rest --model ./my_model --host 0.0.0.0 --port 9000
+
+      Serve multiple models simultaneously, each under its own route prefix:
+
+        cnlpt rest \\
+          --model /negation=mlml-chip/negation_pubmedbert_sharpseed \\
+          --model /temporal=mlml-chip/thyme2_colon_e2e
+
+    When serving multiple models, each model's /process endpoint is available
+    at ROUTE_PREFIX/process (e.g. /negation/process).
+
+    Interactive API documentation for all models is available at HOST:PORT/docs.
+    """
     import asyncio
     import logging
 
