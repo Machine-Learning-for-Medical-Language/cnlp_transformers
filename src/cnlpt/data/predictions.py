@@ -77,7 +77,9 @@ class CnlpPredictions:
             # and all the tasks must be classification. This reflects how we structure
             # the data during preprocessing.
             assert all(t.type == CLASSIFICATION for t in tasks)
-            task_labels = {t.name: self.raw.label_ids[:, t.index] for t in tasks}
+            task_labels = {
+                t.name: self.raw.label_ids[:, t.index].astype(int) for t in tasks
+            }
         else:
             assert self.raw.label_ids.ndim == 3
             # If our labels are 3 dimensional, then label_ids has shape (batch, max_seq, L)
