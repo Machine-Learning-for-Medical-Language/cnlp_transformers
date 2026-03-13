@@ -47,12 +47,6 @@ class CnlpTrainingArguments(TrainingArguments):
             "help": "Only optimize the bias parameters of the encoder (and the weights of the classifier heads), as proposed in the BitFit paper by Ben Zaken et al. 2021 (https://arxiv.org/abs/2106.10199)."
         },
     )
-    report_probs: bool = field(
-        default=False,
-        metadata={
-            "help": "If selected, probability scores will be added to the output prediction file for test data when used with --do_predict."
-        },
-    )
     evals_per_epoch: int = field(
         default=0,
         metadata={
