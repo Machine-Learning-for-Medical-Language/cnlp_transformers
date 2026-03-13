@@ -317,7 +317,6 @@ WeightClassesArg = Annotated[bool, training_arg_option("weight_classes")]
 FinalTaskWeightArg = Annotated[float, training_arg_option("final_task_weight")]
 FreezeEncoderArg = Annotated[float, training_arg_option("freeze_encoder")]
 BiasFitArg = Annotated[bool, training_arg_option("bias_fit")]
-ReportProbsArg = Annotated[bool, training_arg_option("report_probs")]
 EvalsPerEpochArg = Annotated[int, training_arg_option("evals_per_epoch")]
 RichDisplayArg = Annotated[bool, training_arg_option("rich_display")]
 LoggingStrategyArg = Annotated[
@@ -374,7 +373,6 @@ def train(
     final_task_weight: FinalTaskWeightArg = 1.0,
     freeze_encoder: FreezeEncoderArg = 0.0,
     bias_fit: BiasFitArg = False,
-    report_probs: ReportProbsArg = False,
     evals_per_epoch: EvalsPerEpochArg = 0,
     rich_display: RichDisplayArg = True,
     logging_strategy: LoggingStrategyArg = "epoch",
@@ -480,7 +478,6 @@ def train(
                 final_task_weight=final_task_weight,
                 freeze_encoder=freeze_encoder,
                 bias_fit=bias_fit,
-                report_probs=report_probs,
                 evals_per_epoch=evals_per_epoch,
                 rich_display=rich_display,
                 logging_strategy=logging_strategy,
