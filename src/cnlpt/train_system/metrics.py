@@ -2,7 +2,11 @@ from dataclasses import dataclass
 from typing import Union
 
 import numpy as np
-from sklearn.metrics import classification_report, roc_auc_score
+from sklearn.metrics import (
+    average_precision_score,
+    classification_report,
+    roc_auc_score,
+)
 
 from cnlpt.data import CLASSIFICATION
 
@@ -56,5 +60,11 @@ class TaskEvalPrediction:
             and self.probs is not None
         ):
             task_metrics["auroc"] = roc_auc_score(labels, self.probs[pred_inds[0], 1])
+            for label in self.task.labels:
+                task_metrics[f"{label}.auprc"] = average_precision_score(
+                    labels,
+                    self.probs[pred_inds[0], 1],
+                    pos_label=self.task.get_label_id(label),
+                )
 
         return {f"{self.task.name}.{key}": val for key, val in task_metrics.items()}
