@@ -3,9 +3,10 @@ from typing import Annotated, Any, Final, Union
 
 import typer
 from click.core import ParameterSource
+from rich.markup import escape as escape_rich_markup
 from transformers.hf_argparser import HfArgumentParser
 from transformers.models.auto.modeling_auto import AutoModel
-from transformers.trainer_utils import IntervalStrategy
+from transformers.trainer_utils import EvaluationStrategy, IntervalStrategy
 from transformers.training_args import TrainingArguments
 
 from ..data.cnlp_dataset import CnlpDataset, HierarchicalDataConfig, TruncationSide
@@ -47,9 +48,10 @@ def training_arg_option(
         aliases = (f"--{field_name}",)
     if compatibility is not None:
         kwargs["callback"] = compatible_models(compatibility)
+    help_str: str = escape_rich_markup(field.metadata.get("help", ""))
     return typer.Option(
         *aliases,
-        help=field.metadata.get("help", None),
+        help=help_str,
         rich_help_panel="CNLPT Training Arguments",
         **kwargs,
     )
@@ -75,6 +77,23 @@ def data_arg_option(
     return typer.Option(*args, rich_help_panel="Data Arguments", **kwargs)
 
 
+_PARAM_DEFAULTS: dict[str, Any] = {}
+
+
+def transformers_arg_option(field_name: str, *args, **kwargs):
+    field = CnlpTrainingArguments.__dataclass_fields__[field_name]
+    help_str: str = kwargs.get(
+        "help", escape_rich_markup(field.metadata.get("help", ""))
+    )
+    _PARAM_DEFAULTS[field.name] = field.default
+    return typer.Option(
+        *args,
+        help=help_str,
+        rich_help_panel="Common HF Transformers Arguments",
+        **kwargs,
+    )
+
+
 ##### MODEL ARGS #####
 ModelTypeArg = Annotated[
     ModelType,
@@ -88,7 +107,7 @@ EncoderArg = Annotated[
     str,
     model_arg_option(
         "--encoder",
-        compatibility=["proj", "hier"],
+        compatibility=[ModelType.PROJ, ModelType.HIER],
         help="For projection and hierarchical models, which encoder model to use.",
     ),
 ]
@@ -96,7 +115,7 @@ UsePriorTasksArg = Annotated[
     bool,
     model_arg_option(
         "--use_prior_tasks",
-        compatibility=["proj", "cnn"],
+        compatibility=[ModelType.PROJ, ModelType.CNN],
         help="For projection and CNN models, whether to use the output of prior tasks as an input to subsequent ones.",
     ),
 ]
@@ -105,15 +124,15 @@ EncoderLayerArg = Annotated[
     model_arg_option(
         "--encoder_layer",
         "--layer",
-        compatibility=["proj", "hier"],
-        help="For projection and hierarchical models, which layer of the encoder to use for representation.",
+        compatibility=[ModelType.PROJ],
+        help="For projection models, which layer of the encoder to use for representation.",
     ),
 ]
 ClassificationModeArg = Annotated[
     ClassificationMode,
     model_arg_option(
         "--classification_mode",
-        compatibility=["proj"],
+        compatibility=[ModelType.PROJ],
         help="For projection models, chooses whether to classify from the [CLS] token or from a token span tagged with <e></e>.",
         case_sensitive=False,
     ),
@@ -122,7 +141,7 @@ RelationAttnHeadsArg = Annotated[
     int,
     model_arg_option(
         "--relation_attn_heads",
-        compatibility=["proj"],
+        compatibility=[ModelType.PROJ],
         help="For projection models, the number of relation attention heads to use for relation extraction tasks.",
     ),
 ]
@@ -130,23 +149,23 @@ RelationAttnHeadDimArg = Annotated[
     int,
     model_arg_option(
         "--relation_attn_head_dim",
-        compatibility=["proj"],
+        compatibility=[ModelType.PROJ],
         help="For projection models, the dimension of attention heads for relation extraction tasks.",
     ),
 ]
-HierLayersArg = Annotated[
+HierNumLayersArg = Annotated[
     int,
     model_arg_option(
-        "--hier_layers",
-        compatibility=["hier"],
+        "--hier_n_layers",
+        compatibility=[ModelType.HIER],
         help="For hierarchical models, the number of hierarchical layers.",
     ),
 ]
 HierUseLayerArg = Annotated[
     int,
     model_arg_option(
-        "--hier_layers",
-        compatibility=["hier"],
+        "--hier_layer",
+        compatibility=[ModelType.HIER],
         help="For hierarchical models, the layer to use for classification.",
     ),
 ]
@@ -154,7 +173,7 @@ HierHiddenDimArg = Annotated[
     int,
     model_arg_option(
         "--hier_hidden_dim",
-        compatibility=["hier"],
+        compatibility=[ModelType.HIER],
         help="For hierarchical models, the hidden dimension of the FFN in each layer.",
     ),
 ]
@@ -162,7 +181,7 @@ HierHeadsArg = Annotated[
     int,
     model_arg_option(
         "--hier_heads",
-        compatibility=["hier"],
+        compatibility=[ModelType.HIER],
         help="For hierarchical models, the number of attention heads.",
     ),
 ]
@@ -170,7 +189,7 @@ HierQKDimArg = Annotated[
     int,
     model_arg_option(
         "--hier_qk_dim",
-        compatibility=["hier"],
+        compatibility=[ModelType.HIER],
         help="For hierarchical models, the dimension of the query and key vectors.",
     ),
 ]
@@ -178,7 +197,7 @@ HierVDimArg = Annotated[
     int,
     model_arg_option(
         "--hier_v_dim",
-        compatibility=["hier"],
+        compatibility=[ModelType.HIER],
         help="For hierarchical models, the dimension of the value vectors.",
     ),
 ]
@@ -187,7 +206,7 @@ DropoutArg = Annotated[
     float,
     model_arg_option(
         "--dropout",
-        compatibility=["hier", "cnn", "lstm"],
+        compatibility=[ModelType.HIER, ModelType.CNN, ModelType.LSTM],
         help="For hierarchical, CNN, and LSTM models, the dropout probability.",
     ),
 ]
@@ -195,7 +214,7 @@ EmbedDimArg = Annotated[
     int,
     model_arg_option(
         "--embed_dim",
-        compatibility=["cnn", "lstm"],
+        compatibility=[ModelType.CNN, ModelType.LSTM],
         help="For CNN and LSTM models, the embedding dimension.",
     ),
 ]
@@ -203,7 +222,7 @@ CnnNumFiltersArg = Annotated[
     int,
     model_arg_option(
         "--cnn_num_filters",
-        compatibility=["cnn"],
+        compatibility=[ModelType.CNN],
         help="For CNN models, the number of filters per filter size.",
     ),
 ]
@@ -211,7 +230,7 @@ CnnFilterSizesArg = Annotated[
     str,
     model_arg_option(
         "--cnn_filter_sizes",
-        compatibility=["cnn"],
+        compatibility=[ModelType.CNN],
         help="For CNN models, a comma-separated list of filter sizes to use.",
     ),
 ]
@@ -219,7 +238,7 @@ LstmHiddenSizeArg = Annotated[
     int,
     model_arg_option(
         "--lstm_hidden_size",
-        compatibility=["lstm"],
+        compatibility=[ModelType.LSTM],
         help="For LSTM models, the dimension of the hidden layer.",
     ),
 ]
@@ -251,7 +270,7 @@ TruncationSideArg = Annotated[
     data_arg_option(
         "--truncation_side",
         help="Which side to perform truncation when tokenizing. Note that hierarchical models don't support left-side truncation.",
-        compatibility=["cnn", "lstm", "proj"],
+        compatibility=[ModelType.PROJ, ModelType.CNN, ModelType.LSTM],
         case_sensitive=False,
     ),
 ]
@@ -325,6 +344,28 @@ LoggingStrategyArg = Annotated[
 ]
 LoggingFirstStepArg = Annotated[bool, training_arg_option("logging_first_step")]
 CacheDirArg = Annotated[Union[str, None], training_arg_option("cache_dir")]
+MetricForBestModelArg = Annotated[str, training_arg_option("metric_for_best_model")]
+
+
+##### COMMON HF TRANSFORMERS ARGS #####
+NumTrainEpochsArg = Annotated[
+    Union[float, None], transformers_arg_option("num_train_epochs")
+]
+PerDeviceTrainBatchSizeArg = Annotated[
+    Union[int, None], transformers_arg_option("per_device_train_batch_size")
+]
+GradientAccumulationStepsArg = Annotated[
+    Union[int, None], transformers_arg_option("gradient_accumulation_steps")
+]
+LearningRateArg = Annotated[
+    Union[float, None], transformers_arg_option("learning_rate")
+]
+DoTrainArg = Annotated[bool, transformers_arg_option("do_train", "--do_train")]
+DoEvalArg = Annotated[bool, transformers_arg_option("do_eval", "--do_eval")]
+DoPredictArg = Annotated[bool, transformers_arg_option("do_predict", "--do_predict")]
+EvalStrategyArg = Annotated[
+    EvaluationStrategy, transformers_arg_option("eval_strategy")
+]
 
 
 def train(
@@ -336,10 +377,10 @@ def train(
     encoder: EncoderArg = DEFAULT_ENCODER,
     use_prior_tasks: UsePriorTasksArg = False,
     encoder_layer: EncoderLayerArg = -1,
-    classification_mode: ClassificationModeArg = "cls",
+    classification_mode: ClassificationModeArg = ClassificationMode.CLS,
     relation_attn_heads: RelationAttnHeadsArg = 12,
     relation_attn_head_dim: RelationAttnHeadDimArg = 64,
-    hier_layers: HierLayersArg = 8,
+    hier_layers: HierNumLayersArg = 8,
     hier_use_layer: HierUseLayerArg = -1,
     hier_hidden_dim: HierHiddenDimArg = 2048,
     hier_heads: HierHeadsArg = 8,
@@ -356,7 +397,7 @@ def train(
     data_dir: DataDirArg = ...,
     task_names: TaskNamesArg = None,
     tokenizer: TokenizerArg = DEFAULT_ENCODER,
-    truncation_side: TruncationSideArg = "right",
+    truncation_side: TruncationSideArg = TruncationSide.RIGHT,
     max_seq_length: MaxSeqLengthArg = 128,
     overwrite_data_cache: OverwriteDataCacheArg = False,
     max_train: MaxTrainArg = None,
@@ -377,9 +418,25 @@ def train(
     report_probs: ReportProbsArg = False,
     evals_per_epoch: EvalsPerEpochArg = 0,
     rich_display: RichDisplayArg = True,
-    logging_strategy: LoggingStrategyArg = "epoch",
+    logging_strategy: LoggingStrategyArg = IntervalStrategy.EPOCH,
     logging_first_step: LoggingFirstStepArg = True,
     cache_dir: CacheDirArg = None,
+    metric_for_best_model: MetricForBestModelArg = "avg_macro_f1",
+    # ----------------------------------- #
+    #     COMMON HF TRANSFORMERS ARGS     #
+    # ----------------------------------- #
+    num_train_epochs: NumTrainEpochsArg = _PARAM_DEFAULTS["num_train_epochs"],
+    per_device_train_batch_size: PerDeviceTrainBatchSizeArg = _PARAM_DEFAULTS[
+        "per_device_train_batch_size"
+    ],
+    gradient_accumulation_steps: GradientAccumulationStepsArg = _PARAM_DEFAULTS[
+        "gradient_accumulation_steps"
+    ],
+    learning_rate: LearningRateArg = _PARAM_DEFAULTS["learning_rate"],
+    do_train: DoTrainArg = _PARAM_DEFAULTS["do_train"],
+    do_eval: DoEvalArg = _PARAM_DEFAULTS["do_eval"],
+    do_predict: DoPredictArg = _PARAM_DEFAULTS["do_predict"],
+    eval_strategy: EvalStrategyArg = _PARAM_DEFAULTS["eval_strategy"],
 ):
     """Train a model on one or more NLP tasks using the cnlp_transformers training system.
 
@@ -412,9 +469,8 @@ def train(
 
     \b
     ADDITIONAL HUGGINGFACE TRAINING ARGUMENTS
-      This command accepts all arguments supported by the HuggingFace Trainer
-      (e.g. --learning_rate, --num_train_epochs, --output_dir, --do_predict).
-      These are passed through directly and are not listed in the help below.
+      This command accepts all arguments supported by the HuggingFace Trainer.
+      These are passed through directly and are not all listed in the help below.
       See: https://huggingface.co/docs/transformers/main/en/main_classes/trainer#transformers.TrainingArguments
     """
 
@@ -476,6 +532,7 @@ def train(
         **(
             vars(hf_training_args)
             | dict(
+                # cnlpt training args
                 weight_classes=weight_classes,
                 final_task_weight=final_task_weight,
                 freeze_encoder=freeze_encoder,
@@ -485,6 +542,15 @@ def train(
                 rich_display=rich_display,
                 logging_strategy=logging_strategy,
                 logging_first_step=logging_first_step,
+                # hf transformers args
+                num_train_epochs=num_train_epochs,
+                per_device_train_batch_size=per_device_train_batch_size,
+                gradient_accumulation_steps=gradient_accumulation_steps,
+                learning_rate=learning_rate,
+                do_train=do_train,
+                do_eval=do_eval,
+                do_predict=do_predict,
+                eval_strategy=eval_strategy,
             )
         )
     )

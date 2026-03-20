@@ -69,8 +69,8 @@ class CnlpTrainingArguments(TrainingArguments):
 
     # override transformers TrainingArguments defaults
     logging_strategy: IntervalStrategy = field(
-        default="epoch",
-        metadata={"help": "The evaluation strategy to adopt during training."},
+        default=IntervalStrategy.EPOCH,
+        metadata={"help": "The logging strategy to adopt during training."},
     )
     logging_first_step: bool = field(
         default=True,
@@ -80,5 +80,11 @@ class CnlpTrainingArguments(TrainingArguments):
         default=None,
         metadata={
             "help": "Optionally override the HuggingFace cache directory.",
+        },
+    )
+    metric_for_best_model: Union[str, None] = field(
+        default="avg_macro_f1",
+        metadata={
+            "help": 'The metric to use to compare two different models. Average across tasks with "avg_[acc|macro_f1|micro_f1]". Optimize for a specific task with "taskname.[acc|macro_f1|micro_f1]". Optimize for a particular label with "taskname.labelname.f1". Average multiple metrics with "METRIC_1,METRIC_2".'
         },
     )
