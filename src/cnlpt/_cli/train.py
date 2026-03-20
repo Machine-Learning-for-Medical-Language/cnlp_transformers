@@ -6,7 +6,7 @@ from click.core import ParameterSource
 from rich.markup import escape as escape_rich_markup
 from transformers.hf_argparser import HfArgumentParser
 from transformers.models.auto.modeling_auto import AutoModel
-from transformers.trainer_utils import IntervalStrategy
+from transformers.trainer_utils import EvaluationStrategy, IntervalStrategy
 from transformers.training_args import TrainingArguments
 
 from ..data.cnlp_dataset import CnlpDataset, HierarchicalDataConfig, TruncationSide
@@ -80,15 +80,17 @@ def data_arg_option(
 _PARAM_DEFAULTS: dict[str, Any] = {}
 
 
-def transformers_arg_option(field_name: str, **kwargs):
+def transformers_arg_option(field_name: str, *args, **kwargs):
     field = CnlpTrainingArguments.__dataclass_fields__[field_name]
     help_str: str = kwargs.get(
         "help", escape_rich_markup(field.metadata.get("help", ""))
     )
     _PARAM_DEFAULTS[field.name] = field.default
     return typer.Option(
+        *args,
         help=help_str,
         rich_help_panel="Common HF Transformers Arguments",
+        **kwargs,
     )
 
 
@@ -358,6 +360,12 @@ GradientAccumulationStepsArg = Annotated[
 LearningRateArg = Annotated[
     Union[float, None], transformers_arg_option("learning_rate")
 ]
+DoTrainArg = Annotated[bool, transformers_arg_option("do_train", "--do_train")]
+DoEvalArg = Annotated[bool, transformers_arg_option("do_eval", "--do_eval")]
+DoPredictArg = Annotated[bool, transformers_arg_option("do_predict", "--do_predict")]
+EvalStrategyArg = Annotated[
+    EvaluationStrategy, transformers_arg_option("eval_strategy")
+]
 
 
 def train(
@@ -425,6 +433,10 @@ def train(
         "gradient_accumulation_steps"
     ],
     learning_rate: LearningRateArg = _PARAM_DEFAULTS["learning_rate"],
+    do_train: DoTrainArg = _PARAM_DEFAULTS["do_train"],
+    do_eval: DoEvalArg = _PARAM_DEFAULTS["do_eval"],
+    do_predict: DoPredictArg = _PARAM_DEFAULTS["do_predict"],
+    eval_strategy: EvalStrategyArg = _PARAM_DEFAULTS["eval_strategy"],
 ):
     """Train a model on one or more NLP tasks using the cnlp_transformers training system.
 
@@ -457,9 +469,8 @@ def train(
 
     \b
     ADDITIONAL HUGGINGFACE TRAINING ARGUMENTS
-      This command accepts all arguments supported by the HuggingFace Trainer
-      (e.g. --learning_rate, --num_train_epochs, --output_dir, --do_predict).
-      These are passed through directly and are not listed in the help below.
+      This command accepts all arguments supported by the HuggingFace Trainer.
+      These are passed through directly and are not all listed in the help below.
       See: https://huggingface.co/docs/transformers/main/en/main_classes/trainer#transformers.TrainingArguments
     """
 
@@ -536,6 +547,10 @@ def train(
                 per_device_train_batch_size=per_device_train_batch_size,
                 gradient_accumulation_steps=gradient_accumulation_steps,
                 learning_rate=learning_rate,
+                do_train=do_train,
+                do_eval=do_eval,
+                do_predict=do_predict,
+                eval_strategy=eval_strategy,
             )
         )
     )
