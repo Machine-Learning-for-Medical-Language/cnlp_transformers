@@ -79,6 +79,6 @@ class CnlpTrainingArguments(TrainingArguments):
     metric_for_best_model: Union[str, None] = field(
         default="avg_macro_f1",
         metadata={
-            "help": 'The metric to use to compare two different models. Average across tasks with "avg_[acc|macro_f1|micro_f1]". Optimize for a specific task with "taskname.[acc|macro_f1|micro_f1]". Optimize for a particular label with "taskname.labelname.f1". Average multiple metrics with "METRIC_1,METRIC_2".'
+            "help": 'The metric to use to compare two different models. Average across tasks with "avg_[acc|macro_f1|micro_f1]". Optimize for a specific task with "taskname.[acc|macro_f1|micro_f1]". Optimize for a particular label with "taskname.labelname.f1". For binary classification tasks, optimize for AUROC with "taskname.auroc" or for AUPRC with "taskname.labelname.auprc". Average multiple metrics with "METRIC_1,METRIC_2".'
         },
     )
