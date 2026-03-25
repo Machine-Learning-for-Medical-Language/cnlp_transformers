@@ -2,7 +2,13 @@ from dataclasses import dataclass
 from typing import Union
 
 import numpy as np
-from sklearn.metrics import classification_report
+from sklearn.metrics import (
+    average_precision_score,
+    classification_report,
+    roc_auc_score,
+)
+
+from cnlpt.data import CLASSIFICATION
 
 from ..data.preprocess import MASK_VALUE
 from ..data.task_info import TaskInfo
@@ -47,5 +53,18 @@ class TaskEvalPrediction:
             "micro_f1": report["weighted avg"]["f1-score"],
             **{f"{label}.f1": report[label]["f1-score"] for label in self.task.labels},
         }
+
+        if (
+            self.task.type == CLASSIFICATION
+            and len(self.task.labels) == 2
+            and self.probs is not None
+        ):
+            task_metrics["auroc"] = roc_auc_score(labels, self.probs[pred_inds[0], 1])
+            for label in self.task.labels:
+                task_metrics[f"{label}.auprc"] = average_precision_score(
+                    labels,
+                    self.probs[pred_inds[0], 1],
+                    pos_label=self.task.get_label_id(label),
+                )
 
         return {f"{self.task.name}.{key}": val for key, val in task_metrics.items()}

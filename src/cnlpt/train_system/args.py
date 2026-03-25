@@ -47,12 +47,6 @@ class CnlpTrainingArguments(TrainingArguments):
             "help": "Only optimize the bias parameters of the encoder (and the weights of the classifier heads), as proposed in the BitFit paper by Ben Zaken et al. 2021 (https://arxiv.org/abs/2106.10199)."
         },
     )
-    report_probs: bool = field(
-        default=False,
-        metadata={
-            "help": "If selected, probability scores will be added to the output prediction file for test data when used with --do_predict."
-        },
-    )
     evals_per_epoch: int = field(
         default=0,
         metadata={
@@ -85,6 +79,6 @@ class CnlpTrainingArguments(TrainingArguments):
     metric_for_best_model: Union[str, None] = field(
         default="avg_macro_f1",
         metadata={
-            "help": 'The metric to use to compare two different models. Average across tasks with "avg_[acc|macro_f1|micro_f1]". Optimize for a specific task with "taskname.[acc|macro_f1|micro_f1]". Optimize for a particular label with "taskname.labelname.f1". Average multiple metrics with "METRIC_1,METRIC_2".'
+            "help": 'The metric to use to compare two different models. Average across tasks with "avg_[acc|macro_f1|micro_f1]". Optimize for a specific task with "taskname.[acc|macro_f1|micro_f1]". Optimize for a particular label with "taskname.labelname.f1". For binary classification tasks, optimize for AUROC with "taskname.auroc" or for AUPRC with "taskname.labelname.auprc". Average multiple metrics with "METRIC_1,METRIC_2".'
         },
     )
