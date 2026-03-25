@@ -1,5 +1,5 @@
 import os
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any
 
 from rich.console import Console
 from rich.live import Live
@@ -46,9 +46,9 @@ class TrainSystemDisplay:
             auto_refresh=False,
             transient=True,
         )
-        self.training_task: Union[TaskID, None] = None
-        self.epoch_task: Union[TaskID, None] = None
-        self.eval_task: Union[TaskID, None] = None
+        self.training_task: TaskID | None = None
+        self.epoch_task: TaskID | None = None
+        self.eval_task: TaskID | None = None
 
         self.live = Live(self.panel(), console=console)
 

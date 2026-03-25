@@ -1,6 +1,5 @@
 import logging
 from collections.abc import Iterable
-from typing import Union
 
 import polars as pl
 import torch
@@ -23,7 +22,7 @@ from ..modeling.load import try_load_config
 
 class InputDocument(BaseModel):
     text: str
-    entity_spans: Union[list[tuple[int, int]], None] = None
+    entity_spans: list[tuple[int, int]] | None = None
 
     def to_text_list(self):
         if self.entity_spans is None:
@@ -114,7 +113,7 @@ class CnlpRestApp:
         self,
         text: list[str],
         max_seq_length: int = 128,
-        hier_data_config: Union[HierarchicalDataConfig, None] = None,
+        hier_data_config: HierarchicalDataConfig | None = None,
     ):
         dataset = Dataset.from_dict({"text": text})
 
@@ -181,8 +180,8 @@ class CnlpRestApp:
         self,
         input_doc: InputDocument,
         max_seq_length: int = 128,
-        chunk_len: Union[int, None] = None,
-        num_chunks: Union[int, None] = None,
+        chunk_len: int | None = None,
+        num_chunks: int | None = None,
         prepend_empty_chunk: bool = False,
     ):
         if isinstance(self.config, HierarchicalModelConfig):

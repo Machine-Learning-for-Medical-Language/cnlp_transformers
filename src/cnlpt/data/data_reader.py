@@ -1,7 +1,7 @@
 import json
 import os
 from collections.abc import Iterable
-from typing import Any, Final, Literal, Union, cast
+from typing import Any, Final, Literal, cast
 
 from datasets import Dataset, DatasetDict, concatenate_datasets, load_dataset
 
@@ -21,7 +21,7 @@ RESERVED_COLUMN_NAMES: Final = ("id", "text", "text_a", "text_b")
 NONE_VALUE: Final = "__None__"
 
 
-def _infer_split(filepath: Union[str, os.PathLike]) -> DatasetSplit:
+def _infer_split(filepath: str | os.PathLike) -> DatasetSplit:
     _dir, filename = os.path.split(filepath)
     root, _ext = os.path.splitext(filename)
 
@@ -106,7 +106,7 @@ class CnlpDataReader:
                 return task
         raise ValueError(f'task with name "{task_name}" not found')
 
-    def get_tasks(self, task_names: Union[Iterable[str], None] = None):
+    def get_tasks(self, task_names: Iterable[str] | None = None):
         """Get all or some subset of the tasks in the data.
 
         The `TaskInfo` objects returned by this method will have their `index` property
@@ -198,8 +198,8 @@ class CnlpDataReader:
 
     def load_json(
         self,
-        json_filepath: Union[str, os.PathLike],
-        split: Union[DatasetSplit, None] = None,
+        json_filepath: str | os.PathLike,
+        split: DatasetSplit | None = None,
     ):
         """Update this reader with new data from a CNLP-formatted json file.
 
@@ -274,8 +274,8 @@ class CnlpDataReader:
 
     def load_csv(
         self,
-        csv_filepath: Union[str, os.PathLike],
-        split: Union[DatasetSplit, None] = None,
+        csv_filepath: str | os.PathLike,
+        split: DatasetSplit | None = None,
         sep: str = ",",
     ):
         """Update this reader with new data from a CNLP-formatted csv (or tsv) file.
@@ -299,7 +299,7 @@ class CnlpDataReader:
         tasks = _infer_tasks(dataset[split])
         self._extend(dataset, tasks)
 
-    def load_dir(self, data_dir: Union[str, os.PathLike]):
+    def load_dir(self, data_dir: str | os.PathLike):
         """Update this reader with new data from a directory containing CNLP-formatted data.
 
         This will search (non-recursively) for files named "train", "test", "validation", "valid", or "dev",

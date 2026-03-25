@@ -11,26 +11,25 @@ authors = [
 description = "Transformers for Clinical NLP"
 
 readme = "README.md"
-requires-python = ">=3.9, <3.13"
+requires-python = ">=3.10, <3.15"
 dependencies = [
-    "anaforatools~=1.1.0",
-    "datasets~=2.21.0",
-    "fastapi~=0.115.2",
+    "datasets>=4.4.0",
+    "fastapi>=0.115.2",
     "httpx>=0.27.2",
     "huggingface-hub>=0.9.0",
-    "nltk~=3.5",
-    "numpy~=2.0.2",
-    "pandas~=2.2.3",
+    "nltk>=3.5",
+    "numpy>=2.0.2",
+    "pandas>=2.2.3",               # legacy
     "polars>=1.30.0",
-    "pydantic~=1.10.8",
-    "requests~=2.32.2",
+    "pydantic>=1.10.8",
+    "requests>=2.32.2",
     "rich>=14.0.0",
-    "scikit-learn~=1.5.2",
-    "seqeval~=1.2.2",
-    "torch>=2.6",
-    "transformers[torch]~=4.51",
-    "typer~=0.16.0",
-    "uvicorn[standard]~=0.32.0",
+    "scikit-learn>=1.5.2",
+    "seqeval>=1.2.2",              # legacy
+    "torch>=2.11.0",
+    "transformers[torch]==4.56.1",
+    "typer>=0.16.0",
+    "uvicorn[standard]>=0.32.0",
 ]
 
 classifiers = [
@@ -89,7 +88,6 @@ select = [
     "I",   # isort
     "UP",  # pyupgrade
     "G",   # logging
-    "FA",  # future annotations
     "PIE", # misc
     "RUF", # misc
 ]
@@ -98,13 +96,6 @@ ignore = [
     "G003", # string concatenation logging statements
     "G004", # f-strings in logging statements
 ]
-
-[tool.ruff.lint.pyupgrade]
-# Preserve Union types, despite alternate 'X | Y' syntax being available via __future__ annotations module.
-# This is necessary because fastAPI and pydantic parse type annotations at runtime, and since the new syntax is
-# a python 3.10 feature they don't expect it in python 3.9.
-# This can be removed if/when we stop supporting python 3.9.
-keep-runtime-typing = true
 
 [tool.uv]
 cache-keys = [{ git = { commit = true, tags = true } }]

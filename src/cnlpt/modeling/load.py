@@ -1,5 +1,3 @@
-from typing import Union
-
 from transformers.configuration_utils import PretrainedConfig
 from transformers.modeling_utils import PreTrainedModel
 from transformers.models.auto.configuration_auto import AutoConfig
@@ -16,9 +14,7 @@ from .config import (
 
 def try_load_config(
     model_name_or_path: str,
-) -> Union[
-    ProjectionModelConfig, CnnModelConfig, HierarchicalModelConfig, LstmModelConfig
-]:
+) -> ProjectionModelConfig | CnnModelConfig | HierarchicalModelConfig | LstmModelConfig:
     """Load a model config, potentially for a model created with an earlier version of CNLPT.
 
     Args:

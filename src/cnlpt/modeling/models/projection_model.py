@@ -5,7 +5,6 @@ Module containing the CNLP transformer model.
 from __future__ import annotations
 
 import logging
-from typing import Union
 
 import torch
 from torch import nn
@@ -29,7 +28,7 @@ class ProjectionModel(PreTrainedModel):
         self,
         config: ProjectionModelConfig,
         *,
-        class_weights: Union[dict[str, torch.FloatTensor], None] = None,
+        class_weights: dict[str, torch.FloatTensor] | None = None,
         final_task_weight: float = 1.0,
         freeze: float = -1.0,
         bias_fit: bool = False,
