@@ -1,5 +1,5 @@
 import os
-from typing import Any, Literal, Union
+from typing import Any, Literal
 
 from ...data.task_info import TaskInfo
 from .base_config import BaseConfigWithEncoder
@@ -11,9 +11,9 @@ class ProjectionModelConfig(BaseConfigWithEncoder):
     def __init__(
         self,
         *,
-        tasks: Union[list[dict[str, Any]], list[TaskInfo], None] = None,
-        vocab_size: Union[int, None] = None,
-        encoder_name: Union[str, os.PathLike] = "roberta-base",
+        tasks: list[dict[str, Any]] | list[TaskInfo] | None = None,
+        vocab_size: int | None = None,
+        encoder_name: str | os.PathLike = "roberta-base",
         encoder_layer: int = -1,
         use_prior_tasks: bool = False,
         classification_mode: Literal["cls", "tagged"] = "cls",

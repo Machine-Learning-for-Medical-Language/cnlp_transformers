@@ -1,5 +1,5 @@
 from dataclasses import asdict
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING
 
 from transformers.trainer_callback import (
     TrainerCallback,
@@ -118,7 +118,7 @@ class DisplayCallback(TrainerCallback):
         args: TrainingArguments,
         state: TrainerState,
         control: TrainerControl,
-        logs: Union[dict[str, float], None] = None,
+        logs: dict[str, float] | None = None,
         **kwargs,
     ):
         if logs is not None and "loss" in logs:
@@ -172,7 +172,7 @@ class BasicLoggingCallback(TrainerCallback):
         args: TrainingArguments,
         state: TrainerState,
         control: TrainerControl,
-        logs: Union[dict[str, float], None] = None,
+        logs: dict[str, float] | None = None,
         **kwargs,
     ):
         if logs is not None:

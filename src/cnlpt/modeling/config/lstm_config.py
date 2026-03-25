@@ -1,4 +1,4 @@
-from typing import Any, Union
+from typing import Any
 
 from ...data.task_info import CLASSIFICATION, TaskInfo
 from .base_config import BaseConfig
@@ -10,8 +10,8 @@ class LstmModelConfig(BaseConfig):
     def __init__(
         self,
         *,
-        tasks: Union[list[dict[str, Any]], list[TaskInfo], None] = None,
-        vocab_size: Union[int, None] = None,
+        tasks: list[dict[str, Any]] | list[TaskInfo] | None = None,
+        vocab_size: int | None = None,
         embed_dim: int = 100,
         hidden_size: int = 100,
         dropout: float = 0.2,

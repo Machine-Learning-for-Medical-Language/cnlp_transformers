@@ -88,7 +88,6 @@ select = [
     "I",   # isort
     "UP",  # pyupgrade
     "G",   # logging
-    "FA",  # future annotations
     "PIE", # misc
     "RUF", # misc
 ]
@@ -97,13 +96,6 @@ ignore = [
     "G003", # string concatenation logging statements
     "G004", # f-strings in logging statements
 ]
-
-[tool.ruff.lint.pyupgrade]
-# Preserve Union types, despite alternate 'X | Y' syntax being available via __future__ annotations module.
-# This is necessary because fastAPI and pydantic parse type annotations at runtime, and since the new syntax is
-# a python 3.10 feature they don't expect it in python 3.9.
-# This can be removed if/when we stop supporting python 3.9.
-keep-runtime-typing = true
 
 [tool.uv]
 cache-keys = [{ git = { commit = true, tags = true } }]

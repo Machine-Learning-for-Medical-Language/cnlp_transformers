@@ -1,6 +1,6 @@
 import logging
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, Final, Union
+from typing import TYPE_CHECKING, Any, Final
 
 import numpy as np
 from transformers.tokenization_utils import PreTrainedTokenizer
@@ -17,13 +17,13 @@ MASK_VALUE: Final = -100
 
 
 def preprocess_raw_data(
-    batch: dict[str, Union[list[str], list[int], list[float]]],
+    batch: dict[str, list[str] | list[int] | list[float]],
     tokenizer: PreTrainedTokenizer,
-    tasks: Union[Iterable[TaskInfo], None],
-    max_length: Union[int, None] = None,
+    tasks: Iterable[TaskInfo] | None,
+    max_length: int | None = None,
     inference_only: bool = False,
     character_level: bool = False,
-    hier_config: Union["HierarchicalDataConfig", None] = None,
+    hier_config: "HierarchicalDataConfig | None" = None,
 ) -> BatchEncoding:
     """Preprocess raw CNLP data for training/evaluation.
 
@@ -248,7 +248,7 @@ def _get_word_ids(
     tokenizer: PreTrainedTokenizer,
     tokenized_input: BatchEncoding,
     character_level: bool,
-) -> list[list[Union[int, None]]]:
+) -> list[list[int | None]]:
     if tokenizer.is_fast:
         return [
             tokenized_input.word_ids(i) for i in range(len(tokenized_input.input_ids))
@@ -267,9 +267,9 @@ def _get_word_ids(
             ]
         )
 
-        def get_word_ids(indices: Iterable[int]) -> list[Union[int, None]]:
+        def get_word_ids(indices: Iterable[int]) -> list[int | None]:
             current = 0
-            raw: list[Union[int, None]] = []
+            raw: list[int | None] = []
             for index in indices:
                 if index in special_token_ids:
                     raw.append(None)
@@ -290,9 +290,9 @@ def _get_word_ids(
 
 
 def _tokenize_batch(
-    batch: dict[str, Union[list[str], list[int], list[float]]],
+    batch: dict[str, list[str] | list[int] | list[float]],
     tokenizer: PreTrainedTokenizer,
-    max_length: Union[int, None],
+    max_length: int | None,
     hierarchical: bool,
     character_level: bool,
 ) -> BatchEncoding:
@@ -339,9 +339,7 @@ def _tokenize_batch(
     return tokenized_batch
 
 
-def _preprocess_raw_labels(
-    raw: Union[list[str], list[int], list[float]], task: TaskInfo
-):
+def _preprocess_raw_labels(raw: list[str] | list[int] | list[float], task: TaskInfo):
     mask_missing: Final = {MISSING_DATA_STR: MASK_VALUE}
     if task.type == CLASSIFICATION:
         # labels is just a list of one label for each instance
@@ -356,7 +354,7 @@ def _preprocess_raw_labels(
             for tags in raw
         ]
     elif task.type == RELATIONS:
-        preprocessed: list[Union[list[str], list[tuple[int, int, int]]]] = []
+        preprocessed: list[list[str] | list[tuple[int, int, int]]] = []
         for relations in raw:
             if relations in (None, "None"):
                 preprocessed.append(["None"])
@@ -483,7 +481,7 @@ def _build_labels_for_task(
     labels: list[tuple[Any, ...]],
     max_length: int,
     pad_classification: bool,
-) -> Union[np.ndarray, list[np.ndarray]]:
+) -> np.ndarray | list[np.ndarray]:
     if task.type == TAGGING:
         return _get_tagging_labels(task, tokenized_input, labels)
     elif task.type == RELATIONS:

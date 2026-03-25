@@ -2,7 +2,7 @@ import os
 from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
-from typing import Literal, Union
+from typing import Literal
 
 import torch
 from datasets import Dataset
@@ -22,7 +22,7 @@ class HierarchicalDataConfig:
 
 def load_tokenizer(
     model_name_or_path: str,
-    hf_cache_dir: Union[str, None] = None,
+    hf_cache_dir: str | None = None,
     truncation_side: Literal["left", "right"] = "right",
     character_level: bool = False,
 ) -> PreTrainedTokenizer:
@@ -50,19 +50,19 @@ class CnlpDataset:
 
     def __init__(
         self,
-        data_dir: Union[str, os.PathLike],
-        tokenizer: Union[str, PreTrainedTokenizer] = "roberta-base",
-        task_names: Union[list[str], None] = None,
-        hier_config: Union[HierarchicalDataConfig, None] = None,
+        data_dir: str | os.PathLike,
+        tokenizer: str | PreTrainedTokenizer = "roberta-base",
+        task_names: list[str] | None = None,
+        hier_config: HierarchicalDataConfig | None = None,
         truncation_side: TruncationSide = TruncationSide.RIGHT,
         max_seq_length: int = 128,
         use_data_cache: bool = True,
-        max_train: Union[int, None] = None,
-        max_eval: Union[int, None] = None,
-        max_test: Union[int, None] = None,
+        max_train: int | None = None,
+        max_eval: int | None = None,
+        max_test: int | None = None,
         allow_disjoint_labels: bool = False,
         character_level: bool = False,
-        hf_cache_dir: Union[str, None] = None,
+        hf_cache_dir: str | None = None,
     ):
         """Create a new `CnlpDataset`.
 

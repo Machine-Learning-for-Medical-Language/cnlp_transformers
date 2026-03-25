@@ -1,7 +1,6 @@
 import contextlib
 import math
 import os
-from typing import Union
 
 import numpy as np
 import numpy.typing as npt
@@ -23,7 +22,7 @@ from .utils import simple_softmax
 class CnlpTrainSystem:
     def __init__(
         self,
-        model: Union[CnnModel, LstmModel, HierarchicalModel, ProjectionModel],
+        model: CnnModel | LstmModel | HierarchicalModel | ProjectionModel,
         dataset: CnlpDataset,
         training_args: CnlpTrainingArguments,
     ):
@@ -75,7 +74,7 @@ class CnlpTrainSystem:
         task_label_offset = 0
 
         for task in self.dataset.tasks:
-            probs: Union[npt.NDArray[np.float64], None] = None
+            probs: npt.NDArray[np.float64] | None = None
 
             raw_preds = p.predictions[task.index]
             if task.type == TAGGING:
@@ -91,7 +90,7 @@ class CnlpTrainSystem:
                         axis=1,
                     )
 
-            labels: Union[npt.NDArray[np.int64], None]
+            labels: npt.NDArray[np.int64] | None
             task_label_width = 0
 
             label_ids: npt.NDArray[np.int64] | None = getattr(p, "label_ids", None)
@@ -250,7 +249,7 @@ class CnlpTrainSystem:
         with self._trainer() as trainer:
             return self._evaluate(trainer)
 
-    def predict(self, dataset: Union[Dataset, None] = None) -> CnlpPredictions:
+    def predict(self, dataset: Dataset | None = None) -> CnlpPredictions:
         """Run predictions on the test set.
 
         Args:

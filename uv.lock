@@ -185,18 +185,6 @@ wheels = [
 ]
 
 [[package]]
-name = "anaforatools"
-version = "1.2.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "regex" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/9e/1a/4b495314f4557147edc601cee45952322a7fed9ce07339b48d8f823dfde1/anaforatools-1.2.0.tar.gz", hash = "sha256:d4c65002ad8cb2f37852e430d6cd3a8e406a66995678a640b760ecc42667b2fe", size = 7174085, upload-time = "2022-09-14T21:18:20.629Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/81/81/e0c13cbfbe0cbdc0adf3f52c27b4c84f4860ebfdb4cf8fc6503b23444062/anaforatools-1.2.0-py3-none-any.whl", hash = "sha256:401c9ef1265dffa1f77b03439e2ec51b668702ed6fbc102b1a2d2b6d09bad881", size = 1966734, upload-time = "2022-09-14T21:18:01.738Z" },
-]
-
-[[package]]
 name = "annotated-doc"
 version = "0.0.4"
 source = { registry = "https://pypi.org/simple" }
@@ -519,7 +507,6 @@ wheels = [
 name = "cnlp-transformers"
 source = { editable = "." }
 dependencies = [
-    { name = "anaforatools" },
     { name = "datasets" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -591,7 +578,6 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anaforatools", specifier = ">=1.1.0" },
     { name = "datasets", specifier = ">=4.4.0" },
     { name = "fastapi", specifier = ">=0.115.2" },
     { name = "httpx", specifier = ">=0.27.2" },
