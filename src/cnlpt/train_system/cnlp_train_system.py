@@ -84,11 +84,7 @@ class CnlpTrainSystem:
                 preds = np.argmax(raw_preds, axis=3)
             else:
                 preds = np.argmax(raw_preds, axis=1)
-                if self.args.report_probs:
-                    probs = np.max(
-                        [simple_softmax(logits) for logits in raw_preds],
-                        axis=1,
-                    )
+                probs = np.array([simple_softmax(logits) for logits in raw_preds])
 
             labels: npt.NDArray[np.int64] | None
             task_label_width = 0
