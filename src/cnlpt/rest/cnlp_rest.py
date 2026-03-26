@@ -1,4 +1,5 @@
 import logging
+import re
 from collections.abc import Iterable
 from typing import Union
 
@@ -19,6 +20,15 @@ from ..data.preprocess import preprocess_raw_data
 from ..data.task_info import CLASSIFICATION, RELATIONS, TAGGING, TaskInfo
 from ..modeling.config.hierarchical_config import HierarchicalModelConfig
 from ..modeling.load import try_load_config
+
+
+# Splits on sentence-ending punctuation followed by whitespace + uppercase —
+# reliable for LLM-generated clinical prose.
+_SENTENCE_RE = re.compile(r'(?<=[.!?])\s+(?=[A-Z])')
+
+
+def _split_sentences(text: str) -> list[str]:
+    return [s.strip() for s in _SENTENCE_RE.split(text.strip()) if s.strip()]
 
 
 class InputDocument(BaseModel):
@@ -177,6 +187,165 @@ class CnlpRestApp:
 
         return df.to_dicts()
 
+    def _compute_attributions(
+        self,
+        text_list: list[str],
+        max_seq_length: int = 128,
+    ) -> list[dict[str, list[dict]]]:
+        """Compute input × gradient token-level saliency for each task.
+
+        For every (input, task) pair runs a single forward+backward pass and
+        returns per-token scores as the L2 norm of (gradient × embedding),
+        normalized to [0, 1] within each sample.
+
+        Returns a list (one entry per input text) of dicts mapping task name
+        to a list of {"token": str, "score": float} objects, one per
+        non-padding token.
+        """
+        if not hasattr(self.model.encoder, "embeddings"):
+            raise NotImplementedError(
+                "Input × gradient attribution is only supported for encoder "
+                "architectures that expose an 'embeddings' submodule (e.g. BERT)."
+            )
+
+        encoding = self.tokenizer(
+            text_list,
+            max_length=max_seq_length,
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt",
+        )
+        input_ids = encoding["input_ids"].to(self.device)
+        attention_mask = encoding["attention_mask"].to(self.device)
+        token_type_ids = encoding.get("token_type_ids")
+        if token_type_ids is not None:
+            token_type_ids = token_type_ids.to(self.device)
+
+        # Compute full input embeddings (word + position + token_type) once,
+        # outside the gradient tape.
+        embed_kwargs: dict = {"input_ids": input_ids}
+        if token_type_ids is not None:
+            embed_kwargs["token_type_ids"] = token_type_ids
+        with torch.no_grad():
+            base_embeds = self.model.encoder.embeddings(**embed_kwargs)
+
+        self.model.eval()
+        results_per_task: dict[str, list] = {}
+
+        for task_ind, task in enumerate(self.tasks):
+            # Fresh leaf tensor per task so gradients don't accumulate.
+            inputs_embeds = base_embeds.detach().requires_grad_(True)
+
+            output = self.model(
+                inputs_embeds=inputs_embeds,
+                attention_mask=attention_mask,
+            )
+            task_logits = output.logits[task_ind]  # (batch, num_labels)
+
+            # Differentiate the predicted-class score summed over the batch.
+            pred_classes = task_logits.argmax(dim=-1)
+            score = task_logits[torch.arange(len(text_list)), pred_classes].sum()
+            score.backward()
+
+            # Input × gradient, L2-normed over the hidden dimension → (batch, seq)
+            grad = inputs_embeds.grad
+            saliency = (grad * inputs_embeds.detach()).norm(dim=-1)
+
+            # Zero out padding, then normalize each sample to [0, 1].
+            saliency = saliency * attention_mask.float()
+            saliency_max = saliency.max(dim=-1, keepdim=True).values.clamp(min=1e-10)
+            saliency = (saliency / saliency_max).detach().cpu()
+
+            input_ids_cpu = input_ids.cpu()
+            attn_cpu = attention_mask.cpu()
+
+            task_results = []
+            for i in range(len(text_list)):
+                tokens = self.tokenizer.convert_ids_to_tokens(input_ids_cpu[i])
+                task_results.append(
+                    [
+                        {"token": tok, "score": round(saliency[i, j].item(), 4)}
+                        for j, (tok, m) in enumerate(zip(tokens, attn_cpu[i]))
+                        if m == 1
+                    ]
+                )
+            results_per_task[task.name] = task_results
+
+        return [
+            {
+                task_name: task_results[i]
+                for task_name, task_results in results_per_task.items()
+            }
+            for i in range(len(text_list))
+        ]
+
+    def _compute_sentence_attributions(
+        self,
+        text_list: list[str],
+        max_seq_length: int = 128,
+    ) -> list[dict[str, list[dict]]]:
+        """Leave-one-sentence-out ablation for each task.
+
+        For each sentence, removes it from the input and computes:
+            score = p(predicted_class | full text) - p(predicted_class | text without sentence)
+
+        Positive: the sentence supports the prediction.
+        Negative: the sentence suppresses it.
+
+        Returns a list (one per input text) of dicts mapping task name to a list
+        of {"sentence": str, "score": float} objects.
+        """
+        self.model.eval()
+        all_results: list[dict[str, list[dict]]] = []
+
+        for text in text_list:
+            sentences = _split_sentences(text)
+
+            if len(sentences) < 2:
+                all_results.append(
+                    {task.name: [{"sentence": s, "score": 0.0} for s in sentences]
+                     for task in self.tasks}
+                )
+                continue
+
+            # index 0 = full text, indices 1..N = each sentence removed
+            ablated = [
+                " ".join(s for j, s in enumerate(sentences) if j != i)
+                for i in range(len(sentences))
+            ]
+            batch_texts = [text] + ablated
+
+            encoding = self.tokenizer(
+                batch_texts,
+                max_length=max_seq_length,
+                padding="max_length",
+                truncation=True,
+                return_tensors="pt",
+            )
+            input_ids = encoding["input_ids"].to(self.device)
+            attention_mask = encoding["attention_mask"].to(self.device)
+
+            with torch.no_grad():
+                output = self.model(input_ids=input_ids, attention_mask=attention_mask)
+
+            task_results: dict[str, list[dict]] = {}
+            for task_ind, task in enumerate(self.tasks):
+                probs = torch.softmax(output.logits[task_ind], dim=-1)
+                pred_class = probs[0].argmax().item()
+                baseline_prob = probs[0, pred_class].item()
+
+                task_results[task.name] = [
+                    {
+                        "sentence": sent,
+                        "score": round(baseline_prob - probs[i + 1, pred_class].item(), 4),
+                    }
+                    for i, sent in enumerate(sentences)
+                ]
+
+            all_results.append(task_results)
+
+        return all_results
+
     def process(
         self,
         input_doc: InputDocument,
@@ -184,6 +353,8 @@ class CnlpRestApp:
         chunk_len: Union[int, None] = None,
         num_chunks: Union[int, None] = None,
         prepend_empty_chunk: bool = False,
+        return_attributions: bool = False,
+        return_sentence_attributions: bool = False,
     ):
         if isinstance(self.config, HierarchicalModelConfig):
             hier_data_config = HierarchicalDataConfig(
@@ -194,11 +365,26 @@ class CnlpRestApp:
         else:
             hier_data_config = None
 
-        dataset = self.create_prediction_dataset(
-            input_doc.to_text_list(), max_seq_length, hier_data_config
-        )
+        text_list = input_doc.to_text_list()
+        dataset = self.create_prediction_dataset(text_list, max_seq_length, hier_data_config)
         predictions = self.predict(dataset, max_seq_length)
-        return self.format_predictions(predictions)
+        results = self.format_predictions(predictions)
+
+        if return_attributions:
+            attributions = self._compute_attributions(text_list, max_seq_length)
+            for result, doc_attrs in zip(results, attributions):
+                for task_name, token_scores in doc_attrs.items():
+                    if task_name in result:
+                        result[task_name]["attributions"] = token_scores
+
+        if return_sentence_attributions:
+            sent_attrs = self._compute_sentence_attributions(text_list, max_seq_length)
+            for result, doc_attrs in zip(results, sent_attrs):
+                for task_name, sentence_scores in doc_attrs.items():
+                    if task_name in result:
+                        result[task_name]["sentence_attributions"] = sentence_scores
+
+        return results
 
     def router(self, prefix: str = ""):
         router = APIRouter(prefix=prefix)
