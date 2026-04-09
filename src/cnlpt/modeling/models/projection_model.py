@@ -293,7 +293,7 @@ class ProjectionModel(PreTrainedModel):
 
         outputs = self.encoder(input_ids, **kwargs)
 
-        batch_size, seq_len = input_ids.shape
+        batch_size, seq_len, _ = outputs.last_hidden_state.shape
 
         logits = []
 
