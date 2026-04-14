@@ -51,6 +51,9 @@ Homepage = "https://github.com/Machine-Learning-for-Medical-Language/cnlp_transf
 where = ["src"]
 include = ["cnlpt*"]
 
+[tool.setuptools.package-data]
+"cnlpt.rest" = ["*.html"]
+
 [dependency-groups]
 lint = [
     "ruff==0.11.8", # same as in pre-commit hooks and CI

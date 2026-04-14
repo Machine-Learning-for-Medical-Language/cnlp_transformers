@@ -1,12 +1,14 @@
 import logging
 import re
 from collections.abc import Iterable
+from importlib.resources import files
 from typing import Union
 
 import polars as pl
 import torch
 from datasets import Dataset
 from fastapi import APIRouter, FastAPI
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from transformers.models.auto.modeling_auto import AutoModel
 from transformers.trainer import Trainer
@@ -21,10 +23,8 @@ from ..data.task_info import CLASSIFICATION, RELATIONS, TAGGING, TaskInfo
 from ..modeling.config.hierarchical_config import HierarchicalModelConfig
 from ..modeling.load import try_load_config
 
-
-# Splits on sentence-ending punctuation followed by whitespace + uppercase —
-# reliable for LLM-generated clinical prose.
-_SENTENCE_RE = re.compile(r'(?<=[.!?])\s+(?=[A-Z])')
+# Splits on sentence-ending punctuation followed by whitespace + uppercase
+_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
 
 
 def _split_sentences(text: str) -> list[str]:
@@ -192,19 +192,29 @@ class CnlpRestApp:
         text_list: list[str],
         max_seq_length: int = 128,
     ) -> list[dict[str, list[dict]]]:
-        """Compute input × gradient token-level saliency for each task.
+        """Compute signed per-class input x gradient token-level attributions.
 
-        For every (input, task) pair runs a single forward+backward pass and
-        returns per-token scores as the L2 norm of (gradient × embedding),
-        normalized to [0, 1] within each sample.
+        Runs one forward pass, then one backward pass per class label.
+        Per-token scores are the dot product of (gradient x embedding)
+        summed over the hidden dimension, normalized per class to [-1, 1]
+        within each sample.
+
+        - Positive score: token pushes the model toward that class.
+        - Negative score: token pushes the model away from that class.
+
+        Only classification tasks are supported.
 
         Returns a list (one entry per input text) of dicts mapping task name
-        to a list of {"token": str, "score": float} objects, one per
-        non-padding token.
+        to a list of {"token_id": int, "start": int, "end": int,
+        "scores": {"label_a": float, ...}} objects, one per non-padding token.
+        start/end are character offsets into the original input string, so
+        text[start:end] gives the corresponding substring and
+        "".join(text[s:e] for s, e in ...) reconstructs the original
+        (excluding special tokens, which have start == end == 0).
         """
         if not hasattr(self.model.encoder, "embeddings"):
             raise NotImplementedError(
-                "Input × gradient attribution is only supported for encoder "
+                "Input x gradient attribution is only supported for encoder "
                 "architectures that expose an 'embeddings' submodule (e.g. BERT)."
             )
 
@@ -214,58 +224,78 @@ class CnlpRestApp:
             padding="max_length",
             truncation=True,
             return_tensors="pt",
+            return_offsets_mapping=True,
         )
         input_ids = encoding["input_ids"].to(self.device)
         attention_mask = encoding["attention_mask"].to(self.device)
         token_type_ids = encoding.get("token_type_ids")
         if token_type_ids is not None:
             token_type_ids = token_type_ids.to(self.device)
+        # token offsets stay on CPU
+        offset_mapping = encoding["offset_mapping"]  # (batch, seq, 2)
 
-        # Compute full input embeddings (word + position + token_type) once,
-        # outside the gradient tape.
+        # compute embeddings first without grad
         embed_kwargs: dict = {"input_ids": input_ids}
         if token_type_ids is not None:
             embed_kwargs["token_type_ids"] = token_type_ids
         with torch.no_grad():
             base_embeds = self.model.encoder.embeddings(**embed_kwargs)
 
+        # forward pass from embeddings
         self.model.eval()
+        inputs_embeds = base_embeds.detach().requires_grad_(True)
+        output = self.model(
+            inputs_embeds=inputs_embeds,
+            attention_mask=attention_mask,
+        )
+
+        batch_size = len(text_list)
+
         results_per_task: dict[str, list] = {}
-
         for task_ind, task in enumerate(self.tasks):
-            # Fresh leaf tensor per task so gradients don't accumulate.
-            inputs_embeds = base_embeds.detach().requires_grad_(True)
+            if task.type != CLASSIFICATION:
+                self.logger.warning(
+                    f"Skipping token attributions for task {task.name}, since it is not a classification task."
+                )
+                continue
 
-            output = self.model(
-                inputs_embeds=inputs_embeds,
-                attention_mask=attention_mask,
-            )
             task_logits = output.logits[task_ind]  # (batch, num_labels)
 
-            # Differentiate the predicted-class score summed over the batch.
-            pred_classes = task_logits.argmax(dim=-1)
-            score = task_logits[torch.arange(len(text_list)), pred_classes].sum()
-            score.backward()
+            # One backward pass per class, reusing the graph via retain_graph=True.
+            class_attrs: list[torch.Tensor] = []
+            for c in range(len(task.labels)):
+                if inputs_embeds.grad is not None:
+                    inputs_embeds.grad.zero_()
+                task_logits[:, c].sum().backward(retain_graph=True)
+                # Signed dot product over hidden dim → (batch, seq)
+                signed_attr = (inputs_embeds.grad * inputs_embeds.detach()).sum(dim=-1)
+                class_attrs.append(signed_attr.detach())
 
-            # Input × gradient, L2-normed over the hidden dimension → (batch, seq)
-            grad = inputs_embeds.grad
-            saliency = (grad * inputs_embeds.detach()).norm(dim=-1)
+            # Stack to (batch, seq, num_labels); mask padding.
+            attrs = torch.stack(class_attrs, dim=-1)
+            attrs = attrs * attention_mask.float().unsqueeze(-1)
 
-            # Zero out padding, then normalize each sample to [0, 1].
-            saliency = saliency * attention_mask.float()
-            saliency_max = saliency.max(dim=-1, keepdim=True).values.clamp(min=1e-10)
-            saliency = (saliency / saliency_max).detach().cpu()
+            # Normalize each class independently per sample to [-1, 1].
+            norm_denom = attrs.abs().max(dim=1, keepdim=True).values.clamp(min=1e-10)
+            attrs = (attrs / norm_denom).cpu()
 
             input_ids_cpu = input_ids.cpu()
             attn_cpu = attention_mask.cpu()
 
             task_results = []
-            for i in range(len(text_list)):
-                tokens = self.tokenizer.convert_ids_to_tokens(input_ids_cpu[i])
+            for i in range(batch_size):
                 task_results.append(
                     [
-                        {"token": tok, "score": round(saliency[i, j].item(), 4)}
-                        for j, (tok, m) in enumerate(zip(tokens, attn_cpu[i]))
+                        {
+                            "token_id": input_ids_cpu[i, j].item(),
+                            "start": offset_mapping[i, j, 0].item(),
+                            "end": offset_mapping[i, j, 1].item(),
+                            "scores": {
+                                label: attrs[i, j, c].item()
+                                for c, label in enumerate(task.labels)
+                            },
+                        }
+                        for j, m in enumerate(attn_cpu[i])
                         if m == 1
                     ]
                 )
@@ -276,7 +306,7 @@ class CnlpRestApp:
                 task_name: task_results[i]
                 for task_name, task_results in results_per_task.items()
             }
-            for i in range(len(text_list))
+            for i in range(batch_size)
         ]
 
     def _compute_sentence_attributions(
@@ -286,14 +316,17 @@ class CnlpRestApp:
     ) -> list[dict[str, list[dict]]]:
         """Leave-one-sentence-out ablation for each task.
 
-        For each sentence, removes it from the input and computes:
-            score = p(predicted_class | full text) - p(predicted_class | text without sentence)
+        For each sentence and each class label, removes the sentence from the
+        input and computes:
+            score = p(class | full text) - p(class | text without sentence)
 
-        Positive: the sentence supports the prediction.
+        Positive: the sentence supports that class.
         Negative: the sentence suppresses it.
 
+        Only classification tasks are supported.
+
         Returns a list (one per input text) of dicts mapping task name to a list
-        of {"sentence": str, "score": float} objects.
+        of {"sentence": str, "scores": {"label_a": float, ...}} objects.
         """
         self.model.eval()
         all_results: list[dict[str, list[dict]]] = []
@@ -303,8 +336,17 @@ class CnlpRestApp:
 
             if len(sentences) < 2:
                 all_results.append(
-                    {task.name: [{"sentence": s, "score": 0.0} for s in sentences]
-                     for task in self.tasks}
+                    {
+                        task.name: [
+                            {
+                                "sentence": s,
+                                "scores": {label: 0.0 for label in task.labels},
+                            }
+                            for s in sentences
+                        ]
+                        for task in self.tasks
+                        if task.type == CLASSIFICATION
+                    }
                 )
                 continue
 
@@ -313,7 +355,7 @@ class CnlpRestApp:
                 " ".join(s for j, s in enumerate(sentences) if j != i)
                 for i in range(len(sentences))
             ]
-            batch_texts = [text] + ablated
+            batch_texts = [text, *ablated]
 
             encoding = self.tokenizer(
                 batch_texts,
@@ -330,14 +372,25 @@ class CnlpRestApp:
 
             task_results: dict[str, list[dict]] = {}
             for task_ind, task in enumerate(self.tasks):
-                probs = torch.softmax(output.logits[task_ind], dim=-1)
-                pred_class = probs[0].argmax().item()
-                baseline_prob = probs[0, pred_class].item()
+                if task.type != CLASSIFICATION:
+                    self.logger.warning(
+                        f"Skipping sentence attributions for task {task.name}, since it is not a classification task."
+                    )
+                    continue
+
+                # probs[0] = full text, probs[1..N] = each sentence ablated
+                probs = torch.softmax(
+                    output.logits[task_ind], dim=-1
+                )  # (batch, num_labels)
+                baseline = probs[0]  # (num_labels,)
 
                 task_results[task.name] = [
                     {
                         "sentence": sent,
-                        "score": round(baseline_prob - probs[i + 1, pred_class].item(), 4),
+                        "scores": {
+                            label: round((baseline[c] - probs[i + 1, c]).item(), 4)
+                            for c, label in enumerate(task.labels)
+                        },
                     }
                     for i, sent in enumerate(sentences)
                 ]
@@ -366,7 +419,9 @@ class CnlpRestApp:
             hier_data_config = None
 
         text_list = input_doc.to_text_list()
-        dataset = self.create_prediction_dataset(text_list, max_seq_length, hier_data_config)
+        dataset = self.create_prediction_dataset(
+            text_list, max_seq_length, hier_data_config
+        )
         predictions = self.predict(dataset, max_seq_length)
         results = self.format_predictions(predictions)
 
@@ -387,7 +442,13 @@ class CnlpRestApp:
         return results
 
     def router(self, prefix: str = ""):
+        _visualizer_html = files("cnlpt.rest").joinpath("visualizer.html").read_text()
+
+        async def visualizer():
+            return HTMLResponse(_visualizer_html)
+
         router = APIRouter(prefix=prefix)
+        router.add_api_route("/", visualizer, methods=["GET"], include_in_schema=False)
         router.add_api_route("/process", self.process, methods=["POST"])
         return router
 
