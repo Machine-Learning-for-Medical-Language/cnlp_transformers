@@ -19,11 +19,16 @@ from cnlpt.modeling import (
 from cnlpt.train_system import CnlpTrainingArguments, CnlpTrainSystem
 
 
-@pytest.fixture(autouse=True)
-def disable_mps_for_ci(monkeypatch):
+@pytest.fixture(scope="session", autouse=True)
+def disable_mps_for_ci():
     """Disable MPS for CI"""
-    if os.getenv("CI", False):
-        monkeypatch.setattr("torch._C._mps_is_available", lambda: False)
+    if os.getenv("CI"):
+        mp = pytest.MonkeyPatch()
+        mp.setattr("torch._C._mps_is_available", lambda: False)
+        yield
+        mp.undo()
+    else:
+        yield
 
 
 @pytest.fixture(scope="session")
