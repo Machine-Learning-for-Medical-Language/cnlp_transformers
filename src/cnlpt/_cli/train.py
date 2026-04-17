@@ -337,11 +337,18 @@ FinalTaskWeightArg = Annotated[float, training_arg_option("final_task_weight")]
 FreezeEncoderArg = Annotated[float, training_arg_option("freeze_encoder")]
 BiasFitArg = Annotated[bool, training_arg_option("bias_fit")]
 EvalsPerEpochArg = Annotated[int, training_arg_option("evals_per_epoch")]
-RichDisplayArg = Annotated[bool, training_arg_option("rich_display")]
+RichDisplayArg = Annotated[
+    bool, training_arg_option("rich_display", "--rich_display/--no_rich_display")
+]
 LoggingStrategyArg = Annotated[
     IntervalStrategy, training_arg_option("logging_strategy")
 ]
-LoggingFirstStepArg = Annotated[bool, training_arg_option("logging_first_step")]
+LoggingFirstStepArg = Annotated[
+    bool,
+    training_arg_option(
+        "logging_first_step", "--logging_first_step/--no_logging_first_step"
+    ),
+]
 CacheDirArg = Annotated[Union[str, None], training_arg_option("cache_dir")]
 MetricForBestModelArg = Annotated[str, training_arg_option("metric_for_best_model")]
 
