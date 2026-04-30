@@ -1,5 +1,3 @@
-from typing import Union
-
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -16,7 +14,7 @@ class CnnModel(PreTrainedModel):
         self,
         config: CnnModelConfig,
         *,
-        class_weights: Union[dict[str, torch.FloatTensor], None] = None,
+        class_weights: dict[str, torch.FloatTensor] | None = None,
         **kwargs,
     ):
         super().__init__(config)
@@ -60,8 +58,8 @@ class CnnModel(PreTrainedModel):
 
     def forward(
         self,
-        input_ids: Union[torch.LongTensor, None] = None,
-        labels: Union[torch.LongTensor, None] = None,
+        input_ids: torch.LongTensor | None = None,
+        labels: torch.LongTensor | None = None,
         output_hidden_states=False,
         **kwargs,
     ):

@@ -4,7 +4,6 @@ Module containing the Hierarchical Transformer module, adapted from Xin Su.
 
 import logging
 from dataclasses import dataclass
-from typing import Union
 
 import torch
 from torch import nn
@@ -22,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class HierarchicalSequenceClassifierOutput(SequenceClassifierOutput):
-    chunk_attentions: Union[tuple[torch.FloatTensor], None] = None
+    chunk_attentions: tuple[torch.FloatTensor] | None = None
 
 
 class HierarchicalModel(PreTrainedModel):
@@ -40,7 +39,7 @@ class HierarchicalModel(PreTrainedModel):
         config: HierarchicalModelConfig,
         *,
         freeze: float = -1.0,
-        class_weights: Union[dict[str, torch.FloatTensor], None] = None,
+        class_weights: dict[str, torch.FloatTensor] | None = None,
         **kwargs,
     ):
         super().__init__(config)
@@ -71,7 +70,7 @@ class HierarchicalModel(PreTrainedModel):
     def configure_for_tasks(
         self,
         tasks: list[TaskInfo],
-        class_weights: Union[dict[str, torch.FloatTensor], None],
+        class_weights: dict[str, torch.FloatTensor] | None,
     ):
         self.tasks = self.config.tasks = tasks
         self.classifiers = nn.ModuleDict()
@@ -87,14 +86,14 @@ class HierarchicalModel(PreTrainedModel):
 
     def forward(
         self,
-        input_ids: Union[torch.LongTensor, None] = None,
-        attention_mask: Union[torch.LongTensor, None] = None,
-        token_type_ids: Union[torch.LongTensor, None] = None,
-        position_ids: Union[torch.LongTensor, None] = None,
-        head_mask: Union[torch.LongTensor, None] = None,
-        inputs_embeds: Union[torch.FloatTensor, None] = None,
-        labels: Union[torch.LongTensor, None] = None,
-        output_attentions: Union[bool, None] = None,
+        input_ids: torch.LongTensor | None = None,
+        attention_mask: torch.LongTensor | None = None,
+        token_type_ids: torch.LongTensor | None = None,
+        position_ids: torch.LongTensor | None = None,
+        head_mask: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        labels: torch.LongTensor | None = None,
+        output_attentions: bool | None = None,
         **kwargs,
     ):
         """
@@ -182,7 +181,7 @@ class HierarchicalModel(PreTrainedModel):
             position_ids
         )
         chunks_reps = chunks_reps + position_embeddings
-        chunks_attns: Union[list[torch.Tensor], None] = None
+        chunks_attns: list[torch.Tensor] | None = None
 
         # document encoding (B, n_chunk, hidden_size)
         for layer_ind, layer_module in enumerate(self.transformer):

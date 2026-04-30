@@ -1,5 +1,3 @@
-from typing import Union
-
 import torch
 from torch import nn
 from transformers.modeling_utils import PreTrainedModel
@@ -15,7 +13,7 @@ class LstmModel(PreTrainedModel):
         self,
         config: LstmModelConfig,
         *,
-        class_weights: Union[dict[str, torch.FloatTensor], None] = None,
+        class_weights: dict[str, torch.FloatTensor] | None = None,
         **kwargs,
     ):
         super().__init__(config)
@@ -43,8 +41,8 @@ class LstmModel(PreTrainedModel):
 
     def forward(
         self,
-        input_ids: Union[torch.LongTensor, None] = None,
-        labels: Union[torch.LongTensor, None] = None,
+        input_ids: torch.LongTensor | None = None,
+        labels: torch.LongTensor | None = None,
         **kwargs,
     ):
         embeddings = self.embed(input_ids)

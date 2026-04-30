@@ -1,5 +1,5 @@
 import os
-from typing import Any, Union
+from typing import Any
 
 from ...data.task_info import TaskInfo
 from .base_config import BaseConfigWithEncoder
@@ -30,9 +30,9 @@ class HierarchicalModelConfig(BaseConfigWithEncoder):
     def __init__(
         self,
         *,
-        tasks: Union[list[dict[str, Any]], list[TaskInfo], None] = None,
-        vocab_size: Union[int, None] = None,
-        encoder_name: Union[str, os.PathLike] = "roberta-base",
+        tasks: list[dict[str, Any]] | list[TaskInfo] | None = None,
+        vocab_size: int | None = None,
+        encoder_name: str | os.PathLike = "roberta-base",
         layer: int = -1,
         n_layers: int = 8,
         d_inner: int = 2048,

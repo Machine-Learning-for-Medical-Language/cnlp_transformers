@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-from typing import Union
 
 import torch
 from transformers.trainer_utils import IntervalStrategy
@@ -70,13 +69,13 @@ class CnlpTrainingArguments(TrainingArguments):
         default=True,
         metadata={"help": "Whether to log the first step of training."},
     )
-    cache_dir: Union[str, None] = field(
+    cache_dir: str | None = field(
         default=None,
         metadata={
             "help": "Optionally override the HuggingFace cache directory.",
         },
     )
-    metric_for_best_model: Union[str, None] = field(
+    metric_for_best_model: str | None = field(
         default="avg_macro_f1",
         metadata={
             "help": 'The metric to use to compare two different models. Average across tasks with "avg_[acc|macro_f1|micro_f1]". Optimize for a specific task with "taskname.[acc|macro_f1|micro_f1]". Optimize for a particular label with "taskname.labelname.f1". For binary classification tasks, optimize for AUROC with "taskname.auroc" or for AUPRC with "taskname.labelname.auprc". Average multiple metrics with "METRIC_1,METRIC_2".'

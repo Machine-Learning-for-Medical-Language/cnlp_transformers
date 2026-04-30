@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Final, Literal, Union
+from typing import Final, Literal
 
 # TODO(ian) convert this to an enum for consistency?
 TaskType = Literal["classification", "tagging", "relations"]
@@ -52,7 +52,7 @@ class TaskInfo:
     def _label_to_id(self):
         return {label: i for i, label in enumerate(self.labels)}
 
-    def get_label_id(self, label: str, specials: Union[dict[str, int], None] = None):
+    def get_label_id(self, label: str, specials: dict[str, int] | None = None):
         """Get a unique integer id for one of this task's labels.
 
         Args:

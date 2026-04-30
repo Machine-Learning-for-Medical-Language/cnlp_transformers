@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Union
 
 import numpy as np
 from sklearn.metrics import (
@@ -18,8 +17,8 @@ from ..data.task_info import TaskInfo
 class TaskEvalPrediction:
     task: TaskInfo
     predictions: np.ndarray
-    probs: Union[np.ndarray, None]
-    labels: Union[np.ndarray, None]
+    probs: np.ndarray | None
+    labels: np.ndarray | None
 
     def compute_metrics(self) -> dict[str, float]:
         if self.labels is None:

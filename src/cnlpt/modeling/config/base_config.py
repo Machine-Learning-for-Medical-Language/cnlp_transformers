@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from os import PathLike
-from typing import Any, Union
+from typing import Any
 
 from transformers import CONFIG_MAPPING, AutoConfig, AutoModel, PretrainedConfig
 from transformers import logging as transformers_logging
@@ -14,7 +14,7 @@ from ..utils import warn_on_version_mismatch
 
 
 def _load_encoder_config(
-    encoder_config: Union[PretrainedConfig, dict[str, Any], None],
+    encoder_config: PretrainedConfig | dict[str, Any] | None,
     encoder_name: str,
 ) -> PretrainedConfig:
     if (
@@ -29,7 +29,7 @@ def _load_encoder_config(
 
 
 def _load_tasks(
-    tasks: Union[list[dict[str, Any]], list[TaskInfo]],
+    tasks: list[dict[str, Any]] | list[TaskInfo],
 ) -> list[dict[str, Any]]:
     if tasks is None or len(tasks) == 0:
         return []
@@ -43,9 +43,9 @@ class BaseConfig(PretrainedConfig):
     def __init__(
         self,
         *,
-        tasks: Union[list[dict[str, Any]], list[TaskInfo], None] = None,
-        vocab_size: Union[int, None] = None,
-        cnlpt_version: Union[str, None] = None,
+        tasks: list[dict[str, Any]] | list[TaskInfo] | None = None,
+        vocab_size: int | None = None,
+        cnlpt_version: str | None = None,
         **kwargs,
     ):
         if cnlpt_version is None:
@@ -68,7 +68,7 @@ class BaseConfig(PretrainedConfig):
         return [TaskInfo(**t) for t in self._tasks]
 
     @tasks.setter
-    def tasks(self, tasks: Union[list[dict[str, Any]], list[TaskInfo]]):
+    def tasks(self, tasks: list[dict[str, Any]] | list[TaskInfo]):
         if tasks is None or len(tasks) == 0:
             self._tasks = []
         elif isinstance(tasks[0], TaskInfo):
@@ -81,11 +81,11 @@ class BaseConfigWithEncoder(BaseConfig):
     def __init__(
         self,
         *,
-        tasks: Union[list[dict[str, Any]], list[TaskInfo], None] = None,
-        vocab_size: Union[int, None] = None,
-        cnlpt_version: Union[str, None] = None,
-        encoder_name: Union[str, PathLike] = "roberta-base",
-        encoder_config: Union[PretrainedConfig, dict[str, Any], None] = None,
+        tasks: list[dict[str, Any]] | list[TaskInfo] | None = None,
+        vocab_size: int | None = None,
+        cnlpt_version: str | None = None,
+        encoder_name: str | PathLike = "roberta-base",
+        encoder_config: PretrainedConfig | dict[str, Any] | None = None,
         **kwargs,
     ):
         super().__init__(
@@ -100,7 +100,7 @@ class BaseConfigWithEncoder(BaseConfig):
     def _set_encoder(
         self,
         encoder_name: str,
-        encoder_config: Union[PretrainedConfig, dict[str, Any], None],
+        encoder_config: PretrainedConfig | dict[str, Any] | None,
     ):
         self.encoder_name = encoder_name
         self.encoder_config = _load_encoder_config(encoder_config, encoder_name)

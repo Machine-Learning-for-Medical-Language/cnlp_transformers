@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Annotated, Any, Final, Union
+from typing import Annotated, Any, Final
 
 import typer
 from click.core import ParameterSource
@@ -40,7 +40,7 @@ def compatible_models(types: list[ModelType]):
 def training_arg_option(
     field_name: str,
     *aliases,
-    compatibility: Union[list[ModelType], None] = None,
+    compatibility: list[ModelType] | None = None,
     **kwargs,
 ):
     field = CnlpTrainingArguments.__dataclass_fields__[field_name]
@@ -59,7 +59,7 @@ def training_arg_option(
 
 def model_arg_option(
     *args,
-    compatibility: Union[list[ModelType], None] = None,
+    compatibility: list[ModelType] | None = None,
     **kwargs,
 ):
     if compatibility is not None:
@@ -69,7 +69,7 @@ def model_arg_option(
 
 def data_arg_option(
     *args,
-    compatibility: Union[list[ModelType], None] = None,
+    compatibility: list[ModelType] | None = None,
     **kwargs,
 ):
     if compatibility is not None:
@@ -251,7 +251,7 @@ DataDirArg = Annotated[
     ),
 ]
 TaskNamesArg = Annotated[
-    Union[list[str], None],
+    list[str] | None,
     data_arg_option(
         "--task",
         "-t",
@@ -259,7 +259,7 @@ TaskNamesArg = Annotated[
     ),
 ]
 TokenizerArg = Annotated[
-    Union[str, None],
+    str | None,
     data_arg_option(
         "--tokenizer",
         help=f'Name or path to a model to use for tokenization. For projection and hierarchical models, this will default to the --encoder if left unspecified; otherwise defaults to "{DEFAULT_ENCODER}".',
@@ -288,15 +288,15 @@ OverwriteDataCacheArg = Annotated[
     ),
 ]
 MaxTrainArg = Annotated[
-    Union[int, None],
+    int | None,
     data_arg_option("--max_train", help="Limit the number of training samples to use."),
 ]
 MaxEvalArg = Annotated[
-    Union[int, None],
+    int | None,
     data_arg_option("--max_eval", help="Limit the number of eval samples to use."),
 ]
 MaxTestArg = Annotated[
-    Union[int, None],
+    int | None,
     data_arg_option("--max_test", help="Limit the number of test samples to use."),
 ]
 AllowDisjointLabelsArg = Annotated[
@@ -314,17 +314,17 @@ CharacterLevelArg = Annotated[
     ),
 ]
 HierChunkLenArg = Annotated[
-    Union[int, None],
+    int | None,
     data_arg_option("--hier_chunk_len", help="Chunk length for hierarchical models."),
 ]
 HierNumChunksArg = Annotated[
-    Union[int, None],
+    int | None,
     data_arg_option(
         "--hier_num_chunks", help="Number of chunks for hierarchical models."
     ),
 ]
 HierPrependEmptyChunkArg = Annotated[
-    Union[int, None],
+    int | None,
     data_arg_option(
         "--hier_prepend_empty_chunk",
         help="Whether to prepend an empty chunk for hierarchical models.",
@@ -349,23 +349,19 @@ LoggingFirstStepArg = Annotated[
         "logging_first_step", "--logging_first_step/--no_logging_first_step"
     ),
 ]
-CacheDirArg = Annotated[Union[str, None], training_arg_option("cache_dir")]
+CacheDirArg = Annotated[str | None, training_arg_option("cache_dir")]
 MetricForBestModelArg = Annotated[str, training_arg_option("metric_for_best_model")]
 
 
 ##### COMMON HF TRANSFORMERS ARGS #####
-NumTrainEpochsArg = Annotated[
-    Union[float, None], transformers_arg_option("num_train_epochs")
-]
+NumTrainEpochsArg = Annotated[float | None, transformers_arg_option("num_train_epochs")]
 PerDeviceTrainBatchSizeArg = Annotated[
-    Union[int, None], transformers_arg_option("per_device_train_batch_size")
+    int | None, transformers_arg_option("per_device_train_batch_size")
 ]
 GradientAccumulationStepsArg = Annotated[
-    Union[int, None], transformers_arg_option("gradient_accumulation_steps")
+    int | None, transformers_arg_option("gradient_accumulation_steps")
 ]
-LearningRateArg = Annotated[
-    Union[float, None], transformers_arg_option("learning_rate")
-]
+LearningRateArg = Annotated[float | None, transformers_arg_option("learning_rate")]
 DoTrainArg = Annotated[bool, transformers_arg_option("do_train", "--do_train")]
 DoEvalArg = Annotated[bool, transformers_arg_option("do_eval", "--do_eval")]
 DoPredictArg = Annotated[bool, transformers_arg_option("do_predict", "--do_predict")]
@@ -613,7 +609,7 @@ def train(
     if bias_fit:
         model_init_kwargs["bias_fit"] = True
 
-    model: Union[CnnModel, LstmModel, HierarchicalModel, ProjectionModel] = (
+    model: CnnModel | LstmModel | HierarchicalModel | ProjectionModel = (
         AutoModel.from_config(config, **model_init_kwargs)
     )
     train_system = CnlpTrainSystem(model, dataset, training_args)

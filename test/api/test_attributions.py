@@ -39,7 +39,7 @@ class TestTokenAttributions:
         doc = InputDocument(text=SINGLE_SENTENCE)
         r = negation_client.post(
             "/process?return_attributions=true",
-            content=doc.json(),
+            json=doc.model_dump(),
         )
         r.raise_for_status()
         return r.json()
@@ -49,7 +49,7 @@ class TestTokenAttributions:
 
     def test_attributions_absent_by_default(self, negation_client):
         doc = InputDocument(text=SINGLE_SENTENCE)
-        r = negation_client.post("/process", content=doc.json())
+        r = negation_client.post("/process", json=doc.model_dump())
         r.raise_for_status()
         assert "attributions" not in _task(r.json())
 
@@ -110,7 +110,7 @@ class TestSentenceAttributions:
         doc = InputDocument(text=MULTI_SENTENCE)
         r = negation_client.post(
             "/process?return_sentence_attributions=true",
-            content=doc.json(),
+            json=doc.model_dump(),
         )
         r.raise_for_status()
         return r.json()
@@ -120,7 +120,7 @@ class TestSentenceAttributions:
 
     def test_sentence_attributions_absent_by_default(self, negation_client):
         doc = InputDocument(text=MULTI_SENTENCE)
-        r = negation_client.post("/process", content=doc.json())
+        r = negation_client.post("/process", json=doc.model_dump())
         r.raise_for_status()
         assert "sentence_attributions" not in _task(r.json())
 
@@ -144,7 +144,7 @@ class TestSentenceAttributions:
         doc = InputDocument(text=SINGLE_SENTENCE)
         r = negation_client.post(
             "/process?return_sentence_attributions=true",
-            content=doc.json(),
+            json=doc.model_dump(),
         )
         r.raise_for_status()
         sents = _task(r.json())["sentence_attributions"]

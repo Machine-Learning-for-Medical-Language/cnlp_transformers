@@ -24,7 +24,7 @@ class TestNegation:
             text="The patient has a sore knee and headache but denies nausea and has no anosmia.",
             entity_spans=[(18, 27), (32, 40), (52, 58), (70, 77)],
         )
-        response = test_client.post("/process", content=doc.json())
+        response = test_client.post("/process", json=doc.model_dump())
         response.raise_for_status()
         response_json = response.json()
         assert [record["Negation"]["prediction"] for record in response_json] == [
@@ -48,7 +48,7 @@ class TestTemporal:
         doc = InputDocument(
             text="The patient was diagnosed with adenocarcinoma March 3, 2010 and will be returning for chemotherapy next week."
         )
-        response = test_client.post("/process", content=doc.json())
+        response = test_client.post("/process", json=doc.model_dump())
         response.raise_for_status()
         response_json = response.json()
         assert all(

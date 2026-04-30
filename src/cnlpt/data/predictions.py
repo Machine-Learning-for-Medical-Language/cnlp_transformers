@@ -2,7 +2,7 @@ import json
 import os
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
-from typing import Any, Union
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -19,7 +19,7 @@ from .task_info import CLASSIFICATION, TAGGING, TaskInfo
 class TaskPredictions:
     task: TaskInfo
     logits: npt.NDArray
-    labels: Union[npt.NDArray, None]
+    labels: npt.NDArray | None
 
     @property
     def probs(self) -> npt.NDArray:
@@ -34,7 +34,7 @@ class TaskPredictions:
         return np.array(self.task.labels)[self.predicted_int_labels]
 
     @property
-    def target_str_labels(self) -> Union[npt.NDArray, None]:
+    def target_str_labels(self) -> npt.NDArray | None:
         if self.labels is None:
             return None
         masked = self.labels.copy()
@@ -68,7 +68,7 @@ class CnlpPredictions:
 
         self.task_predictions: dict[str, TaskPredictions] = {}
 
-        task_labels: dict[str, Union[npt.NDArray, None]]
+        task_labels: dict[str, npt.NDArray | None]
 
         if self.raw.label_ids is None:
             task_labels = {t.name: None for t in tasks}
@@ -137,7 +137,7 @@ class CnlpPredictions:
 
     def save_json(
         self,
-        json_filepath: Union[str, os.PathLike],
+        json_filepath: str | os.PathLike,
         allow_overwrite: bool = False,
     ):
         write_mode = "w" if allow_overwrite else "x"
@@ -169,7 +169,7 @@ class CnlpPredictions:
         )
 
     @classmethod
-    def load_json(cls, filepath: Union[str, os.PathLike]):
+    def load_json(cls, filepath: str | os.PathLike):
         with open(filepath) as f:
             return cls.from_dict(json.load(f))
 

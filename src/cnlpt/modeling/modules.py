@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-from typing import Union
 
 import torch
 import torch.nn.functional as F
@@ -210,7 +209,7 @@ class ScaledDotProductAttention(nn.Module):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        mask: Union[torch.Tensor, None] = None,
+        mask: torch.Tensor | None = None,
     ):
         attn = torch.matmul(q / self.temperature, k.transpose(2, 3))
 
@@ -265,7 +264,7 @@ class MultiHeadAttention(nn.Module):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        mask: Union[torch.Tensor, None] = None,
+        mask: torch.Tensor | None = None,
     ):
         d_k, d_v, n_head = self.d_k, self.d_v, self.n_head
         sz_b, len_q, len_k, len_v = q.size(0), q.size(1), k.size(1), v.size(1)
@@ -320,7 +319,7 @@ class EncoderLayer(nn.Module):
         self.pos_ffn = PositionwiseFeedForward(d_model, d_inner, dropout=dropout)
 
     def forward(
-        self, enc_input: torch.Tensor, slf_attn_mask: Union[torch.Tensor, None] = None
+        self, enc_input: torch.Tensor, slf_attn_mask: torch.Tensor | None = None
     ):
         enc_output: torch.Tensor
         enc_slf_attn: torch.Tensor
