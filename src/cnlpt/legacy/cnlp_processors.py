@@ -231,15 +231,9 @@ class AutoProcessor(DataProcessor):
         logger.info("Converting columns to strings")
         for task in tqdm(self.dataset.tasks):
             if self.dataset.task_output_modes[task] == classification:
-                task_str = task + "_str"
                 for split in self.dataset:
-                    # create a new column casting every element to string, remove old (int) column, rename new (str) column
-                    self.dataset[split] = self.dataset[split].add_column(
-                        task_str, [str(x) for x in self.dataset[split][task]]
-                    )
-                    self.dataset[split] = self.dataset[split].remove_columns(task)
-                    self.dataset[split] = self.dataset[split].rename_column(
-                        task_str, task
+                    self.dataset[split] = self.dataset[split].cast_column(
+                        task, datasets.Value("string")
                     )
 
         # get any split of the data and ask for the set of unique labels for each task in the dataset from that split
