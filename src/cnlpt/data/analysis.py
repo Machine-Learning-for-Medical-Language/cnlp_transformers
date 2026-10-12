@@ -1,6 +1,7 @@
-from typing import Any
+from typing import Any, Union
 
 import numpy as np
+import numpy.typing as npt
 import polars as pl
 
 from .predictions import CnlpPredictions
@@ -74,88 +75,83 @@ def _bio_tags_to_spans(df: pl.DataFrame, tags_col: pl.Expr):
     )
 
 
-# TODO(ian) This is not very fast! I experimented with pure polars and pure numpy approaches,
-# and this hybrid approach was faster than either. If we end up needing to optimize this,
-# maybe multiprocessing can help? (i.e., do multiple rows simultaneously)
-# There might also be a polars-only approach where we break the dataframe into small chunks first,
-# avoiding the memory bottleneck that arises when exploding the matrix row.
-def _rel_matrix_to_rels(df: pl.DataFrame, matrix_col: pl.Expr):
-    def extract_relations(input) -> list[dict[str, Any]]:
-        matrix, word_ids, text = input["matrix"], input["word_ids"], input["text"]
+def _first_subword_mask(word_ids: npt.NDArray) -> npt.NDArray:
+    """Positions holding the first subword of a word (mirrors relation label encoding in preprocess)."""
+    is_word = word_ids != None  # noqa: E711
+    prev = np.concatenate([[None], word_ids[:-1]])
+    return is_word & (word_ids != prev)
 
-        if matrix is None or word_ids is None:
-            return []
 
-        arr = np.array(matrix)
-        word_ids_arr = np.array(word_ids)
+def _relations_dtype(labels: Union[list[str], None]) -> pl.List:
+    fields: dict[str, pl.DataType] = {
+        "arg1_wid": pl.Int64(),
+        "arg1_text": pl.String(),
+        "arg2_wid": pl.Int64(),
+        "arg2_text": pl.String(),
+        "label": pl.String(),
+    }
+    if labels is not None:
+        fields["probs"] = pl.Struct({label: pl.Float32() for label in labels})
+    return pl.List(pl.Struct(fields))
 
-        words = np.array(text)
 
-        rel_idxs = (
-            (arr != "None") & (arr != "[MASK]") & ~np.eye(arr.shape[0]).astype(bool)
+def _rel_matrix_to_rels(
+    df: pl.DataFrame,
+    label_matrices: npt.NDArray,
+    probs: Union[npt.NDArray, None] = None,
+    labels: Union[list[str], None] = None,
+) -> pl.DataFrame:
+    """Convert per-token-pair relation label matrices into lists of word-level relations.
+
+    Only first-subword positions are considered, since those are the only positions
+    the model is trained on; predictions at continuation subwords would otherwise
+    produce duplicate (and possibly conflicting) relations for the same word pair.
+
+    Args:
+        df: DataFrame with "sample_idx", "text", and "word_ids" columns.
+        label_matrices: String labels of shape (n_samples, seq, seq).
+        probs: Optional probabilities of shape (n_samples, seq, seq, n_labels). If given,
+            each relation gets a "probs" field mapping every label to its probability.
+        labels: Label names in the order of the last axis of `probs`. Required with `probs`.
+
+    Returns:
+        DataFrame with "sample_idx" and "relations" columns.
+    """
+    if (probs is None) != (labels is None):
+        raise ValueError("probs and labels must be provided together")
+
+    all_relations: list[list[dict[str, Any]]] = []
+    for i, (text, word_ids) in enumerate(df.select("text", "word_ids").iter_rows()):
+        wids = np.array(word_ids, dtype=object)
+        words = text.split(" ")
+        matrix = label_matrices[i]
+
+        valid = _first_subword_mask(wids)
+        rel_mask = (
+            valid[:, None]
+            & valid[None, :]
+            & (matrix != "None")
+            & (matrix != "[MASK]")
+            & ~np.eye(len(wids), dtype=bool)
         )
-        rel_positions = np.argwhere(rel_idxs)
 
-        if len(rel_positions) == 0:
-            return []
-
-        def remove_nulls(arr, fill):
-            return np.where(arr == None, fill, arr)  # noqa: E711
-
-        arg1_wids = word_ids_arr[rel_positions[:, 0]]
-        arg1_words = np.where(
-            arg1_wids == None,  # noqa: E711
-            None,
-            words[remove_nulls(arg1_wids, 0).astype(int)],
-        )
-
-        arg2_wids = word_ids_arr[rel_positions[:, 1]]
-        arg2_words = np.where(
-            arg2_wids == None,  # noqa: E711
-            None,
-            words[remove_nulls(arg2_wids, 0).astype(int)],
-        )
-
-        labels = arr[rel_positions[:, 0], rel_positions[:, 1]]
-
-        valid_word_mask = (arg1_wids != None) & (arg2_wids != None)  # noqa: E711
-
-        return [
-            {
-                "arg1_wid": int(wida),
-                "arg1_text": wa,
-                "arg2_wid": int(widb),
-                "arg2_text": wb,
-                "label": label,
+        sample_relations: list[dict[str, Any]] = []
+        for a, b in np.argwhere(rel_mask):
+            relation: dict[str, Any] = {
+                "arg1_wid": int(wids[a]),
+                "arg1_text": words[wids[a]],
+                "arg2_wid": int(wids[b]),
+                "arg2_text": words[wids[b]],
+                "label": str(matrix[a, b]),
             }
-            for wida, wa, widb, wb, label in zip(
-                arg1_wids[valid_word_mask],
-                arg1_words[valid_word_mask],
-                arg2_wids[valid_word_mask],
-                arg2_words[valid_word_mask],
-                labels[valid_word_mask],
-            )
-        ]
+            if probs is not None and labels is not None:
+                relation["probs"] = dict(zip(labels, probs[i, a, b].tolist()))
+            sample_relations.append(relation)
+        all_relations.append(sample_relations)
 
-    return df.select(
-        "sample_idx",
-        relations=pl.struct(
-            "word_ids", matrix=matrix_col, text=pl.col("text").str.split(" ")
-        ).map_elements(
-            extract_relations,
-            strategy="threading",
-            return_dtype=pl.List(
-                pl.Struct(
-                    {
-                        "arg1_wid": pl.Int64,
-                        "arg1_text": pl.String,
-                        "arg2_wid": pl.Int64,
-                        "arg2_text": pl.String,
-                        "label": pl.String,
-                    }
-                )
-            ),
-        ),
+    return pl.DataFrame(
+        {"sample_idx": df["sample_idx"], "relations": all_relations},
+        schema={"sample_idx": pl.Int64, "relations": _relations_dtype(labels)},
     )
 
 
@@ -266,10 +262,7 @@ def make_preds_df(
             relations_fields = []
             if not unlabeled:
                 df = df.join(
-                    _rel_matrix_to_rels(
-                        df,
-                        pl.col(task.name).struct.field("labels").struct.field("values"),
-                    ),
+                    _rel_matrix_to_rels(df, task_pred.target_str_labels),
                     on="sample_idx",
                     how="left",
                 ).rename({"relations": "target_relations"})
@@ -280,9 +273,9 @@ def make_preds_df(
             df = df.join(
                 _rel_matrix_to_rels(
                     df,
-                    pl.col(task.name)
-                    .struct.field("predictions")
-                    .struct.field("values"),
+                    task_pred.predicted_str_labels,
+                    probs=task_pred.probs,
+                    labels=task.labels,
                 ),
                 on="sample_idx",
                 how="left",

@@ -105,8 +105,14 @@ class TestTemporal:
             ]
         )
 
+        relations = response_json[0]["tlinkx"]["relations"]
+        for rel in relations:
+            probs = rel.pop("probs")
+            assert sum(probs.values()) == pytest.approx(1.0, abs=1e-4)
+            assert max(probs, key=probs.get) == rel["label"]
+
         assert all(
-            span in response_json[0]["tlinkx"]["relations"]
+            span in relations
             for span in [
                 {
                     "arg1_wid": 6,

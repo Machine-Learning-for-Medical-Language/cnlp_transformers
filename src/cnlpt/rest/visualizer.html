@@ -227,7 +227,7 @@ function renderResults(data, inputText, container) {
       card.append(el('div', { className: 'task-name', textContent: taskName }));
       if ('prediction' in task)   renderClassification(card, task, inputText);
       else if ('spans' in task)   renderList(card, task.spans, 'spans', s => `${s.text} (${s.tag})`);
-      else if ('relations' in task) renderList(card, task.relations, 'relations', r => `${r.arg1_text} \u2192 ${r.arg2_text}: ${r.label}`);
+      else if ('relations' in task) renderList(card, task.relations, 'relations', r => `${r.arg1_text} \u2192 ${r.arg2_text}: ${r.label}` + (r.probs ? ` (${(r.probs[r.label] * 100).toFixed(1)}%)` : ''));
       container.appendChild(card);
     }
   }
